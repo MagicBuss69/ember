@@ -1,0 +1,92 @@
+import { SLOT_LABEL } from "../constants.js";
+import { formatNum, esc } from "../format.js";
+import { icon } from "../icons.js";
+
+const RADIUS = 36;
+export const RING_CIRC = 2 * Math.PI * RADIUS;
+
+export function ringHtml(done, total, pulse) {
+  const pct = total ? done / total : 0;
+  const offset = pct <= 0 ? RING_CIRC : RING_CIRC * (1 - pct);
+  return `
+    <div class="ring-wrap ${pulse ? "pulse" : ""} ${pct <= 0 ? "is-empty" : ""} ${pct >= 1 ? "is-full" : ""}">
+      <svg class="ring" viewBox="0 0 88 88" role="img" aria-label="${done} of ${total} quests done">
+        <circle class="ring-track" cx="44" cy="44" r="${RADIUS}"></circle>
+        <circle class="ring-fg" data-ring cx="44" cy="44" r="${RADIUS}"
+          stroke-dasharray="${RING_CIRC.toFixed(3)}"
+          style="stroke-dashoffset:${offset.toFixed(3)}"
+          transform="rotate(-90 44 44)"></circle>
+      </svg>
+      <div class="ring-label"><strong>${done}</strong><small>/${total}</small></div>
+    </div>`;
+}
+
+export function levelBar(progress, total, pulse) {
+  const pct = (progress.pct * 100).toFixed(2);
+  const right = progress.maxed
+    ? `${formatNum(total)} XP`
+    : `${formatNum(progress.into)} / ${formatNum(progress.span)}`;
+  return `
+    <div class="level-block">
+      <div class="level-row">
+        <span>Level ${progress.level}</span>
+        <span class="num">${right}</span>
+      </div>
+      <div class="bar ${pulse ? "pulse" : ""}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(progress.pct * 100)}" aria-label="Level progress">
+        <span data-bar style="width:${pct}%"></span>
+      </div>
+    </div>`;
+}
+
+export function emptyState({ title, body, actions = "" }) {
+  return `
+    <div class="empty">
+      <h3>${esc(title)}</h3>
+      <p>${esc(body)}</p>
+      ${actions}
+    </div>`;
+}
+
+export function questRows({ items, date, weekday, slot, template, justDoneId }) {
+  const rows = items
+    .map((task) => {
+      const meta = [task.time, !task.done && task.why ? task.why : ""].filter(Boolean).join("  ·  ");
+      const where = template
+        ? `data-weekday="${weekday}" data-slot="${slot}" data-id="${esc(task.id)}"`
+        : `data-date="${date}" data-slot="${slot}" data-id="${esc(task.id)}"`;
+      const check = template
+        ? ""
+        : `<button type="button" class="check ${justDoneId === task.id ? "just" : ""}" data-action="toggle" ${where} aria-pressed="${task.done ? "true" : "false"}" aria-label="${task.done ? "Mark not done" : "Mark done"}: ${esc(task.title)}"><i></i></button>`;
+      return `
+        <div class="quest ${task.done ? "done" : ""}">
+          ${check}
+          <button type="button" class="quest-body" data-action="${template ? "edit-template" : "edit-task"}" ${where}>
+            <span class="quest-title">${esc(task.title)}</span>
+            ${meta ? `<span class="quest-meta">${esc(meta)}</span>` : ""}
+          </button>
+        </div>`;
+    })
+    .join("");
+  const addWhere = template
+    ? `data-weekday="${weekday}" data-slot="${slot}"`
+    : `data-date="${date}" data-slot="${slot}"`;
+  return `
+    ${rows}
+    <button type="button" class="add" data-action="${template ? "add-template" : "add-task"}" ${addWhere}>${icon("plus")} Add a quest</button>`;
+}
+
+export function slotSection({ slot, items, nowSlot, date, weekday, template, justDoneId }) {
+  const done = items.filter((task) => task.done).length;
+  return `
+    <section class="slot">
+      <header>
+        <h2>${SLOT_LABEL[slot]}</h2>
+        ${!template && slot === nowSlot ? `<span class="now">Now</span>` : ""}
+        <span class="count num">${template ? items.length : `${done}/${items.length}`}</span>
+      </header>
+      <div class="slot-card">
+        ${items.length ? "" : `<p class="slot-empty">Nothing ${SLOT_LABEL[slot].toLowerCase()}.</p>`}
+        ${questRows({ items, date, weekday, slot, template, justDoneId })}
+      </div>
+    </section>`;
+}

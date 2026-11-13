@@ -1,0 +1,884 @@
+import "@fontsource/outfit/latin-400.css";
+import "@fontsource/outfit/latin-500.css";
+import "@fontsource/outfit/latin-600.css";
+import "@fontsource/outfit/latin-700.css";
+import "@fontsource/fraunces/latin-600.css";
+import "./styles.css";
+
+import { sanitizeImport } from "./backup.js";
+import { FREEZE_PRICE, THEMES } from "./constants.js";
+import {
+  addTask,
+  addTemplateTask,
+  addWorkout,
+  applyGeneratedPlan,
+  applyTemplateToOpenDays,
+  buyFreeze,
+  buyTheme,
+  copyDayToTemplate,
+  createInitialState,
+  deleteTask,
+  deleteTemplateTask,
+  deleteWorkout,
+  equipTheme,
+  patchSettings,
+  prepare,
+  replaceDayFromTemplate,
+  setTaskDone,
+  updateTask,
+  updateTemplateTask,
+} from "./domain.js";
+import { levelFor } from "./economy.js";
+import { parseNum, reasonLabel } from "./format.js";
+import { generateWeek } from "./gemini.js";
+import { kvClear, loadState, saveState } from "./idb.js";
+import {
+  enableNotifications,
+  periodicStatus,
+  registerServiceWorker,
+  syncReminderSchedule,
+  watchReminders,
+} from "./notify.js";
+import { ensureRivalHistory } from "./rivals.js";
+import { exerciseGroups, openTodayCount, totalXp } from "./stats.js";
+import { addDays, dateKey, formatPretty } from "./time.js";
+import { render, shellError } from "./ui/render.js";
+
+const TABS = ["today", "week", "train", "rivals", "you"];
+
+let state = createInitialState();
+const ui = {
+  tab: "today",
+  lookDate: null,
+  weekMode: "week",
+  selectedDate: null,
+  selectedWeekday: null,
+  sheet: null,
+  draft: null,
+  confirm: null,
+  levelUp: null,
+  exercise: null,
+  enter: true,
+  keepScroll: false,
+  barPulse: false,
+  gemShine: false,
+  ringPulse: false,
+  justDoneId: null,
+  focusSheet: false,
+  installEvent: null,
+  periodic: "unknown",
+  notifyState: "default",
+  revealKey: false,
+  scrollTo: null,
+  ignorePop: false,
+};
+let levelTimer = 0;
+let genToken = 0;
+let audioCtx = null;
+
+function tabFromHash() {
+  const tab = location.hash.replace("#", "");
+  return TABS.includes(tab) ? tab : "today";
+}
+
+function setHash(tab) {
+  if (location.hash !== `#${tab}`) history.replaceState(history.state, "", `#${tab}`);
+}
+
+function assign(obj, path, value) {
+  const parts = path.split(".");
+  let cursor = obj;
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    const key = /^\d+$/.test(parts[i]) ? Number(parts[i]) : parts[i];
+    if (cursor[key] == null) return;
+    cursor = cursor[key];
+  }
+  const last = parts[parts.length - 1];
+  cursor[/^\d+$/.test(last) ? Number(last) : last] = value;
+}
+
+function scrape() {
+  if (!ui.draft) return;
+  document.querySelectorAll("[data-bind]").forEach((el) => {
+    if (el.dataset.commit === "settings") return;
+    const value = el.type === "checkbox" ? el.checked : el.value;
+    assign(ui.draft, el.dataset.bind, value);
+  });
+}
+
+function paint() {
+  const active = document.activeElement;
+  const activeId = active?.id || "";
+  const selStart = active?.selectionStart;
+  const selEnd = active?.selectionEnd;
+  const scrolling = document.getElementById("main");
+  const scroll = ui.keepScroll ? scrolling?.scrollTop || 0 : 0;
+  const prevBar = document.querySelector("[data-bar]")?.style.width || null;
+  const prevRing = document.querySelector("[data-ring]")?.style.strokeDashoffset || null;
+  try {
+    document.documentElement.dataset.theme = state.settings?.theme || "ember";
+    document.getElementById("app").innerHTML = render(state, ui, new Date());
+  } catch (error) {
+    console.error(error);
+    document.getElementById("app").innerHTML = shellError(error.message || "Something broke while drawing Ember.");
+    return;
+  }
+  const theme = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme || "#100e0c");
+  const nextMain = document.getElementById("main");
+  if (nextMain && ui.keepScroll) nextMain.scrollTop = scroll;
+  animateWidth(document.querySelector("[data-bar]"), prevBar);
+  animateOffset(document.querySelector("[data-ring]"), prevRing);
+  if (ui.scrollTo) {
+    document.getElementById(ui.scrollTo)?.scrollIntoView({ block: "start" });
+    ui.scrollTo = null;
+  }
+  if (ui.focusSheet) {
+    document.querySelector(".sheet input, .sheet textarea")?.focus();
+    ui.focusSheet = false;
+  } else if (activeId) {
+    const next = document.getElementById(activeId);
+    if (next) {
+      next.focus();
+      if (selStart != null && next.setSelectionRange) {
+        try {
+          next.setSelectionRange(selStart, selEnd);
+        } catch {
+          /* time and date inputs don't take a selection */
+        }
+      }
+    }
+  }
+  ui.enter = false;
+  updateBadge();
+}
+
+function animateWidth(el, prev) {
+  if (!el || prev == null) return;
+  const next = el.style.width;
+  if (!next || prev === next) return;
+  el.style.transition = "none";
+  el.style.width = prev;
+  requestAnimationFrame(() => {
+    el.style.transition = "";
+    el.style.width = next;
+  });
+}
+
+function animateOffset(el, prev) {
+  if (!el || prev == null) return;
+  const next = el.style.strokeDashoffset;
+  if (!next || prev === next) return;
+  el.style.transition = "none";
+  el.style.strokeDashoffset = prev;
+  requestAnimationFrame(() => {
+    el.style.transition = "";
+    el.style.strokeDashoffset = next;
+  });
+}
+
+function toast(text) {
+  if (!text) return;
+  const root = document.getElementById("fx");
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.textContent = text;
+  root.appendChild(el);
+  const live = document.getElementById("live");
+  if (live) live.textContent = text;
+  setTimeout(() => el.remove(), 3200);
+}
+
+function floater(text, x, y, kind) {
+  const el = document.createElement("div");
+  el.className = `floater ${kind || "xp"}`;
+  el.textContent = text;
+  el.style.left = `${Math.round(x)}px`;
+  el.style.top = `${Math.round(y)}px`;
+  document.getElementById("fx").appendChild(el);
+  const live = document.getElementById("live");
+  if (live) live.textContent = text;
+  el.addEventListener("animationend", () => el.remove());
+}
+
+function blip(kind) {
+  if (!state.settings?.sound) return;
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) return;
+  try {
+    audioCtx = audioCtx || new AudioCtx();
+    const notes = kind === "level" ? [392, 523, 659] : kind === "down" ? [280] : [620];
+    const now = audioCtx.currentTime;
+    notes.forEach((freq, index) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      const start = now + index * 0.08;
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.045, start + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.16);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(start);
+      osc.stop(start + 0.18);
+    });
+  } catch {
+    /* autoplay or a missing device */
+  }
+}
+
+function haptic(kind) {
+  if (!state.settings?.haptics || !navigator.vibrate) return;
+  const pattern = {
+    tick: [12],
+    down: [8],
+    level: [18, 36, 20, 48, 28],
+    warn: [22, 36, 22],
+  };
+  navigator.vibrate(pattern[kind] || [12]);
+}
+
+function updateBadge() {
+  if (!navigator.setAppBadge) return;
+  const left = openTodayCount(state, dateKey(new Date()));
+  const pending = left ? navigator.setAppBadge(left) : navigator.clearAppBadge();
+  pending.catch(() => {});
+}
+
+function openSheet(sheet, draft) {
+  ui.sheet = sheet;
+  ui.draft = draft;
+  ui.focusSheet = true;
+  ui.keepScroll = true;
+  if (!history.state?.sheet) history.pushState({ sheet: true }, "");
+  paint();
+}
+
+function closeSheet() {
+  genToken += 1;
+  ui.sheet = null;
+  ui.draft = null;
+  ui.keepScroll = true;
+  paint();
+  if (history.state?.sheet) {
+    ui.ignorePop = true;
+    history.back();
+  }
+}
+
+async function commitWrapped(mutator, fx = {}) {
+  const prevXp = totalXp(state);
+  const prevLevel = levelFor(prevXp);
+  const logBefore = state.crystalLog.length;
+  const beforeCrystals = state.crystals;
+  state = mutator(state);
+  const prepared = prepare(state, new Date());
+  state = prepared.state;
+  ensureRivalHistory(state, prepared.today);
+  if (ui.exercise && !exerciseGroups(state).some((group) => group.key === ui.exercise)) ui.exercise = null;
+  if (fx.close) {
+    genToken += 1;
+    ui.sheet = null;
+    ui.draft = null;
+  }
+  try {
+    await saveState(state);
+  } catch (error) {
+    toast(error.message || "Couldn't save on this phone.");
+  }
+  const level = levelFor(totalXp(state));
+  ui.barPulse = totalXp(state) > prevXp;
+  ui.gemShine = state.crystals > beforeCrystals;
+  ui.ringPulse = Boolean(fx.ring);
+  ui.keepScroll = fx.keepScroll !== false;
+  paint();
+  ui.barPulse = false;
+  ui.gemShine = false;
+  ui.ringPulse = false;
+  ui.justDoneId = null;
+  if (fx.pop) {
+    floater(fx.pop.text, fx.pop.x, fx.pop.y, fx.pop.kind);
+    blip(fx.pop.kind === "down" ? "down" : "tick");
+    haptic(fx.pop.kind === "down" ? "down" : "tick");
+  }
+  if (fx.close && history.state?.sheet) {
+    ui.ignorePop = true;
+    history.back();
+  }
+  const fresh = state.crystalLog.slice(0, Math.max(0, state.crystalLog.length - logBefore));
+  const messages = [];
+  if (prepared.freezesUsed.length) {
+    const days = prepared.freezesUsed.map((entry) => formatPretty(entry.date)).join(" and ");
+    messages.push(`Freeze covered ${days}. Streak kept.`);
+  }
+  if (!fx.quiet) {
+    const notes = fresh.filter((entry) => entry.delta > 0 && entry.reason !== "level");
+    if (notes.length) messages.push(notes.map((entry) => `+${entry.delta} · ${reasonLabel(entry.reason)}`).join("  "));
+  }
+  if (messages.length) toast(messages.join("  "));
+  if (level > prevLevel) {
+    const paid = fresh.filter((entry) => entry.reason === "level" && entry.delta > 0).reduce((sum, entry) => sum + entry.delta, 0);
+    clearTimeout(levelTimer);
+    levelTimer = setTimeout(() => {
+      ui.levelUp = { level, crystals: paid };
+      ui.keepScroll = true;
+      ui.enter = false;
+      paint();
+      blip("level");
+      haptic("level");
+    }, 740);
+  }
+  syncReminderSchedule(state).catch(() => {});
+}
+
+const commitAction = commitWrapped;
+
+function pointOf(el) {
+  const rect = el.getBoundingClientRect();
+  return { x: rect.left + rect.width / 2, y: rect.top + 6 };
+}
+
+const actions = {
+  tab(el) {
+    ui.tab = el.dataset.tab;
+    ui.enter = true;
+    ui.keepScroll = false;
+    ui.exercise = null;
+    setHash(ui.tab);
+    if (ui.tab === "you") refreshNotify().then(() => paint());
+    paint();
+  },
+  "goto-shop"() {
+    ui.tab = "you";
+    ui.scrollTo = "shop";
+    ui.enter = true;
+    ui.keepScroll = false;
+    setHash("you");
+    paint();
+  },
+  async toggle(el) {
+    const done = el.getAttribute("aria-pressed") !== "true";
+    const at = pointOf(el);
+    ui.justDoneId = el.dataset.id;
+    await commitAction((current) => setTaskDone(current, el.dataset.date, el.dataset.slot, el.dataset.id, done, new Date()), {
+      pop: { text: done ? "+25 XP" : "−25 XP", ...at, kind: done ? "xp" : "down" },
+      ring: true,
+    });
+  },
+  "shift-day"(el) {
+    const today = dateKey(new Date());
+    const current = ui.lookDate || today;
+    const next = addDays(current, Number(el.dataset.dir));
+    if (next > today || next < addDays(today, -120)) return;
+    ui.lookDate = next === today ? null : next;
+    ui.keepScroll = false;
+    paint();
+  },
+  "jump-today"() {
+    ui.lookDate = null;
+    ui.keepScroll = false;
+    paint();
+  },
+  "add-task"(el) {
+    openSheet(
+      { type: "task", date: el.dataset.date, slot: el.dataset.slot, taskId: null },
+      { title: "", why: "", time: "", slot: el.dataset.slot, saveTemplate: false, error: "" },
+    );
+  },
+  "edit-task"(el) {
+    const task = state.days[el.dataset.date]?.slots?.[el.dataset.slot]?.find((item) => item.id === el.dataset.id);
+    if (!task) return;
+    openSheet(
+      { type: "task", date: el.dataset.date, slot: el.dataset.slot, taskId: task.id },
+      { title: task.title, why: task.why, time: task.time, slot: el.dataset.slot, error: "" },
+    );
+  },
+  "add-template"(el) {
+    openSheet(
+      { type: "template", weekday: el.dataset.weekday, slot: el.dataset.slot, taskId: null },
+      { title: "", why: "", time: "", slot: el.dataset.slot, error: "" },
+    );
+  },
+  "edit-template"(el) {
+    const task = state.template[el.dataset.weekday]?.[el.dataset.slot]?.find((item) => item.id === el.dataset.id);
+    if (!task) return;
+    openSheet(
+      { type: "template", weekday: el.dataset.weekday, slot: el.dataset.slot, taskId: task.id },
+      { title: task.title, why: task.why, time: task.time, slot: el.dataset.slot, error: "" },
+    );
+  },
+  "set-slot"(el) {
+    ui.draft.slot = el.dataset.slot;
+    ui.keepScroll = true;
+    paint();
+  },
+  async "save-task"() {
+    if (!(ui.draft?.title || "").trim()) {
+      ui.draft.error = "Give the quest a name.";
+      ui.keepScroll = true;
+      paint();
+      return;
+    }
+    const sheet = ui.sheet;
+    const draft = { ...ui.draft, slot: ui.draft.slot || sheet.slot };
+    const now = new Date();
+    await commitAction((current) => {
+      if (sheet.type === "template") {
+        return sheet.taskId
+          ? updateTemplateTask(current, sheet.weekday, sheet.slot, sheet.taskId, draft)
+          : addTemplateTask(current, sheet.weekday, draft.slot, draft);
+      }
+      return sheet.taskId
+        ? updateTask(current, sheet.date, sheet.slot, sheet.taskId, draft, now)
+        : addTask(current, sheet.date, draft.slot, draft, now);
+    }, { close: true });
+  },
+  async "delete-task"() {
+    const sheet = ui.sheet;
+    if (!sheet?.taskId) return;
+    await commitAction((current) => (
+      sheet.type === "template"
+        ? deleteTemplateTask(current, sheet.weekday, sheet.slot, sheet.taskId)
+        : deleteTask(current, sheet.date, sheet.slot, sheet.taskId, new Date())
+    ), { close: true, ring: true });
+  },
+  "close-sheet"() {
+    closeSheet();
+  },
+  "select-date"(el) {
+    ui.selectedDate = el.dataset.date;
+    ui.selectedWeekday = null;
+    ui.keepScroll = true;
+    paint();
+  },
+  "select-weekday"(el) {
+    ui.selectedWeekday = el.dataset.weekday;
+    ui.keepScroll = true;
+    paint();
+  },
+  "week-mode"(el) {
+    ui.weekMode = el.dataset.mode;
+    ui.keepScroll = false;
+    paint();
+  },
+  async "save-weekday"(el) {
+    await commitAction((current) => copyDayToTemplate(current, el.dataset.date));
+    toast(`Saved ${formatPretty(el.dataset.date)} onto the template.`);
+  },
+  async "apply-template"() {
+    let filled = 0;
+    await commitAction((current) => {
+      const result = applyTemplateToOpenDays(current, dateKey(new Date()), new Date());
+      filled = result.filled;
+      return result.state;
+    });
+    toast(filled ? `Filled ${filled} open day${filled === 1 ? "" : "s"}.` : "Every day this week is already started.");
+  },
+  async "use-template-day"(el) {
+    await commitAction((current) => replaceDayFromTemplate(current, el.dataset.date, new Date()), { ring: true });
+  },
+  "open-generate"() {
+    openSheet(
+      { type: "generate" },
+      { goals: state.settings.goals, key: state.settings.geminiApiKey, error: "", loading: false, preview: null },
+    );
+  },
+  async "run-generate"() {
+    const token = ++genToken;
+    ui.draft.loading = true;
+    ui.draft.error = "";
+    ui.keepScroll = true;
+    paint();
+    try {
+      const plan = await generateWeek(ui.draft.key, ui.draft.goals, AbortSignal.timeout(35000));
+      if (token !== genToken || !ui.draft) return;
+      ui.draft.preview = plan;
+      ui.draft.loading = false;
+      await commitAction((current) => patchSettings(current, { goals: ui.draft.goals, geminiApiKey: ui.draft.key }), { quiet: true });
+    } catch (error) {
+      if (token !== genToken || !ui.draft) return;
+      ui.draft.loading = false;
+      ui.draft.error = error.message || "Gemini didn't answer.";
+      ui.keepScroll = true;
+      paint();
+    }
+  },
+  async "apply-generate"() {
+    const plan = ui.draft?.preview;
+    if (!plan) return;
+    let filled = 0;
+    await commitAction((current) => {
+      const result = applyGeneratedPlan(current, plan, dateKey(new Date()), new Date());
+      filled = result.filled;
+      return result.state;
+    }, { close: true });
+    toast(filled ? `Applied to ${filled} open day${filled === 1 ? "" : "s"}.` : "The template updated. Started days were left alone.");
+  },
+  "open-workout"() {
+    openSheet(
+      { type: "workout" },
+      { name: "", kind: "strength", date: dateKey(new Date()), sets: [{ reps: "", weight: "" }], minutes: "", km: "", notes: "", error: "" },
+    );
+  },
+  "set-kind"(el) {
+    ui.draft.kind = el.dataset.kind;
+    ui.keepScroll = true;
+    paint();
+  },
+  "add-set"() {
+    ui.draft.sets.push({ reps: "", weight: "" });
+    ui.keepScroll = true;
+    paint();
+  },
+  "remove-set"(el) {
+    if ((ui.draft.sets || []).length < 2) return;
+    ui.draft.sets.splice(Number(el.dataset.index), 1);
+    ui.keepScroll = true;
+    paint();
+  },
+  async "save-workout"() {
+    const parsed = readWorkout(ui.draft);
+    if (parsed.error) {
+      ui.draft.error = parsed.error;
+      ui.keepScroll = true;
+      paint();
+      return;
+    }
+    const button = document.querySelector('.sheet button[type="submit"]');
+    const at = button ? pointOf(button) : { x: window.innerWidth / 2, y: window.innerHeight * 0.7 };
+    await commitAction((current) => addWorkout(current, parsed, new Date()), {
+      close: true,
+      pop: { text: "+40 XP", ...at, kind: "xp" },
+    });
+  },
+  "open-exercise"(el) {
+    ui.exercise = el.dataset.name;
+    ui.keepScroll = false;
+    ui.enter = true;
+    paint();
+  },
+  "close-exercise"() {
+    ui.exercise = null;
+    ui.keepScroll = false;
+    paint();
+  },
+  "delete-workout"(el) {
+    ui.confirm = {
+      title: "Delete this session?",
+      body: "The 40 XP comes off with it.",
+      label: "Delete",
+      action: "delete-workout",
+      id: el.dataset.id,
+    };
+    paint();
+  },
+  "dismiss-hint"() {
+    commitAction((current) => patchSettings(current, { dismissedHint: true }), { quiet: true });
+  },
+  "dismiss-levelup"() {
+    ui.levelUp = null;
+    ui.keepScroll = true;
+    paint();
+  },
+  "ask-buy-theme"(el) {
+    const theme = THEMES.find((item) => item.id === el.dataset.theme);
+    if (!theme) return;
+    ui.confirm = {
+      title: `Get ${theme.name}?`,
+      body: `Spend ${theme.price} crystals. You can switch back whenever you want.`,
+      label: "Spend",
+      action: "buy-theme",
+      theme: theme.id,
+    };
+    paint();
+  },
+  "ask-buy-freeze"() {
+    ui.confirm = {
+      title: "Buy a streak freeze?",
+      body: `Spend ${FREEZE_PRICE} crystals. It covers one missed day, and only if you own enough for the whole gap.`,
+      label: "Spend",
+      action: "buy-freeze",
+    };
+    paint();
+  },
+  "equip-theme"(el) {
+    commitAction((current) => equipTheme(current, el.dataset.theme), { quiet: true });
+  },
+  "toggle-setting"(el) {
+    const key = el.dataset.key;
+    commitAction((current) => patchSettings(current, { [key]: !current.settings[key] }), { quiet: true });
+  },
+  "toggle-reveal"() {
+    ui.revealKey = !ui.revealKey;
+    ui.keepScroll = true;
+    paint();
+  },
+  "confirm-no"() {
+    ui.confirm = null;
+    ui.pendingImport = null;
+    ui.keepScroll = true;
+    paint();
+  },
+  async "confirm-yes"() {
+    const confirm = ui.confirm;
+    if (!confirm) return;
+    ui.confirm = null;
+    if (confirm.action === "buy-theme") {
+      await commitAction((current) => {
+        const result = buyTheme(current, confirm.theme, new Date());
+        return result.ok ? result.state : current;
+      }, { quiet: true });
+      toast("Theme equipped.");
+      return;
+    }
+    if (confirm.action === "buy-freeze") {
+      await commitAction((current) => {
+        const result = buyFreeze(current, new Date());
+        return result.ok ? result.state : current;
+      });
+      return;
+    }
+    if (confirm.action === "delete-workout") {
+      await commitAction((current) => deleteWorkout(current, confirm.id, new Date()), {
+        pop: { text: "−40 XP", x: window.innerWidth / 2, y: 180, kind: "down" },
+      });
+      return;
+    }
+    if (confirm.action === "import" && ui.pendingImport) {
+      const prepared = prepare(ui.pendingImport, new Date());
+      state = prepared.state;
+      ensureRivalHistory(state, prepared.today);
+      ui.pendingImport = null;
+      await saveState(state);
+      ui.keepScroll = false;
+      paint();
+      toast("Backup imported.");
+      syncReminderSchedule(state).catch(() => {});
+      return;
+    }
+    if (confirm.action === "reset") {
+      try {
+        await kvClear();
+      } catch {
+        /* mirror still clears */
+      }
+      try {
+        localStorage.removeItem("ember-state");
+      } catch {
+        /* ignore */
+      }
+      const prepared = prepare(createInitialState(new Date()), new Date());
+      state = prepared.state;
+      ensureRivalHistory(state, prepared.today);
+      await saveState(state);
+      ui.tab = "today";
+      ui.lookDate = null;
+      ui.exercise = null;
+      setHash("today");
+      paint();
+      toast("Ember is empty again.");
+      syncReminderSchedule(state).catch(() => {});
+    }
+  },
+  "ask-reset"() {
+    ui.confirm = {
+      title: "Erase Ember on this phone?",
+      body: "Quests, XP, workouts, crystals, and the Gemini key go with it. Export a backup first if you want one.",
+      label: "Erase",
+      action: "reset",
+    };
+    paint();
+  },
+  export() {
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `ember-backup-${dateKey(new Date())}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  },
+  import() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "application/json";
+    input.addEventListener("change", async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        const raw = JSON.parse(await file.text());
+        ui.pendingImport = sanitizeImport(raw);
+        ui.confirm = {
+          title: "Replace this phone’s data?",
+          body: "Quests, XP, workouts, and the saved key will be overwritten by the file.",
+          label: "Import",
+          action: "import",
+        };
+        paint();
+      } catch (error) {
+        toast(error.message || "Couldn't read that file.");
+      }
+    });
+    input.click();
+  },
+  async "enable-notify"() {
+    const result = await enableNotifications();
+    await refreshNotify();
+    if (!result.ok) toast(result.reason);
+    else {
+      toast("Reminders can fire while Ember is open.");
+      syncReminderSchedule(state).catch(() => {});
+    }
+    paint();
+  },
+  async install() {
+    if (!ui.installEvent) return;
+    ui.installEvent.prompt();
+    await ui.installEvent.userChoice.catch(() => {});
+    ui.installEvent = null;
+    paint();
+  },
+};
+
+function readWorkout(draft) {
+  const kind = draft.kind === "cardio" ? "cardio" : "strength";
+  const name = (draft.name || "").trim();
+  if (!name) return { error: "Name the exercise." };
+  const date = draft.date || dateKey(new Date());
+  if (kind === "cardio") {
+    const durationMin = parseNum(draft.minutes) || 0;
+    const distanceKm = parseNum(draft.km) || 0;
+    if (durationMin <= 0 && distanceKm <= 0) return { error: "Add minutes, kilometres, or both." };
+    return { name, kind, date, durationMin, distanceKm, notes: draft.notes || "", sets: [] };
+  }
+  const sets = (draft.sets || [])
+    .map((set) => ({ reps: parseNum(set.reps), weightKg: parseNum(set.weight) ?? 0 }))
+    .filter((set) => set.reps > 0);
+  if (!sets.length) return { error: "Add at least one set with reps. Weight can be 0." };
+  return { name, kind, date, sets, notes: draft.notes || "" };
+}
+
+async function refreshNotify() {
+  ui.notifyState = globalThis.Notification?.permission || "unsupported";
+  ui.periodic = await periodicStatus();
+}
+
+function bind() {
+  const app = document.getElementById("app");
+  app.addEventListener("click", (event) => {
+    const el = event.target.closest("[data-action]");
+    if (!el || el.disabled) return;
+    scrape();
+    const run = actions[el.dataset.action];
+    if (run) run(el, event);
+  });
+  app.addEventListener("submit", (event) => {
+    const form = event.target.closest("form[data-form]");
+    if (!form) return;
+    event.preventDefault();
+    scrape();
+    actions[form.dataset.form]?.();
+  });
+  app.addEventListener("input", (event) => {
+    const el = event.target.closest("[data-bind]");
+    if (!el) return;
+    if (el.dataset.commit === "settings") {
+      clearTimeout(el._emberTimer);
+      const bindName = el.dataset.bind;
+      const value = el.value;
+      el._emberTimer = setTimeout(() => {
+        commitAction((current) => patchSettings(current, { [bindName]: value }), { quiet: true });
+      }, 350);
+      return;
+    }
+    if (ui.draft) assign(ui.draft, el.dataset.bind, el.type === "checkbox" ? el.checked : el.value);
+  });
+  app.addEventListener("change", (event) => {
+    const el = event.target.closest("[data-bind]");
+    if (!el || !ui.draft || el.dataset.commit === "settings") return;
+    assign(ui.draft, el.dataset.bind, el.type === "checkbox" ? el.checked : el.value);
+  });
+  window.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (ui.confirm) actions["confirm-no"]();
+    else if (ui.levelUp) actions["dismiss-levelup"]();
+    else if (ui.sheet) closeSheet();
+  });
+  window.addEventListener("popstate", () => {
+    if (ui.ignorePop) {
+      ui.ignorePop = false;
+      return;
+    }
+    if (ui.sheet) {
+      genToken += 1;
+      ui.sheet = null;
+      ui.draft = null;
+      ui.keepScroll = true;
+      paint();
+    }
+  });
+  window.addEventListener("hashchange", () => {
+    const tab = tabFromHash();
+    if (tab === ui.tab) return;
+    ui.tab = tab;
+    ui.enter = true;
+    ui.keepScroll = false;
+    paint();
+  });
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    ui.installEvent = event;
+    if (ui.tab === "you") paint();
+  });
+  navigator.serviceWorker?.addEventListener("message", (event) => {
+    if (event.data?.type !== "OPEN_TODAY") return;
+    ui.lookDate = event.data.date && event.data.date !== dateKey(new Date()) ? event.data.date : null;
+    ui.tab = "today";
+    setHash("today");
+    paint();
+  });
+}
+
+async function boot() {
+  ui.tab = tabFromHash();
+  ui.notifyState = globalThis.Notification?.permission || "unsupported";
+  let loaded = null;
+  try {
+    loaded = await loadState();
+  } catch {
+    loaded = null;
+  }
+  let initial = createInitialState(new Date());
+  if (loaded) {
+    try {
+      initial = sanitizeImport(loaded);
+    } catch {
+      initial = createInitialState(new Date());
+    }
+  }
+  const prepared = prepare(initial, new Date());
+  state = prepared.state;
+  ensureRivalHistory(state, prepared.today);
+  try {
+    await saveState(state);
+  } catch (error) {
+    toast(error.message || "Couldn't save on this phone.");
+  }
+  bind();
+  paint();
+  if (prepared.freezesUsed.length) {
+    const days = prepared.freezesUsed.map((entry) => formatPretty(entry.date)).join(" and ");
+    toast(`Freeze covered ${days}. Streak kept.`);
+  }
+  await registerServiceWorker();
+  watchReminders(() => state);
+  syncReminderSchedule(state).catch(() => {});
+  refreshNotify().then(() => {
+    if (ui.tab === "you") paint();
+  });
+}
+
+boot();

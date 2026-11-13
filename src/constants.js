@@ -1,0 +1,97 @@
+export const TZ = "Europe/Stockholm";
+
+export const XP_TASK = 25;
+export const XP_WORKOUT = 40;
+
+export const CRYSTAL_LEVEL = 6;
+export const CRYSTAL_FULL = 3;
+export const CRYSTAL_STREAK_DAY = 1;
+export const CRYSTAL_MILESTONES = { 7: 4, 14: 6, 30: 10 };
+export const FREEZE_PRICE = 16;
+
+/** Total XP required to arrive at each level. Index 0 is level 1. */
+export const LEVEL_START = [0, 50, 150, 300, 500, 750, 1100, 1550, 2100, 2800];
+
+export const SLOTS = ["morning", "afternoon", "evening"];
+
+export const SLOT_LABEL = {
+  morning: "Morning",
+  afternoon: "Afternoon",
+  evening: "Evening",
+};
+
+export const THEMES = [
+  { id: "ember", name: "Ember", price: 0, blurb: "Warm dark. The one you start with." },
+  { id: "pine", name: "Pine", price: 10, blurb: "Deep green, quieter nights." },
+  { id: "frost", name: "Frost", price: 10, blurb: "Cold blue, sharp mornings." },
+  { id: "ink", name: "Ink", price: 14, blurb: "Black and gold, no noise." },
+];
+
+export const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-flash-latest"];
+
+export const DEFAULT_GOALS =
+  "Get better at programming, train three times a week, sleep before 23:00, and feel more comfortable talking to people.";
+
+export const WEEKDAY_QUESTS = [
+  {
+    slot: "morning",
+    title: "Get outside for 10 minutes",
+    why: "Light and cold air wake you up faster than your phone.",
+    time: "07:20",
+  },
+  {
+    slot: "morning",
+    title: "Make your bed",
+    why: "One finished thing before the day starts.",
+    time: "07:35",
+  },
+  {
+    slot: "afternoon",
+    title: "45 minutes of focused coding",
+    why: "Skill grows in one unbroken block, not in tabs.",
+    time: "16:00",
+  },
+  {
+    slot: "evening",
+    title: "Train or walk for 20 minutes",
+    why: "A day feels finished when your body has worked.",
+    time: "18:30",
+  },
+  {
+    slot: "evening",
+    title: "Plan tomorrow in five lines",
+    why: "Morning-you shouldn't have to decide from scratch.",
+    time: "21:15",
+  },
+];
+
+export const WEEKEND_QUESTS = [
+  {
+    slot: "morning",
+    title: "Easy start, then a walk",
+    why: "Daylight first, phone second.",
+    time: "09:30",
+  },
+  {
+    slot: "afternoon",
+    title: "Build something for an hour",
+    why: "One real thing, not a tour of apps.",
+    time: "14:00",
+  },
+  {
+    slot: "evening",
+    title: "Be with people, or actually rest",
+    why: "Both count. Doomscrolling doesn't.",
+    time: "19:00",
+  },
+];
+
+export const SUGGESTED_EXERCISES = [
+  "Bench press",
+  "Squat",
+  "Deadlift",
+  "Pull-up",
+  "Run",
+  "Walk",
+  "Bike",
+];
