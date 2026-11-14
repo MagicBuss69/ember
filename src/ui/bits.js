@@ -22,7 +22,7 @@ export function ringHtml(done, total, pulse) {
 }
 
 export function levelBar(progress, total, pulse) {
-  const pct = (progress.pct * 100).toFixed(2);
+  const scale = Math.max(0, Math.min(1, Number(progress.pct) || 0)).toFixed(4);
   const right = progress.maxed
     ? `${formatNum(total)} XP`
     : `${formatNum(progress.into)} / ${formatNum(progress.span)}`;
@@ -33,7 +33,7 @@ export function levelBar(progress, total, pulse) {
         <span class="num">${right}</span>
       </div>
       <div class="bar ${pulse ? "pulse" : ""}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(progress.pct * 100)}" aria-label="Level progress">
-        <span data-bar style="width:${pct}%"></span>
+        <span data-bar data-pct="${scale}" style="transform:scaleX(${scale})"></span>
       </div>
     </div>`;
 }
@@ -45,6 +45,14 @@ export function emptyState({ title, body, actions = "" }) {
       <p>${esc(body)}</p>
       ${actions}
     </div>`;
+}
+
+export function reorderBarHtml(hasAny, reordering) {
+  if (!hasAny) return "";
+  return `<div class="today-tools">
+    ${reordering ? `<span class="reorder-hint">Drag a grip, hold a quest, or tap arrows to move across slots.</span>` : `<span></span>`}
+    <button type="button" class="ghost slim ${reordering ? "is-on" : ""}" data-action="toggle-reorder" aria-pressed="${reordering ? "true" : "false"}">${reordering ? "Done" : "Reorder"}</button>
+  </div>`;
 }
 
 export function questRows({
@@ -67,7 +75,7 @@ export function questRows({
       const titleHtml = `<span class="quest-head"><span class="quest-title">${esc(task.title)}</span>${eventBadge}</span>`;
       if (readOnly) {
         return `
-          <div class="quest ${task.done ? "done" : ""} ${task.isEvent ? "is-event" : ""} is-readonly">
+          <div class="quest ${task.done ? "done" : ""} ${task.isEvent ? "is-event" : ""} is-readonly" data-row-id="${esc(task.id)}">
             <span class="check static" aria-hidden="true"><i class="${task.done ? "is-done" : ""}"></i></span>
             <div class="quest-body static">
               ${titleHtml}
@@ -76,7 +84,7 @@ export function questRows({
           </div>`;
       }
       const where = template
-        ? `data-weekday="${weekday}" data-slot="${slot}" data-id="${esc(task.id)}"`
+        ? `data-template="true" data-weekday="${weekday}" data-slot="${slot}" data-id="${esc(task.id)}"`
         : `data-date="${date}" data-slot="${slot}" data-id="${esc(task.id)}"`;
       const check = template || !canToggle
         ? ""
@@ -92,11 +100,11 @@ export function questRows({
       const grip = movable
         ? `<button type="button" class="grip" data-grip ${where} aria-label="Drag to move: ${esc(task.title)}">${icon("grip")}</button>`
         : "";
-      const rowAttrs = movable
-        ? `data-quest data-date="${date}" data-slot="${slot}" data-id="${esc(task.id)}"`
-        : "";
+      const rowAttrs = `data-row-id="${esc(task.id)}" ${movable ? `data-quest ${where}` : ""}`;
+      const noCheck = template || !canToggle;
+      const toggled = justDoneId === task.id ? "just-toggled" : "";
       return `
-        <div class="quest ${task.done ? "done" : ""} ${task.isEvent ? "is-event" : ""} ${!template && !canToggle ? "no-check" : ""} ${reordering ? "reordering" : ""}" ${rowAttrs}>
+        <div class="quest ${task.done ? "done" : ""} ${task.isEvent ? "is-event" : ""} ${noCheck ? "no-check" : ""} ${reordering ? "reordering" : ""} ${toggled}" ${rowAttrs}>
           ${check}
           <button type="button" class="quest-body" data-action="${template ? "edit-template" : "edit-task"}" ${where}>
             ${titleHtml}
@@ -130,7 +138,10 @@ export function slotSection({
   canToggle = true,
 }) {
   const done = items.filter((task) => task.done).length;
-  const dropAttrs = movable ? `data-slot-drop="${slot}" data-date="${date}"` : "";
+  const dropTarget = template
+    ? `data-template="true" data-weekday="${weekday}"`
+    : `data-date="${date}"`;
+  const dropAttrs = movable ? `data-slot-drop="${slot}" ${dropTarget}` : "";
   const countText = template || !canToggle ? String(items.length) : `${done}/${items.length}`;
   return `
     <section class="slot">

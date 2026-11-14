@@ -31,12 +31,14 @@ import {
   deleteWorkout,
   equipTheme,
   moveTask,
+  moveTemplateTask,
   occupiedCopyTargets,
   patchSettings,
   prepare,
   replaceDayFromTemplate,
   setTaskDone,
   stepTask,
+  stepTemplateTask,
   updateTask,
   updateTemplateTask,
 } from "./domain.js";
@@ -57,8 +59,16 @@ import { addDays, dateKey, formatPretty, weekStart } from "./time.js";
 import { render, shellError } from "./ui/render.js";
 
 const TABS = ["today", "week", "train", "rivals", "you"];
+const THEME_BG = {
+  ember: "#100e0c",
+  pine: "#0d1210",
+  frost: "#0c1016",
+  ink: "#070708",
+};
 
 let state = createInitialState();
+let appliedTheme = "";
+let prevListScope = "";
 const ui = {
   tab: "today",
   lookDate: null,
@@ -126,35 +136,172 @@ function scrape() {
   }
 }
 
+function prefersReducedMotion() {
+  return Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches);
+}
+
+function currentListScope() {
+  return `${ui.tab}|${ui.lookDate || ""}|${ui.weekMode}|${ui.selectedDate || ""}|${ui.selectedWeekday || ""}|${ui.calDate || ""}`;
+}
+
+function stageClosingNode(node, durationMs = 190) {
+  if (!node) return;
+  const fxRoot = document.getElementById("fx");
+  if (!fxRoot) return;
+  node.querySelectorAll("[id]").forEach((el) => el.removeAttribute("id"));
+  if (node.id) node.removeAttribute("id");
+  node.inert = true;
+  node.setAttribute("aria-hidden", "true");
+  node.classList.remove("is-steady");
+  node.classList.add("is-closing");
+  fxRoot.appendChild(node);
+  let done = false;
+  const cleanup = () => {
+    if (done) return;
+    done = true;
+    node.remove();
+  };
+  node.addEventListener("animationend", (event) => {
+    if (event.target === node) cleanup();
+  });
+  setTimeout(cleanup, durationMs + 60);
+}
+
 function paint() {
+  const reduced = prefersReducedMotion();
   const active = document.activeElement;
   const activeId = active?.id || "";
   const selStart = active?.selectionStart;
   const selEnd = active?.selectionEnd;
+  const appEl = document.getElementById("app");
   const scrolling = document.getElementById("main");
   const scroll = ui.keepScroll ? scrolling?.scrollTop || 0 : 0;
-  const prevBar = document.querySelector("[data-bar]")?.style.width || null;
-  const prevRing = document.querySelector("[data-ring]")?.style.strokeDashoffset || null;
+  const prevBar = appEl.querySelector("[data-bar]")?.dataset.pct || null;
+  const prevRing = appEl.querySelector("[data-ring]")?.style.strokeDashoffset || null;
+
+  const existingScrim = appEl.querySelector(".scrim");
+  const existingSheet = appEl.querySelector(".sheet");
+  const existingConfirm = appEl.querySelector(".confirm");
+  const existingLevelup = appEl.querySelector(".levelup");
+  const wasSheetOpen = Boolean(existingSheet);
+  const wasConfirmOpen = Boolean(existingConfirm);
+  const wasLevelupOpen = Boolean(existingLevelup);
+
+  const nextScope = currentListScope();
+  const canFlip = !reduced && !ui.enter && prevListScope === nextScope && Boolean(scrolling);
+  let firstTops = null;
+  if (canFlip) {
+    firstTops = new Map();
+    scrolling.querySelectorAll("[data-row-id]").forEach((row) => {
+      firstTops.set(row.dataset.rowId, row.getBoundingClientRect().top);
+    });
+  }
+  prevListScope = nextScope;
+
+  if (!reduced) {
+    if (wasSheetOpen && !ui.sheet) {
+      stageClosingNode(existingScrim, 180);
+      stageClosingNode(existingSheet, 190);
+    }
+    if (wasConfirmOpen && !ui.confirm) stageClosingNode(existingConfirm, 160);
+    if (wasLevelupOpen && !ui.levelUp) stageClosingNode(existingLevelup, 170);
+  }
+
+  const nextTheme = state.settings?.theme || "ember";
+  if (nextTheme !== appliedTheme) {
+    appliedTheme = nextTheme;
+    document.documentElement.dataset.theme = nextTheme;
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute("content", THEME_BG[nextTheme] || "#100e0c");
+  }
+
   try {
-    document.documentElement.dataset.theme = state.settings?.theme || "ember";
-    document.getElementById("app").innerHTML = render(state, ui, new Date());
+    appEl.innerHTML = render(state, ui, new Date());
   } catch (error) {
     console.error(error);
-    document.getElementById("app").innerHTML = shellError(error.message || "Something broke while drawing Ember.");
+    appEl.innerHTML = shellError(error.message || "Something broke while drawing Ember.");
     return;
   }
-  const theme = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme || "#100e0c");
+
+  if (wasSheetOpen && ui.sheet) {
+    appEl.querySelector(".scrim")?.classList.add("is-steady");
+    appEl.querySelector(".sheet")?.classList.add("is-steady");
+  }
+  if (wasConfirmOpen && ui.confirm) appEl.querySelector(".confirm-card")?.classList.add("is-steady");
+  if (wasLevelupOpen && ui.levelUp) appEl.querySelector(".levelup-card")?.classList.add("is-steady");
+
   const nextMain = document.getElementById("main");
   if (nextMain && ui.keepScroll) nextMain.scrollTop = scroll;
-  animateWidth(document.querySelector("[data-bar]"), prevBar);
-  animateOffset(document.querySelector("[data-ring]"), prevRing);
+
+  const barEl = appEl.querySelector("[data-bar]");
+  const ringEl = appEl.querySelector("[data-ring]");
+  const movedRows = [];
+
+  if (firstTops && nextMain) {
+    const rows = [...nextMain.querySelectorAll("[data-row-id]")];
+    const measured = rows.map((row) => {
+      const id = row.dataset.rowId;
+      const prevTop = firstTops.get(id);
+      if (prevTop == null) return { row, added: firstTops.size > 0, dy: 0 };
+      return { row, added: false, dy: prevTop - row.getBoundingClientRect().top };
+    });
+    for (const item of measured) {
+      if (item.added) {
+        item.row.classList.add("quest-enter");
+      } else if (Math.abs(item.dy) > 1 && Math.abs(item.dy) < 640) {
+        item.row.style.transition = "none";
+        item.row.style.willChange = "transform";
+        item.row.style.transform = `translate3d(0, ${Math.round(item.dy)}px, 0)`;
+        movedRows.push(item.row);
+      }
+    }
+  }
+
+  const nextBar = barEl?.dataset.pct || null;
+  const animateBar = !reduced && Boolean(barEl && prevBar != null && nextBar && prevBar !== nextBar);
+  if (animateBar) {
+    barEl.style.transition = "none";
+    barEl.style.transform = `scaleX(${prevBar})`;
+  }
+
+  const nextRing = ringEl?.style.strokeDashoffset || null;
+  const animateRing = !reduced && Boolean(ringEl && prevRing != null && nextRing && prevRing !== nextRing);
+  if (animateRing) {
+    ringEl.style.transition = "none";
+    ringEl.style.strokeDashoffset = prevRing;
+  }
+
+  if (movedRows.length || animateBar || animateRing) {
+    requestAnimationFrame(() => {
+      for (const row of movedRows) {
+        row.style.transition = "transform 200ms var(--ease)";
+        row.style.transform = "translate3d(0, 0, 0)";
+        const clearFlip = () => {
+          row.style.transition = "";
+          row.style.transform = "";
+          row.style.willChange = "";
+        };
+        row.addEventListener("transitionend", clearFlip, { once: true });
+        setTimeout(clearFlip, 240);
+      }
+      if (animateBar && barEl) {
+        barEl.style.transition = "";
+        barEl.style.transform = `scaleX(${nextBar})`;
+      }
+      if (animateRing && ringEl) {
+        ringEl.style.transition = "";
+        ringEl.style.strokeDashoffset = nextRing;
+      }
+    });
+  }
+
   if (ui.scrollTo) {
     document.getElementById(ui.scrollTo)?.scrollIntoView({ block: "start" });
     ui.scrollTo = null;
   }
   if (ui.focusSheet) {
-    document.querySelector(".sheet input, .sheet textarea")?.focus();
+    appEl.querySelector(".sheet input, .sheet textarea")?.focus();
     ui.focusSheet = false;
   } else if (activeId) {
     const next = document.getElementById(activeId);
@@ -173,30 +320,6 @@ function paint() {
   updateBadge();
 }
 
-function animateWidth(el, prev) {
-  if (!el || prev == null) return;
-  const next = el.style.width;
-  if (!next || prev === next) return;
-  el.style.transition = "none";
-  el.style.width = prev;
-  requestAnimationFrame(() => {
-    el.style.transition = "";
-    el.style.width = next;
-  });
-}
-
-function animateOffset(el, prev) {
-  if (!el || prev == null) return;
-  const next = el.style.strokeDashoffset;
-  if (!next || prev === next) return;
-  el.style.transition = "none";
-  el.style.strokeDashoffset = prev;
-  requestAnimationFrame(() => {
-    el.style.transition = "";
-    el.style.strokeDashoffset = next;
-  });
-}
-
 function toast(text) {
   if (!text) return;
   const root = document.getElementById("fx");
@@ -206,19 +329,20 @@ function toast(text) {
   root.appendChild(el);
   const live = document.getElementById("live");
   if (live) live.textContent = text;
-  setTimeout(() => el.remove(), 3200);
+  setTimeout(() => el.remove(), 2600);
 }
 
 function floater(text, x, y, kind) {
   const el = document.createElement("div");
   el.className = `floater ${kind || "xp"}`;
   el.textContent = text;
-  el.style.left = `${Math.round(x)}px`;
-  el.style.top = `${Math.round(y)}px`;
+  el.style.setProperty("--fx-x", `${Math.round(x)}px`);
+  el.style.setProperty("--fx-y", `${Math.round(y)}px`);
   document.getElementById("fx").appendChild(el);
   const live = document.getElementById("live");
   if (live) live.textContent = text;
-  el.addEventListener("animationend", () => el.remove());
+  el.addEventListener("animationend", () => el.remove(), { once: true });
+  setTimeout(() => el.remove(), 600);
 }
 
 function blip(kind) {
@@ -302,11 +426,7 @@ async function commitWrapped(mutator, fx = {}) {
     ui.sheet = null;
     ui.draft = null;
   }
-  try {
-    await saveState(state);
-  } catch (error) {
-    toast(error.message || "Couldn't save on this phone.");
-  }
+  const saving = saveState(state);
   const level = levelFor(totalXp(state));
   ui.barPulse = totalXp(state) > prevXp;
   ui.gemShine = state.crystals > beforeCrystals;
@@ -321,6 +441,11 @@ async function commitWrapped(mutator, fx = {}) {
     floater(fx.pop.text, fx.pop.x, fx.pop.y, fx.pop.kind);
     blip(fx.pop.kind === "down" ? "down" : "tick");
     haptic(fx.pop.kind === "down" ? "down" : "tick");
+  }
+  try {
+    await saving;
+  } catch (error) {
+    toast(error.message || "Couldn't save on this phone.");
   }
   if (fx.close && history.state?.sheet) {
     ui.ignorePop = true;
@@ -379,8 +504,14 @@ const actions = {
   },
   async "step-quest"(el) {
     haptic("tick");
+    const dir = Number(el.dataset.dir);
+    const isTemplate = el.dataset.template === "true" || Boolean(el.dataset.weekday);
     await commitAction(
-      (current) => stepTask(current, el.dataset.date, el.dataset.slot, el.dataset.id, Number(el.dataset.dir), new Date()),
+      (current) => (
+        isTemplate
+          ? stepTemplateTask(current, el.dataset.weekday, el.dataset.slot, el.dataset.id, dir)
+          : stepTask(current, el.dataset.date, el.dataset.slot, el.dataset.id, dir, new Date())
+      ),
       { quiet: true },
     );
   },
@@ -407,11 +538,13 @@ const actions = {
     const next = addDays(current, Number(el.dataset.dir));
     if (next > today || next < addDays(today, -120)) return;
     ui.lookDate = next === today ? null : next;
+    ui.enter = true;
     ui.keepScroll = false;
     paint();
   },
   "jump-today"() {
     ui.lookDate = null;
+    ui.enter = true;
     ui.keepScroll = false;
     paint();
   },
@@ -499,12 +632,14 @@ const actions = {
     paint();
   },
   "week-mode"(el) {
+    if (ui.weekMode === el.dataset.mode) return;
     ui.weekMode = el.dataset.mode;
     if (ui.weekMode === "calendar") {
       const today = dateKey(new Date());
       if (!ui.calDate) ui.calDate = today;
       if (!ui.calMonth) ui.calMonth = monthKey(ui.calDate);
     }
+    ui.enter = true;
     ui.keepScroll = false;
     paint();
   },
@@ -689,6 +824,7 @@ const actions = {
   },
   "close-exercise"() {
     ui.exercise = null;
+    ui.enter = true;
     ui.keepScroll = false;
     paint();
   },
@@ -1159,10 +1295,38 @@ async function runCopyDay() {
 }
 
 function bindQuestDrag(app) {
+  const LONG_PRESS_MS = 360;
+  const SCROLL_SLOP_PX = 8;
   let drag = null;
+  let pendingHold = null;
+  let suppressClickOnRow = null;
+  let suppressTimer = 0;
+
+  function armClickSuppression(row) {
+    clearTimeout(suppressTimer);
+    suppressClickOnRow = row;
+    suppressTimer = setTimeout(() => {
+      suppressClickOnRow = null;
+    }, 120);
+  }
+
+  function cancelHold() {
+    if (!pendingHold) return;
+    clearTimeout(pendingHold.timer);
+    pendingHold = null;
+  }
+
+  function matchingDropCards() {
+    if (!drag) return [];
+    return [...app.querySelectorAll("[data-slot-drop]")].filter((card) => (
+      drag.isTemplate
+        ? card.dataset.template === "true" && card.dataset.weekday === drag.weekday
+        : card.dataset.template !== "true" && card.dataset.date === drag.date
+    ));
+  }
 
   function pickDrop(clientY) {
-    const cards = [...app.querySelectorAll("[data-slot-drop]")];
+    const cards = matchingDropCards();
     if (!cards.length) return null;
     let card = cards.find((el) => {
       const r = el.getBoundingClientRect();
@@ -1215,30 +1379,66 @@ function bindQuestDrag(app) {
     }
   }
 
-  function finish(commitMove) {
+  let ghostRaf = 0;
+  let pendingGhostY = null;
+
+  function scheduleGhostMove(clientY) {
     if (!drag) return;
-    const current = drag;
-    drag = null;
-    current.ghost.remove();
-    current.marker.remove();
-    current.row.classList.remove("is-dragging");
-    app.querySelectorAll("[data-slot-drop].drop-over").forEach((el) => el.classList.remove("drop-over"));
-    document.body.classList.remove("dragging-quest");
-    if (!commitMove || !current.moved) return;
-    haptic("tick");
-    commitAction(
-      (s) => moveTask(s, current.date, current.fromSlot, current.id, current.toSlot, current.toIndex, new Date()),
-      { quiet: true },
-    );
+    pendingGhostY = clientY;
+    if (ghostRaf) return;
+    ghostRaf = requestAnimationFrame(() => {
+      ghostRaf = 0;
+      if (!drag || pendingGhostY == null) return;
+      const y = pendingGhostY;
+      pendingGhostY = null;
+      moveGhost(y);
+    });
   }
 
-  app.addEventListener("pointerdown", (event) => {
-    const grip = event.target.closest("[data-grip]");
-    if (!grip || (event.pointerType === "mouse" && event.button !== 0)) return;
-    const row = grip.closest("[data-quest]");
-    if (!row) return;
+  function flushGhostMove() {
+    if (ghostRaf) {
+      cancelAnimationFrame(ghostRaf);
+      ghostRaf = 0;
+    }
+    if (drag && pendingGhostY != null) {
+      const y = pendingGhostY;
+      pendingGhostY = null;
+      moveGhost(y);
+    }
+  }
+
+  function onActivePointerMove(event) {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    if (Math.abs(event.clientY - drag.startY) > 3) drag.moved = true;
     event.preventDefault();
+    scheduleGhostMove(event.clientY);
+  }
+
+  function onActiveTouchMove(event) {
+    if (!drag) return;
+    event.preventDefault();
+    const touch = event.touches?.[0];
+    if (touch) {
+      if (Math.abs(touch.clientY - drag.startY) > 3) drag.moved = true;
+      scheduleGhostMove(touch.clientY);
+    }
+  }
+
+  function attachActiveDragListeners() {
+    window.addEventListener("pointermove", onActivePointerMove, { passive: false });
+    window.addEventListener("touchmove", onActiveTouchMove, { passive: false });
+  }
+
+  function detachActiveDragListeners() {
+    window.removeEventListener("pointermove", onActivePointerMove);
+    window.removeEventListener("touchmove", onActiveTouchMove);
+  }
+
+  function startDrag({ row, pointerId, clientY, captureEl, fromHold = false }) {
     const rect = row.getBoundingClientRect();
+    const parentCard = row.closest("[data-slot-drop]");
+    const siblings = parentCard ? [...parentCard.querySelectorAll("[data-quest]")] : [];
+    const fromIndex = Math.max(0, siblings.indexOf(row));
     const ghost = row.cloneNode(true);
     ghost.classList.add("quest-drag-ghost");
     ghost.style.left = `${Math.round(rect.left)}px`;
@@ -1249,52 +1449,178 @@ function bindQuestDrag(app) {
     marker.className = "quest-drop-line";
     row.classList.add("is-dragging");
     document.body.classList.add("dragging-quest");
-    try {
-      grip.setPointerCapture(event.pointerId);
-    } catch {
-      /* synthetic pointers may not capture */
+    if (captureEl?.setPointerCapture && pointerId != null) {
+      try {
+        captureEl.setPointerCapture(pointerId);
+      } catch {
+        /* synthetic or touch-held pointers may not capture */
+      }
     }
     haptic("tick");
+    const isTemplate = row.dataset.template === "true" || Boolean(row.dataset.weekday);
     drag = {
-      pointerId: event.pointerId,
+      pointerId,
       row,
       ghost,
       marker,
-      startY: event.clientY,
-      offsetY: event.clientY - rect.top,
+      startY: clientY,
+      offsetY: Math.min(Math.max(12, clientY - rect.top), Math.max(12, rect.height - 12)),
       moved: false,
-      date: row.dataset.date,
+      fromHold,
+      isTemplate,
+      date: row.dataset.date || "",
+      weekday: row.dataset.weekday || "",
       fromSlot: row.dataset.slot,
+      fromIndex,
       toSlot: row.dataset.slot,
-      toIndex: 0,
+      toIndex: fromIndex,
       id: row.dataset.id,
     };
-    moveGhost(event.clientY);
+    attachActiveDragListeners();
+    moveGhost(clientY);
+  }
+
+  function finish(commitMove) {
+    cancelHold();
+    if (!drag) return;
+    flushGhostMove();
+    detachActiveDragListeners();
+    const current = drag;
+    drag = null;
+    current.ghost.remove();
+    current.marker.remove();
+    current.row.classList.remove("is-dragging");
+    app.querySelectorAll("[data-slot-drop].drop-over").forEach((el) => el.classList.remove("drop-over"));
+    document.body.classList.remove("dragging-quest");
+    if (current.fromHold) armClickSuppression(current.row);
+    const sameSpot = current.fromSlot === current.toSlot && current.toIndex === current.fromIndex;
+    if (!commitMove || !current.moved || sameSpot) return;
+    haptic("tick");
+    commitAction(
+      (s) => (
+        current.isTemplate
+          ? moveTemplateTask(s, current.weekday, current.fromSlot, current.id, current.toSlot, current.toIndex)
+          : moveTask(s, current.date, current.fromSlot, current.id, current.toSlot, current.toIndex, new Date())
+      ),
+      { quiet: true },
+    );
+  }
+
+  app.addEventListener("pointerdown", (event) => {
+    if (drag) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+
+    const grip = event.target.closest("[data-grip]");
+    if (grip) {
+      const row = grip.closest("[data-quest]");
+      if (!row) return;
+      event.preventDefault();
+      cancelHold();
+      startDrag({
+        row,
+        pointerId: event.pointerId,
+        clientY: event.clientY,
+        captureEl: grip,
+        fromHold: false,
+      });
+      return;
+    }
+
+    // Touch long-press on a movable quest row (without blocking normal vertical scroll).
+    if (event.pointerType !== "touch") return;
+    if (event.target.closest(".check, .move-btns")) return;
+    const row = event.target.closest("[data-quest]");
+    if (!row) return;
+    cancelHold();
+    const hold = {
+      pointerId: event.pointerId,
+      row,
+      startX: event.clientX,
+      startY: event.clientY,
+      lastY: event.clientY,
+      timer: 0,
+    };
+    hold.timer = setTimeout(() => {
+      if (pendingHold !== hold || drag) return;
+      pendingHold = null;
+      startDrag({
+        row: hold.row,
+        pointerId: hold.pointerId,
+        clientY: hold.lastY,
+        captureEl: hold.row,
+        fromHold: true,
+      });
+    }, LONG_PRESS_MS);
+    pendingHold = hold;
+  });
+
+  app.addEventListener("scroll", () => {
+    if (pendingHold && !drag) cancelHold();
+  }, true);
+
+  app.addEventListener("contextmenu", (event) => {
+    if (drag || pendingHold || event.target.closest("[data-grip]")) {
+      event.preventDefault();
+    }
   });
 
   window.addEventListener("pointermove", (event) => {
-    if (!drag || event.pointerId !== drag.pointerId) return;
-    if (Math.abs(event.clientY - drag.startY) > 3) drag.moved = true;
-    event.preventDefault();
-    moveGhost(event.clientY);
-  }, { passive: false });
+    if (!pendingHold || event.pointerId !== pendingHold.pointerId) return;
+    pendingHold.lastY = event.clientY;
+    const dist = Math.hypot(event.clientX - pendingHold.startX, event.clientY - pendingHold.startY);
+    if (dist > SCROLL_SLOP_PX) cancelHold();
+  }, { passive: true });
+
+  window.addEventListener("touchmove", (event) => {
+    if (!pendingHold) return;
+    const touch = event.touches?.[0];
+    if (!touch) return;
+    pendingHold.lastY = touch.clientY;
+    const dist = Math.hypot(touch.clientX - pendingHold.startX, touch.clientY - pendingHold.startY);
+    if (dist > SCROLL_SLOP_PX) cancelHold();
+  }, { passive: true });
 
   window.addEventListener("pointerup", (event) => {
+    if (pendingHold && event.pointerId === pendingHold.pointerId) cancelHold();
     if (!drag || event.pointerId !== drag.pointerId) return;
     finish(true);
-  });
+  }, { passive: true });
 
   window.addEventListener("pointercancel", (event) => {
+    if (pendingHold && event.pointerId === pendingHold.pointerId) cancelHold();
     if (!drag || event.pointerId !== drag.pointerId) return;
     finish(false);
-  });
+  }, { passive: true });
+
+  window.addEventListener("touchend", () => {
+    if (pendingHold) cancelHold();
+    if (drag) finish(true);
+  }, { passive: true });
+
+  window.addEventListener("touchcancel", () => {
+    if (pendingHold) cancelHold();
+    if (drag) finish(false);
+  }, { passive: true });
+
+  return (target) => {
+    if (!suppressClickOnRow) return false;
+    const hit = target?.closest?.("[data-quest]") === suppressClickOnRow || !suppressClickOnRow.isConnected;
+    clearTimeout(suppressTimer);
+    suppressClickOnRow = null;
+    return hit;
+  };
 }
 
 function bind() {
   const app = document.getElementById("app");
   ensureBackupInput();
-  bindQuestDrag(app);
+  const shouldSuppressClick = bindQuestDrag(app);
   app.addEventListener("click", (event) => {
+    if (shouldSuppressClick(event.target)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     const el = event.target.closest("[data-action]");
     if (!el || el.disabled) return;
     scrape();

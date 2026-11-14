@@ -370,6 +370,48 @@ export function deleteTemplateTask(state, weekday, slot, taskId) {
   return next;
 }
 
+/**
+ * Move a template quest on `weekday` (`"1"`..`"7"`) to `toSlot` at `toIndex`
+ * (0-based in destination after removal). Works within a slot or across Morning / Afternoon / Evening.
+ */
+export function moveTemplateTask(state, weekday, fromSlot, taskId, toSlot, toIndex) {
+  const next = clone(state);
+  if (!SLOTS.includes(fromSlot) || !SLOTS.includes(toSlot)) return next;
+  const slots = next.template?.[String(weekday)];
+  if (!slots) return next;
+  const fromList = slots[fromSlot];
+  const fromIndex = fromList?.findIndex((item) => item.id === taskId) ?? -1;
+  if (fromIndex < 0) return next;
+  const [task] = fromList.splice(fromIndex, 1);
+  const dest = slots[toSlot];
+  const clamped = Math.max(0, Math.min(dest.length, Number.isFinite(toIndex) ? Math.trunc(toIndex) : dest.length));
+  dest.splice(clamped, 0, task);
+  return next;
+}
+
+/** Step a template quest one position up (`dir = -1`) or down (`dir = 1`), crossing slots at the edges. */
+export function stepTemplateTask(state, weekday, slot, taskId, dir) {
+  const wd = String(weekday);
+  const slots = state.template?.[wd];
+  if (!slots || !SLOTS.includes(slot)) return clone(state);
+  const list = slots[slot] || [];
+  const index = list.findIndex((item) => item.id === taskId);
+  if (index < 0) return clone(state);
+  const step = dir < 0 ? -1 : 1;
+  if (step < 0) {
+    if (index > 0) return moveTemplateTask(state, wd, slot, taskId, slot, index - 1);
+    const slotIdx = SLOTS.indexOf(slot);
+    if (slotIdx <= 0) return clone(state);
+    const prevSlot = SLOTS[slotIdx - 1];
+    return moveTemplateTask(state, wd, slot, taskId, prevSlot, (slots[prevSlot] || []).length);
+  }
+  if (index < list.length - 1) return moveTemplateTask(state, wd, slot, taskId, slot, index + 1);
+  const slotIdx = SLOTS.indexOf(slot);
+  if (slotIdx < 0 || slotIdx >= SLOTS.length - 1) return clone(state);
+  const nextSlot = SLOTS[slotIdx + 1];
+  return moveTemplateTask(state, wd, slot, taskId, nextSlot, 0);
+}
+
 export function copyDayToTemplate(state, date) {
   const next = clone(state);
   const day = next.days[date];

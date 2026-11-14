@@ -5,7 +5,9 @@
    Exact clock alarms are not available in shipping Chrome. See the README.
 */
 const BASE = "/ember/";
-const CACHE = "ember-shell-v3";
+const ICON_URL = `${BASE}icons/icon-192.png`;
+const BADGE_URL = `${BASE}icons/badge-96.png`;
+const CACHE = "ember-shell-v4";
 const DB_NAME = "ember";
 const DB_VERSION = 1;
 const STORE = "kv";
@@ -15,7 +17,8 @@ const SHELL = [
   BASE,
   `${BASE}index.html`,
   `${BASE}manifest.webmanifest`,
-  `${BASE}icons/icon-192.png`,
+  ICON_URL,
+  BADGE_URL,
   `${BASE}icons/icon-512.png`,
   `${BASE}icons/icon-maskable-512.png`,
 ];
@@ -103,8 +106,8 @@ self.addEventListener("push", (event) => {
       tag,
       silent: Boolean(already),
       renotify: false,
-      icon: `${BASE}icons/icon-192.png`,
-      badge: `${BASE}icons/badge-96.png`,
+      icon: ICON_URL,
+      badge: BADGE_URL,
       data: { date: data.date || "" },
     });
     if (!already) await kvSet(flagKey, Date.now()).catch(() => {});
@@ -179,8 +182,8 @@ async function pump() {
     await self.registration.showNotification(record.title, {
       body: record.body,
       tag: record.tag,
-      icon: `${BASE}icons/icon-192.png`,
-      badge: `${BASE}icons/badge-96.png`,
+      icon: ICON_URL,
+      badge: BADGE_URL,
       data: { date: record.date, taskId: record.taskId },
     });
     await kvSet(`flag:${record.tag}`, now);

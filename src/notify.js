@@ -4,11 +4,15 @@ import { syncPushSchedule } from "./pushClient.js";
 import { addDays, dateKey, zonedTimeToUtc } from "./time.js";
 
 const PERIODIC_TAG = "ember-reminders";
-const BASE = import.meta.env?.BASE_URL || "/ember/";
+const RAW_BASE = import.meta.env?.BASE_URL || "/ember/";
+const BASE = RAW_BASE.endsWith("/") ? RAW_BASE : `${RAW_BASE}/`;
 
-function publicUrl(file) {
-  return `${BASE}${file}`;
+export function publicUrl(file) {
+  return `${BASE}${String(file || "").replace(/^\/+/, "")}`;
 }
+
+export const NOTIFICATION_ICON = publicUrl("icons/icon-192.png");
+export const NOTIFICATION_BADGE = publicUrl("icons/badge-96.png");
 
 /** One tag per quest occurrence, shared with the worker's push, so a reminder never shows twice. */
 export function questTag(date, time, title) {
@@ -46,8 +50,8 @@ async function showNow(registration, record) {
   await registration.showNotification(record.title, {
     body: record.body,
     tag: record.tag,
-    icon: publicUrl("icons/icon-192.png"),
-    badge: publicUrl("icons/badge-96.png"),
+    icon: NOTIFICATION_ICON,
+    badge: NOTIFICATION_BADGE,
     data: { date: record.date, taskId: record.taskId },
     vibrate: [18, 40, 18],
   });
@@ -96,8 +100,8 @@ async function scheduleOrPump(registration, records) {
         await registration.showNotification(record.title, {
           body: record.body,
           tag: record.tag,
-          icon: publicUrl("icons/icon-192.png"),
-          badge: publicUrl("icons/badge-96.png"),
+          icon: NOTIFICATION_ICON,
+          badge: NOTIFICATION_BADGE,
           data: { date: record.date, taskId: record.taskId },
           showTrigger: new TimestampTrigger(record.when),
         });
