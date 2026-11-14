@@ -15,6 +15,14 @@ import { emptyState, levelBar, reorderBarHtml, ringHtml, slotSection } from "./b
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const DOW = ["M", "T", "W", "T", "F", "S", "S"];
 
+function slotOpts(state, ui, extra) {
+  return {
+    doneSlotsOpen: state.settings?.doneSlotsOpen || {},
+    collapsingId: ui.collapsingId || null,
+    ...extra,
+  };
+}
+
 function gapNote(gap, freezes) {
   if (!gap.length) return "";
   const when = gap.length === 1 ? formatPretty(gap[0]) : `${gap.length} days`;
@@ -56,16 +64,18 @@ export function viewToday(state, ui, now) {
       });
     } else {
       body = SLOTS.map((slot) =>
-        slotSection({
-          slot,
-          items: day.slots[slot] || [],
-          nowSlot: lookingToday ? nowSlot : null,
-          date,
-          template: false,
-          justDoneId: ui.justDoneId,
-          movable: true,
-          reordering: Boolean(ui.reordering),
-        }),
+        slotSection(
+          slotOpts(state, ui, {
+            slot,
+            items: day.slots[slot] || [],
+            nowSlot: lookingToday ? nowSlot : null,
+            date,
+            template: false,
+            justDoneId: ui.justDoneId,
+            movable: true,
+            reordering: Boolean(ui.reordering),
+          }),
+        ),
       ).join("");
     }
   }
@@ -88,7 +98,7 @@ export function viewToday(state, ui, now) {
             <button type="button" class="icon-btn" data-action="shift-day" data-dir="1" aria-label="Next day" ${lookingToday ? "disabled" : ""}>${icon("chevR")}</button>
           </div>
           ${levelBar(progress, totalXp(state), ui.barPulse)}
-          <p class="streak-line">${icon("flame")} ${streak ? `${streak}-day streak` : "No streak yet"}</p>
+          <p class="streak-line ${streak >= 7 ? "heat-3" : streak >= 3 ? "heat-2" : streak >= 1 ? "heat-1" : ""}">${icon("flame")} ${streak ? `${streak}-day streak` : "No streak yet"}</p>
         </div>
       </div>
       ${!lookingToday ? `<button type="button" class="ghost slim" data-action="jump-today">Back to today</button>` : ""}
@@ -150,29 +160,33 @@ export function viewWeek(state, ui, now) {
   const reorderBar = reorderBarHtml(hasAny, Boolean(ui.reordering));
   const sections = mode === "week"
     ? SLOTS.map((slot) =>
-        slotSection({
-          slot,
-          items: state.days[selected]?.slots?.[slot] || [],
-          nowSlot: selected === today ? currentSlot(now) : null,
-          date: selected,
-          template: false,
-          justDoneId: ui.justDoneId,
-          movable: true,
-          reordering: Boolean(ui.reordering),
-          canToggle: selected <= today,
-        }),
+        slotSection(
+          slotOpts(state, ui, {
+            slot,
+            items: state.days[selected]?.slots?.[slot] || [],
+            nowSlot: selected === today ? currentSlot(now) : null,
+            date: selected,
+            template: false,
+            justDoneId: ui.justDoneId,
+            movable: true,
+            reordering: Boolean(ui.reordering),
+            canToggle: selected <= today,
+          }),
+        ),
       ).join("")
     : SLOTS.map((slot) =>
-        slotSection({
-          slot,
-          items: state.template[weekday]?.[slot] || [],
-          date: "",
-          weekday,
-          template: true,
-          justDoneId: null,
-          movable: true,
-          reordering: Boolean(ui.reordering),
-        }),
+        slotSection(
+          slotOpts(state, ui, {
+            slot,
+            items: state.template[weekday]?.[slot] || [],
+            date: "",
+            weekday,
+            template: true,
+            justDoneId: null,
+            movable: true,
+            reordering: Boolean(ui.reordering),
+          }),
+        ),
       ).join("");
   const actions = mode === "week"
     ? `<div class="stack-actions">
@@ -235,15 +249,17 @@ function calendarBody(state, ui, now, today) {
       dayBody = SLOTS.map((slot) => {
         const items = day.slots[slot] || [];
         if (!items.length) return "";
-        return slotSection({
-          slot,
-          items,
-          nowSlot: null,
-          date: calDate,
-          template: false,
-          justDoneId: null,
-          readOnly: true,
-        });
+        return slotSection(
+          slotOpts(state, ui, {
+            slot,
+            items,
+            nowSlot: null,
+            date: calDate,
+            template: false,
+            justDoneId: null,
+            readOnly: true,
+          }),
+        );
       }).join("");
     }
   } else {
@@ -253,17 +269,19 @@ function calendarBody(state, ui, now, today) {
       : "";
     const reorderBar = reorderBarHtml(summary.totalCount > 0, Boolean(ui.reordering));
     const slotsHtml = SLOTS.map((slot) =>
-      slotSection({
-        slot,
-        items: day?.slots?.[slot] || [],
-        nowSlot: isToday ? nowSlot : null,
-        date: calDate,
-        template: false,
-        justDoneId: ui.justDoneId,
-        movable: true,
-        reordering: Boolean(ui.reordering),
-        canToggle: isToday,
-      }),
+      slotSection(
+        slotOpts(state, ui, {
+          slot,
+          items: day?.slots?.[slot] || [],
+          nowSlot: isToday ? nowSlot : null,
+          date: calDate,
+          template: false,
+          justDoneId: ui.justDoneId,
+          movable: true,
+          reordering: Boolean(ui.reordering),
+          canToggle: isToday,
+        }),
+      ),
     ).join("");
     dayBody = `
       <div class="cal-quick">
@@ -391,9 +409,15 @@ export function viewRivals(state, ui, now) {
         <p class="detail">${esc(board.same.detail)}</p>
         <div class="race">
           <div class="race-row"><span>You today</span><span class="num">${formatNum(board.same.todayXp)}</span></div>
-          <div class="track"><span style="transform:scaleX(${Math.max(0, Math.min(1, board.same.youPct)).toFixed(4)})"></span></div>
+          <div class="track race-live" style="--you-pct:${Math.max(0, Math.min(1, board.same.youPct)).toFixed(4)}">
+            <span style="transform:scaleX(${Math.max(0, Math.min(1, board.same.youPct)).toFixed(4)})"></span>
+            <i class="race-pin you" style="left:calc(${Math.max(0, Math.min(1, board.same.youPct)).toFixed(4)} * 100%)" aria-hidden="true"></i>
+          </div>
           <div class="race-row"><span>Last ${esc(board.same.weekdayName)}</span><span class="num">${formatNum(board.same.thenXp)}</span></div>
-          <div class="track ghost"><span style="transform:scaleX(${Math.max(0, Math.min(1, board.same.ghostPct)).toFixed(4)})"></span></div>
+          <div class="track ghost race-ghost" style="--ghost-pct:${Math.max(0, Math.min(1, board.same.ghostPct)).toFixed(4)}">
+            <span style="transform:scaleX(${Math.max(0, Math.min(1, board.same.ghostPct)).toFixed(4)})"></span>
+            <i class="race-pin ghost" style="left:calc(${Math.max(0, Math.min(1, board.same.ghostPct)).toFixed(4)} * 100%)" aria-hidden="true"></i>
+          </div>
         </div>
       </article>
       <article class="card tone-${board.pace.tone}">
