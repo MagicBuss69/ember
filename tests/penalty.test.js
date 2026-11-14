@@ -8,6 +8,7 @@ import { totalXp } from "../src/stats.js";
 test("penalty applies XP loss and injects a penalty quest on next prepare", () => {
   const seeded = new Date("2026-11-11T08:00:00Z");
   let state = createInitialState(seeded);
+  state.startedOn = "2026-11-08";
   const day = "2026-11-10";
   const slots = state.days[day].slots;
   for (const slot of ["morning", "afternoon", "evening"]) {
@@ -39,6 +40,7 @@ test("upgrade today does not penalize incomplete days before penaltySince", () =
 
 test("a missed day on or after penaltySince triggers a penalty", () => {
   let state = createInitialState(new Date("2026-11-14T08:00:00Z"));
+  state.startedOn = "2026-11-12";
   const anchor = "2026-11-13";
   const task = state.days[anchor].slots.morning[0];
   state = setTaskDone(state, anchor, "morning", task.id, true, new Date(`${anchor}T08:00:00.000Z`));

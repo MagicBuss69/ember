@@ -54,11 +54,16 @@ export function streakCount(state, today) {
 
 /** Missed dates immediately before today (incomplete days with quests). */
 export function rawGap(state, today) {
+  const started = state.startedOn || today;
+  const since = state.penaltySince || started;
+  const floor = started > since ? started : since;
   const dates = [];
   let cursor = addDays(today, -1);
   for (let i = 0; i < 21; i += 1) {
+    if (cursor < floor || cursor <= started) break;
     if (isComplete(state, cursor)) return dates.reverse();
-    if (taskCount(state, cursor) > 0) dates.push(cursor);
+    const total = taskCount(state, cursor);
+    if (total > 0 && !isFullDay(state, cursor)) dates.push(cursor);
     cursor = addDays(cursor, -1);
   }
   return dates.reverse();

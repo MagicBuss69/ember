@@ -11,6 +11,7 @@ test("must-do quest count scales with missed days", () => {
 
 test("open must-do penalties freeze shard earnings", () => {
   let state = createInitialState(new Date("2026-11-14T08:00:00Z"));
+  state.startedOn = "2026-11-13";
   state.penaltySince = "2026-11-14";
   const day = "2026-11-13";
   const task = state.days[day].slots.morning[0];
