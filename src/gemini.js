@@ -12,6 +12,45 @@ Quests are concrete actions. No medical claims, no extreme diets, no supplements
 Goals:
 `;
 
+export function geminiKeyEnding(key) {
+  const trimmed = String(key || "").trim();
+  if (trimmed.length < 4) return "";
+  return trimmed.slice(-4);
+}
+
+export function decideGeminiSave({ online, status }) {
+  if (!online) return { action: "save", status: "offline" };
+  if (status === 200 || status === 429) return { action: "save", status: "ok" };
+  if (status === 400 || status === 401 || status === 403) {
+    return {
+      action: "reject",
+      message: "That key was refused. Check it in Google AI Studio. Nothing was saved.",
+    };
+  }
+  if (status == null) {
+    return { action: "reject", message: "Couldn't reach Gemini. Nothing was saved." };
+  }
+  return { action: "reject", message: "Gemini didn't accept that check. Nothing was saved." };
+}
+
+/** Cheap models-list check. The key is never written to a log or an error string. */
+export async function checkGeminiKey(key) {
+  const online = typeof navigator === "undefined" ? true : navigator.onLine !== false;
+  if (!online) return decideGeminiSave({ online: false });
+  try {
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1", {
+      method: "GET",
+      headers: { "x-goog-api-key": key },
+    });
+    return decideGeminiSave({ online: true, status: response.status });
+  } catch {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      return decideGeminiSave({ online: false });
+    }
+    return decideGeminiSave({ online: true, status: null });
+  }
+}
+
 export function extractJson(text) {
   const trimmed = String(text || "").trim();
   const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);

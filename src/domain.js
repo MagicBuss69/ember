@@ -91,6 +91,11 @@ export function createInitialState(now = new Date()) {
       sound: true,
       haptics: true,
       dismissedHint: false,
+      geminiKeyStatus: "",
+      driveLinked: false,
+      driveLastBackupOn: "",
+      workerToken: "",
+      pushOn: false,
     },
     crystals: 0,
     crystalLog: [],
@@ -277,6 +282,48 @@ export function deleteTask(state, date, slot, taskId, now = new Date()) {
   return next;
 }
 
+/**
+ * Move a quest to `toSlot` at `toIndex` (0-based in the destination after removal).
+ * Works within a slot or across Morning / Afternoon / Evening; XP and done state stay attached.
+ */
+export function moveTask(state, date, fromSlot, taskId, toSlot, toIndex, now = new Date()) {
+  const next = clone(state);
+  if (!SLOTS.includes(fromSlot) || !SLOTS.includes(toSlot)) return next;
+  const slots = next.days[date]?.slots;
+  if (!slots) return next;
+  const fromList = slots[fromSlot];
+  const fromIndex = fromList?.findIndex((item) => item.id === taskId) ?? -1;
+  if (fromIndex < 0) return next;
+  const [task] = fromList.splice(fromIndex, 1);
+  const dest = slots[toSlot];
+  const clamped = Math.max(0, Math.min(dest.length, Number.isFinite(toIndex) ? Math.trunc(toIndex) : dest.length));
+  dest.splice(clamped, 0, task);
+  settle(next, { today: dateKey(now), touchDate: date, now });
+  return next;
+}
+
+/** Step a quest one position up (`dir = -1`) or down (`dir = 1`), crossing slots at the edges. */
+export function stepTask(state, date, slot, taskId, dir, now = new Date()) {
+  const slots = state.days[date]?.slots;
+  if (!slots || !SLOTS.includes(slot)) return clone(state);
+  const list = slots[slot] || [];
+  const index = list.findIndex((item) => item.id === taskId);
+  if (index < 0) return clone(state);
+  const step = dir < 0 ? -1 : 1;
+  if (step < 0) {
+    if (index > 0) return moveTask(state, date, slot, taskId, slot, index - 1, now);
+    const slotIdx = SLOTS.indexOf(slot);
+    if (slotIdx <= 0) return clone(state);
+    const prevSlot = SLOTS[slotIdx - 1];
+    return moveTask(state, date, slot, taskId, prevSlot, (slots[prevSlot] || []).length, now);
+  }
+  if (index < list.length - 1) return moveTask(state, date, slot, taskId, slot, index + 1, now);
+  const slotIdx = SLOTS.indexOf(slot);
+  if (slotIdx < 0 || slotIdx >= SLOTS.length - 1) return clone(state);
+  const nextSlot = SLOTS[slotIdx + 1];
+  return moveTask(state, date, slot, taskId, nextSlot, 0, now);
+}
+
 export function addTemplateTask(state, weekday, slot, fields) {
   const next = clone(state);
   const task = blueprint(fields);
@@ -447,6 +494,11 @@ export function patchSettings(state, patch) {
   if (typeof patch.sound === "boolean") next.settings.sound = patch.sound;
   if (typeof patch.haptics === "boolean") next.settings.haptics = patch.haptics;
   if (typeof patch.dismissedHint === "boolean") next.settings.dismissedHint = patch.dismissedHint;
+  if (typeof patch.geminiKeyStatus === "string") next.settings.geminiKeyStatus = patch.geminiKeyStatus.slice(0, 20);
+  if (typeof patch.driveLinked === "boolean") next.settings.driveLinked = patch.driveLinked;
+  if (typeof patch.driveLastBackupOn === "string") next.settings.driveLastBackupOn = patch.driveLastBackupOn.slice(0, 10);
+  if (typeof patch.workerToken === "string") next.settings.workerToken = patch.workerToken.trim().slice(0, 200);
+  if (typeof patch.pushOn === "boolean") next.settings.pushOn = patch.pushOn;
   return next;
 }
 

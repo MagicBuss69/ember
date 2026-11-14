@@ -27,6 +27,11 @@ export function sanitizeImport(raw) {
     sound: raw.settings?.sound !== false,
     haptics: raw.settings?.haptics !== false,
     dismissedHint: Boolean(raw.settings?.dismissedHint),
+    geminiKeyStatus: clip(raw.settings?.geminiKeyStatus, 20),
+    driveLinked: Boolean(raw.settings?.driveLinked),
+    driveLastBackupOn: isDate(raw.settings?.driveLastBackupOn) ? raw.settings.driveLastBackupOn : "",
+    workerToken: clip(raw.settings?.workerToken, 200),
+    pushOn: Boolean(raw.settings?.pushOn),
   };
   state.crystals = nonNegInt(raw.crystals);
   state.freezes = nonNegInt(raw.freezes);

@@ -6,6 +6,11 @@ import "@fontsource/fraunces/latin-600.css";
 import "./styles.css";
 
 import { sanitizeImport } from "./backup.js";
+import { GOOGLE_CLIENT_ID } from "./config.js";
+import { downloadBackup, listBackups, pruneBackups, restoreKeepingSecrets, uploadBackup } from "./drive.js";
+import { requestDriveToken } from "./driveAuth.js";
+import { checkGeminiKey } from "./gemini.js";
+import { disableClosedReminders, enableClosedReminders } from "./pushClient.js";
 import { FREEZE_PRICE, THEMES } from "./constants.js";
 import {
   addTask,
@@ -21,10 +26,12 @@ import {
   deleteTemplateTask,
   deleteWorkout,
   equipTheme,
+  moveTask,
   patchSettings,
   prepare,
   replaceDayFromTemplate,
   setTaskDone,
+  stepTask,
   updateTask,
   updateTemplateTask,
 } from "./domain.js";
@@ -345,9 +352,23 @@ const actions = {
     ui.enter = true;
     ui.keepScroll = false;
     ui.exercise = null;
+    ui.reordering = false;
     setHash(ui.tab);
     if (ui.tab === "you") refreshNotify().then(() => paint());
     paint();
+  },
+  "toggle-reorder"() {
+    ui.reordering = !ui.reordering;
+    ui.keepScroll = true;
+    haptic("tick");
+    paint();
+  },
+  async "step-quest"(el) {
+    haptic("tick");
+    await commitAction(
+      (current) => stepTask(current, el.dataset.date, el.dataset.slot, el.dataset.id, Number(el.dataset.dir), new Date()),
+      { quiet: true },
+    );
   },
   "goto-shop"() {
     ui.tab = "you";
@@ -495,7 +516,11 @@ const actions = {
       if (token !== genToken || !ui.draft) return;
       ui.draft.preview = plan;
       ui.draft.loading = false;
-      await commitAction((current) => patchSettings(current, { goals: ui.draft.goals, geminiApiKey: ui.draft.key }), { quiet: true });
+      await commitAction((current) => patchSettings(current, {
+        goals: ui.draft.goals,
+        geminiApiKey: ui.draft.key,
+        geminiKeyStatus: ui.draft.key ? "ok" : current.settings.geminiKeyStatus,
+      }), { quiet: true });
     } catch (error) {
       if (token !== genToken || !ui.draft) return;
       ui.draft.loading = false;
@@ -610,9 +635,110 @@ const actions = {
     commitAction((current) => patchSettings(current, { [key]: !current.settings[key] }), { quiet: true });
   },
   "toggle-reveal"() {
+    const input = document.getElementById("gemini-key");
+    if (input) ui.geminiDraft = input.value;
     ui.revealKey = !ui.revealKey;
     ui.keepScroll = true;
     paint();
+  },
+  "replace-gemini"() {
+    ui.editingGemini = true;
+    ui.geminiDraft = state.settings.geminiApiKey || "";
+    ui.geminiError = "";
+    ui.revealKey = false;
+    ui.keepScroll = true;
+    paint();
+  },
+  "ask-remove-gemini"() {
+    ui.confirm = {
+      title: "Remove the Gemini key?",
+      body: "Week generation turns off until you paste a key again. Quests you already have stay.",
+      label: "Remove",
+      action: "remove-gemini",
+    };
+    paint();
+  },
+  async "save-gemini"() {
+    const input = document.getElementById("gemini-key");
+    const key = (input?.value ?? ui.geminiDraft ?? "").trim();
+    const current = state.settings.geminiApiKey || "";
+    if (!key || key === current) return;
+    ui.geminiDraft = key;
+    ui.geminiBusy = true;
+    ui.geminiError = "";
+    ui.keepScroll = true;
+    paint();
+    const result = await checkGeminiKey(key);
+    if (result.action === "reject") {
+      ui.geminiBusy = false;
+      ui.geminiError = result.message;
+      ui.keepScroll = true;
+      paint();
+      return;
+    }
+    await commitAction((currentState) => patchSettings(currentState, {
+      geminiApiKey: key,
+      geminiKeyStatus: result.status,
+    }), { quiet: true });
+    ui.geminiBusy = false;
+    ui.editingGemini = false;
+    ui.geminiDraft = "";
+    ui.geminiError = "";
+    ui.keepScroll = true;
+    paint();
+  },
+  async "drive-backup"() {
+    if (!GOOGLE_CLIENT_ID) return;
+    try {
+      ui.driveStatus = "Backing up…";
+      paint();
+      await backupToDrive(false);
+      toast("Backed up to Google Drive.");
+    } catch (error) {
+      ui.driveStatus = "";
+      toast(error.message || "Drive backup didn't finish.");
+      paint();
+    }
+  },
+  async "drive-restore"() {
+    if (!GOOGLE_CLIENT_ID) return;
+    try {
+      const access = await requestDriveToken(state.settings.driveLinked ? "" : "consent");
+      ui.driveFiles = await listBackups(access);
+      ui.sheet = { type: "drive" };
+      ui.focusSheet = false;
+      ui.keepScroll = true;
+      if (!history.state?.sheet) history.pushState({ sheet: true }, "");
+      paint();
+    } catch (error) {
+      toast(error.message || "Couldn't open Drive.");
+    }
+  },
+  "drive-pick"(el) {
+    const file = (ui.driveFiles || []).find((item) => item.id === el.dataset.id);
+    ui.confirm = {
+      title: "Restore this backup?",
+      body: "Quests, XP, and workouts on this phone will be replaced. Your Gemini key stays if this backup doesn't include one.",
+      label: "Restore",
+      action: "drive-restore-file",
+      id: el.dataset.id,
+      name: file?.name || "Backup",
+    };
+    paint();
+  },
+  async "push-on"() {
+    try {
+      await enableClosedReminders(state);
+      await commitAction((current) => patchSettings(current, { pushOn: true }), { quiet: true });
+      toast("Closed-app reminders are on.");
+    } catch (error) {
+      toast(error.message || "Couldn't turn on closed-app reminders.");
+    }
+  },
+  async "push-off"() {
+    await disableClosedReminders(state);
+    await commitAction((current) => patchSettings(current, { pushOn: false }), { quiet: true });
+    toast("Closed-app reminders are off. Open-app reminders still work.");
   },
   "confirm-no"() {
     ui.confirm = null;
@@ -655,6 +781,34 @@ const actions = {
       paint();
       toast("Backup imported.");
       syncReminderSchedule(state).catch(() => {});
+      return;
+    }
+    if (confirm.action === "remove-gemini") {
+      await commitAction((current) => patchSettings(current, { geminiApiKey: "", geminiKeyStatus: "" }), { quiet: true });
+      ui.editingGemini = false;
+      ui.geminiDraft = "";
+      ui.geminiError = "";
+      toast("Gemini key removed.");
+      return;
+    }
+    if (confirm.action === "drive-restore-file") {
+      try {
+        const access = await requestDriveToken("");
+        const raw = await downloadBackup(access, confirm.id);
+        const imported = restoreKeepingSecrets(sanitizeImport(raw), state);
+        const prepared = prepare(imported, new Date());
+        state = prepared.state;
+        ensureRivalHistory(state, prepared.today);
+        ui.sheet = null;
+        ui.draft = null;
+        await saveState(state);
+        ui.keepScroll = false;
+        paint();
+        toast("Restored from Google Drive.");
+        syncReminderSchedule(state).catch(() => {});
+      } catch (error) {
+        toast(error.message || "Couldn't restore that backup.");
+      }
       return;
     }
     if (confirm.action === "reset") {
@@ -766,8 +920,141 @@ async function refreshNotify() {
   ui.periodic = await periodicStatus();
 }
 
+function bindQuestDrag(app) {
+  let drag = null;
+
+  function pickDrop(clientY) {
+    const cards = [...app.querySelectorAll("[data-slot-drop]")];
+    if (!cards.length) return null;
+    let card = cards.find((el) => {
+      const r = el.getBoundingClientRect();
+      return clientY >= r.top && clientY <= r.bottom;
+    });
+    if (!card) {
+      let best = Infinity;
+      for (const el of cards) {
+        const r = el.getBoundingClientRect();
+        const d = clientY < r.top ? r.top - clientY : clientY - r.bottom;
+        if (d < best) {
+          best = d;
+          card = el;
+        }
+      }
+    }
+    const slot = card.dataset.slotDrop;
+    const rows = [...card.querySelectorAll("[data-quest]")].filter((el) => el !== drag.row);
+    let index = rows.length;
+    let before = null;
+    for (let i = 0; i < rows.length; i += 1) {
+      const r = rows[i].getBoundingClientRect();
+      if (clientY < r.top + r.height / 2) {
+        index = i;
+        before = rows[i];
+        break;
+      }
+    }
+    return { card, slot, index, before, anchor: card.querySelector(".add") };
+  }
+
+  function moveGhost(clientY) {
+    const y = clientY - drag.offsetY;
+    drag.ghost.style.transform = `translate3d(0, ${Math.round(y)}px, 0)`;
+    const main = document.getElementById("main");
+    if (main) {
+      const mr = main.getBoundingClientRect();
+      if (clientY < mr.top + 56) main.scrollTop -= 10;
+      else if (clientY > mr.bottom - 56) main.scrollTop += 10;
+    }
+    const drop = pickDrop(clientY);
+    if (!drop) return;
+    drag.toSlot = drop.slot;
+    drag.toIndex = drop.index;
+    app.querySelectorAll("[data-slot-drop].drop-over").forEach((el) => el.classList.remove("drop-over"));
+    drop.card.classList.add("drop-over");
+    const ref = drop.before || drop.anchor || null;
+    if (drag.marker.parentElement !== drop.card || drag.marker.nextSibling !== ref) {
+      drop.card.insertBefore(drag.marker, ref);
+    }
+  }
+
+  function finish(commitMove) {
+    if (!drag) return;
+    const current = drag;
+    drag = null;
+    current.ghost.remove();
+    current.marker.remove();
+    current.row.classList.remove("is-dragging");
+    app.querySelectorAll("[data-slot-drop].drop-over").forEach((el) => el.classList.remove("drop-over"));
+    document.body.classList.remove("dragging-quest");
+    if (!commitMove || !current.moved) return;
+    haptic("tick");
+    commitAction(
+      (s) => moveTask(s, current.date, current.fromSlot, current.id, current.toSlot, current.toIndex, new Date()),
+      { quiet: true },
+    );
+  }
+
+  app.addEventListener("pointerdown", (event) => {
+    const grip = event.target.closest("[data-grip]");
+    if (!grip || (event.pointerType === "mouse" && event.button !== 0)) return;
+    const row = grip.closest("[data-quest]");
+    if (!row) return;
+    event.preventDefault();
+    const rect = row.getBoundingClientRect();
+    const ghost = row.cloneNode(true);
+    ghost.classList.add("quest-drag-ghost");
+    ghost.style.left = `${Math.round(rect.left)}px`;
+    ghost.style.width = `${Math.round(rect.width)}px`;
+    ghost.style.transform = `translate3d(0, ${Math.round(rect.top)}px, 0)`;
+    document.getElementById("fx").appendChild(ghost);
+    const marker = document.createElement("div");
+    marker.className = "quest-drop-line";
+    row.classList.add("is-dragging");
+    document.body.classList.add("dragging-quest");
+    try {
+      grip.setPointerCapture(event.pointerId);
+    } catch {
+      /* synthetic pointers may not capture */
+    }
+    haptic("tick");
+    drag = {
+      pointerId: event.pointerId,
+      row,
+      ghost,
+      marker,
+      startY: event.clientY,
+      offsetY: event.clientY - rect.top,
+      moved: false,
+      date: row.dataset.date,
+      fromSlot: row.dataset.slot,
+      toSlot: row.dataset.slot,
+      toIndex: 0,
+      id: row.dataset.id,
+    };
+    moveGhost(event.clientY);
+  });
+
+  window.addEventListener("pointermove", (event) => {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    if (Math.abs(event.clientY - drag.startY) > 3) drag.moved = true;
+    event.preventDefault();
+    moveGhost(event.clientY);
+  }, { passive: false });
+
+  window.addEventListener("pointerup", (event) => {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    finish(true);
+  });
+
+  window.addEventListener("pointercancel", (event) => {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    finish(false);
+  });
+}
+
 function bind() {
   const app = document.getElementById("app");
+  bindQuestDrag(app);
   app.addEventListener("click", (event) => {
     const el = event.target.closest("[data-action]");
     if (!el || el.disabled) return;
@@ -783,8 +1070,17 @@ function bind() {
     actions[form.dataset.form]?.();
   });
   app.addEventListener("input", (event) => {
-    const el = event.target.closest("[data-bind]");
+    const el = event.target.closest("#gemini-key, [data-bind]");
     if (!el) return;
+    if (el.id === "gemini-key") {
+      ui.geminiDraft = el.value;
+      ui.geminiError = "";
+      document.querySelector(".gemini-card .form-error")?.remove();
+      const save = document.querySelector('[data-action="save-gemini"]');
+      const current = state.settings.geminiApiKey || "";
+      if (save) save.disabled = !el.value.trim() || el.value.trim() === current || ui.geminiBusy;
+      return;
+    }
     if (el.dataset.commit === "settings") {
       clearTimeout(el._emberTimer);
       const bindName = el.dataset.bind;
@@ -833,6 +1129,10 @@ function bind() {
     ui.installEvent = event;
     if (ui.tab === "you") paint();
   });
+  window.addEventListener("appinstalled", () => {
+    ui.installEvent = null;
+    if (ui.tab === "you") paint();
+  });
   navigator.serviceWorker?.addEventListener("message", (event) => {
     if (event.data?.type !== "OPEN_TODAY") return;
     ui.lookDate = event.data.date && event.data.date !== dateKey(new Date()) ? event.data.date : null;
@@ -879,6 +1179,24 @@ async function boot() {
   refreshNotify().then(() => {
     if (ui.tab === "you") paint();
   });
+  maybeDailyDriveBackup();
+}
+
+async function backupToDrive(silent) {
+  const access = await requestDriveToken(silent && state.settings.driveLinked ? "" : "consent");
+  await uploadBackup(access, state);
+  await pruneBackups(access, 7);
+  const today = dateKey(new Date());
+  ui.driveStatus = "";
+  await commitAction((current) => patchSettings(current, { driveLinked: true, driveLastBackupOn: today }), { quiet: true });
+}
+
+function maybeDailyDriveBackup() {
+  if (!GOOGLE_CLIENT_ID || !state.settings.driveLinked) return;
+  if (state.settings.driveLastBackupOn === dateKey(new Date())) return;
+  backupToDrive(true).then(() => {
+    toast("Today's backup is on Google Drive.");
+  }).catch(() => {});
 }
 
 boot();

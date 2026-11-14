@@ -1,5 +1,6 @@
 import { SLOTS, SLOT_LABEL } from "./constants.js";
 import { kvGet, kvSet } from "./idb.js";
+import { syncPushSchedule } from "./pushClient.js";
 import { addDays, dateKey, zonedTimeToUtc } from "./time.js";
 
 const PERIODIC_TAG = "ember-reminders";
@@ -66,6 +67,7 @@ export async function syncReminderSchedule(state) {
     await scheduleOrPump(registration, records);
   }
   armTimer(records);
+  syncPushSchedule(state).catch(() => {});
   return records;
 }
 

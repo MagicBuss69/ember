@@ -17,6 +17,9 @@ const PATHS = {
   trash: `<path d="M5 7.5h14M9.5 7.5V5.8h5V7.5M8 7.5l.7 11h6.6l.7-11"/>`,
   back: `<path d="M15 5.5 8.5 12 15 18.5M9 12h9"/>`,
   flame: `<path d="M12 3.5s4.5 3.2 4.5 7.2c0 2.4-1.6 4-3.2 4.6 1-.8 1.4-2 1.2-3.2C13.8 13.6 12 14.8 12 17c-2.8-.4-5-2.6-5-5.8C7 7.2 12 3.5 12 3.5Z"/>`,
+  grip: `<circle cx="9.5" cy="7" r="1" fill="currentColor"/><circle cx="14.5" cy="7" r="1" fill="currentColor"/><circle cx="9.5" cy="12" r="1" fill="currentColor"/><circle cx="14.5" cy="12" r="1" fill="currentColor"/><circle cx="9.5" cy="17" r="1" fill="currentColor"/><circle cx="14.5" cy="17" r="1" fill="currentColor"/>`,
+  up: `<path d="M12 18V6M7 11l5-5 5 5"/>`,
+  down: `<path d="M12 6v12M7 13l5 5 5-5"/>`,
 };
 
 export function icon(name) {

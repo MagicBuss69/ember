@@ -9,8 +9,10 @@ import {
   createInitialState,
   deleteTask,
   deleteWorkout,
+  moveTask,
   prepare,
   setTaskDone,
+  stepTask,
 } from "../src/domain.js";
 import { levelFor, levelProgress } from "../src/economy.js";
 import { isFullDay, rawGap, streakCount, summarizeWeek, totalXp, weekPace } from "../src/stats.js";
@@ -202,3 +204,26 @@ test("template fill skips a day that already has a finished quest", () => {
   assert.equal(filled.state.days["2026-11-13"].slots.morning[0].done, true);
   assert.ok(filled.state.days["2026-11-14"].slots.morning.length > 0);
 });
+
+test("quests reorder within a slot and step across slots while keeping XP", () => {
+  let state = createInitialState(NOW);
+  const day = "2026-11-13";
+  const [first, second] = state.days[day].slots.morning;
+  state = setTaskDone(state, day, "morning", first.id, true, NOW);
+  assert.equal(totalXp(state), XP_TASK);
+
+  state = stepTask(state, day, "morning", first.id, 1, NOW);
+  assert.equal(state.days[day].slots.morning[0].id, second.id);
+  assert.equal(state.days[day].slots.morning[1].id, first.id);
+
+  state = stepTask(state, day, "morning", first.id, 1, NOW);
+  assert.equal(state.days[day].slots.morning.length, 1);
+  assert.equal(state.days[day].slots.afternoon[0].id, first.id);
+
+  state = moveTask(state, day, "afternoon", first.id, "evening", 99, NOW);
+  const evening = state.days[day].slots.evening;
+  assert.equal(evening[evening.length - 1].id, first.id);
+  assert.equal(evening[evening.length - 1].done, true);
+  assert.equal(totalXp(state), XP_TASK);
+});
+

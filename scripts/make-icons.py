@@ -27,15 +27,13 @@ def gem(draw, cx, cy, s):
 
 
 def draw_mark(size, maskable=False):
-    image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    # Opaque square. Transparent corners make Chrome fall back to a shortcut.
+    image = Image.new("RGB", (size, size), BG[:3])
     draw = ImageDraw.Draw(image)
     if maskable:
-        draw.rectangle((0, 0, size, size), fill=BG)
         inset = int(size * 0.22)
     else:
-        radius = int(size * 0.23)
-        draw.rounded_rectangle((0, 0, size - 1, size - 1), radius=radius, fill=BG)
-        inset = int(size * 0.16)
+        inset = int(size * 0.14)
     box = (inset, inset, size - inset - 1, size - inset - 1)
     width = max(4, int(size * 0.045))
     draw.ellipse(box, outline=TRACK, width=width)

@@ -1,4 +1,4 @@
-import { SLOT_LABEL } from "../constants.js";
+import { SLOTS, SLOT_LABEL } from "../constants.js";
 import { formatNum, esc } from "../format.js";
 import { icon } from "../icons.js";
 
@@ -47,9 +47,10 @@ export function emptyState({ title, body, actions = "" }) {
     </div>`;
 }
 
-export function questRows({ items, date, weekday, slot, template, justDoneId }) {
+export function questRows({ items, date, weekday, slot, template, justDoneId, movable, reordering }) {
+  const slotIdx = SLOTS.indexOf(slot);
   const rows = items
-    .map((task) => {
+    .map((task, index) => {
       const meta = [task.time, !task.done && task.why ? task.why : ""].filter(Boolean).join("  ·  ");
       const where = template
         ? `data-weekday="${weekday}" data-slot="${slot}" data-id="${esc(task.id)}"`
@@ -57,13 +58,29 @@ export function questRows({ items, date, weekday, slot, template, justDoneId }) 
       const check = template
         ? ""
         : `<button type="button" class="check ${justDoneId === task.id ? "just" : ""}" data-action="toggle" ${where} aria-pressed="${task.done ? "true" : "false"}" aria-label="${task.done ? "Mark not done" : "Mark done"}: ${esc(task.title)}"><i></i></button>`;
+      const atVeryTop = slotIdx === 0 && index === 0;
+      const atVeryBottom = slotIdx === SLOTS.length - 1 && index === items.length - 1;
+      const stepper = movable && reordering
+        ? `<div class="move-btns">
+            <button type="button" class="icon-btn move-step" data-action="step-quest" data-dir="-1" ${where} aria-label="Move up: ${esc(task.title)}" ${atVeryTop ? "disabled" : ""}>${icon("up")}</button>
+            <button type="button" class="icon-btn move-step" data-action="step-quest" data-dir="1" ${where} aria-label="Move down: ${esc(task.title)}" ${atVeryBottom ? "disabled" : ""}>${icon("down")}</button>
+          </div>`
+        : "";
+      const grip = movable
+        ? `<button type="button" class="grip" data-grip ${where} aria-label="Drag to move: ${esc(task.title)}">${icon("grip")}</button>`
+        : "";
+      const rowAttrs = movable
+        ? `data-quest data-date="${date}" data-slot="${slot}" data-id="${esc(task.id)}"`
+        : "";
       return `
-        <div class="quest ${task.done ? "done" : ""}">
+        <div class="quest ${task.done ? "done" : ""} ${reordering ? "reordering" : ""}" ${rowAttrs}>
           ${check}
           <button type="button" class="quest-body" data-action="${template ? "edit-template" : "edit-task"}" ${where}>
             <span class="quest-title">${esc(task.title)}</span>
             ${meta ? `<span class="quest-meta">${esc(meta)}</span>` : ""}
           </button>
+          ${stepper}
+          ${grip}
         </div>`;
     })
     .join("");
@@ -75,8 +92,9 @@ export function questRows({ items, date, weekday, slot, template, justDoneId }) 
     <button type="button" class="add" data-action="${template ? "add-template" : "add-task"}" ${addWhere}>${icon("plus")} Add a quest</button>`;
 }
 
-export function slotSection({ slot, items, nowSlot, date, weekday, template, justDoneId }) {
+export function slotSection({ slot, items, nowSlot, date, weekday, template, justDoneId, movable = false, reordering = false }) {
   const done = items.filter((task) => task.done).length;
+  const dropAttrs = movable ? `data-slot-drop="${slot}" data-date="${date}"` : "";
   return `
     <section class="slot">
       <header>
@@ -84,9 +102,9 @@ export function slotSection({ slot, items, nowSlot, date, weekday, template, jus
         ${!template && slot === nowSlot ? `<span class="now">Now</span>` : ""}
         <span class="count num">${template ? items.length : `${done}/${items.length}`}</span>
       </header>
-      <div class="slot-card">
+      <div class="slot-card" ${dropAttrs}>
         ${items.length ? "" : `<p class="slot-empty">Nothing ${SLOT_LABEL[slot].toLowerCase()}.</p>`}
-        ${questRows({ items, date, weekday, slot, template, justDoneId })}
+        ${questRows({ items, date, weekday, slot, template, justDoneId, movable, reordering })}
       </div>
     </section>`;
 }

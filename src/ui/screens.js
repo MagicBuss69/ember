@@ -1,4 +1,6 @@
+import { GOOGLE_CLIENT_ID, VAPID_PUBLIC_KEY, WORKER_URL } from "../config.js";
 import { FREEZE_PRICE, SLOTS, SLOT_LABEL, SUGGESTED_EXERCISES, THEMES } from "../constants.js";
+import { geminiKeyEnding } from "../gemini.js";
 import { levelProgress } from "../economy.js";
 import { esc, formatMaybe, formatNum, reasonLabel } from "../format.js";
 import { avatar, gemIcon, icon } from "../icons.js";
@@ -58,12 +60,21 @@ export function viewToday(state, ui, now) {
           date,
           template: false,
           justDoneId: ui.justDoneId,
+          movable: true,
+          reordering: Boolean(ui.reordering),
         }),
       ).join("");
     }
   }
+  const hasAny = Boolean(day && SLOTS.some((slot) => (day.slots[slot]?.length || 0) > 0));
+  const reorderBar = hasAny
+    ? `<div class="today-tools">
+        ${ui.reordering ? `<span class="reorder-hint">Drag a grip or tap arrows to move quests across slots.</span>` : `<span></span>`}
+        <button type="button" class="ghost slim ${ui.reordering ? "is-on" : ""}" data-action="toggle-reorder" aria-pressed="${ui.reordering ? "true" : "false"}">${ui.reordering ? "Done" : "Reorder"}</button>
+      </div>`
+    : "";
   const hint = lookingToday && !state.settings.dismissedHint
-    ? `<div class="hint"><p>Starter week, picked for a school day in Sweden. Change any quest. It only lives on this phone.</p><button type="button" data-action="dismiss-hint">Got it</button></div>`
+    ? `<div class="hint"><p>Starter week, picked for a school day in Sweden. Change or drag any quest. It only lives on this phone.</p><button type="button" data-action="dismiss-hint">Got it</button></div>`
     : "";
   return `
     <section class="today">
@@ -85,6 +96,7 @@ export function viewToday(state, ui, now) {
       ${!lookingToday ? `<button type="button" class="ghost slim" data-action="jump-today">Back to today</button>` : ""}
       ${gapNote(gap, state.freezes)}
       ${hint}
+      ${reorderBar}
       ${body}
     </section>`;
 }
@@ -336,16 +348,10 @@ export function viewYou(state, ui) {
       </label>
       <h2 class="section-title">Gemini</h2>
       <p class="lede">Optional. Ember works with no key. The key stays on this phone. Generating a week sends your goals to Google’s free Gemini API, which may use free-tier text to improve Google’s products.</p>
-      <label class="field">
-        <span>API key</span>
-        <input id="gemini-key" type="${ui.revealKey ? "text" : "password"}" data-bind="geminiApiKey" data-commit="settings" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste a free key" value="${esc(state.settings.geminiApiKey)}" />
-      </label>
-      <button type="button" class="ghost" data-action="toggle-reveal">${ui.revealKey ? "Hide key" : "Show key"}</button>
+      ${geminiCard(state, ui)}
       <p class="lede"><a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">Get a free key in Google AI Studio</a></p>
       <h2 class="section-title">Reminders</h2>
-      <p class="lede">Status: ${esc(permLabel)}. ${esc(periodic)}</p>
-      <p class="lede">While Ember is open, a quest notifies you at its time. If the app was closed, you get it the next time you open Ember. Android Chrome cannot fire an exact 07:30 alarm with the app closed unless a server sends it, and Ember has no server.</p>
-      ${perm === "granted" ? "" : `<button type="button" class="primary" data-action="enable-notify">Allow notifications</button>`}
+      ${reminderBlock(state, ui, permLabel, periodic)}
       <h2 class="section-title">This phone</h2>
       <button type="button" class="switch" role="switch" aria-checked="${state.settings.sound ? "true" : "false"}" data-action="toggle-setting" data-key="sound"><span>Sounds</span><i></i></button>
       <button type="button" class="switch" role="switch" aria-checked="${state.settings.haptics ? "true" : "false"}" data-action="toggle-setting" data-key="haptics"><span>Vibration</span><i></i></button>
@@ -353,12 +359,88 @@ export function viewYou(state, ui) {
         <button type="button" class="ghost" data-action="export">${icon("download")} Export backup</button>
         <button type="button" class="ghost" data-action="import">${icon("upload")} Import backup</button>
       </div>
-      <p class="lede">The backup is a JSON file. It includes your Gemini key if you saved one. Don’t post it anywhere.</p>
+      <p class="lede">The file backup includes your Gemini key if you saved one. Don’t post it anywhere.</p>
+      ${driveSection(state, ui)}
       <h2 class="section-title">Install</h2>
-      ${standalone ? `<p class="lede">Installed on this phone.</p>` : ui.installEvent ? `<button type="button" class="primary" data-action="install">Add to Home screen</button>` : `<p class="lede">In Chrome’s menu, choose Install app or Add to Home screen. It works offline after that.</p>`}
+      ${installBlock(standalone, ui)}
       <button type="button" class="danger" data-action="ask-reset">Erase everything on this phone</button>
       <p class="footnote">Ember 1 · Europe/Stockholm · on this phone only</p>
     </section>`;
+}
+
+function geminiStatusLine(state) {
+  const ending = geminiKeyEnding(state.settings.geminiApiKey);
+  const tail = ending ? ` · ending …${ending}` : "";
+  if (state.settings.geminiKeyStatus === "ok") return `Saved ✓ · Key works${tail}`;
+  if (state.settings.geminiKeyStatus === "offline") return `Saved ✓ · Not checked, you were offline${tail}`;
+  return `Saved${tail}`;
+}
+
+function geminiCard(state, ui) {
+  const saved = String(state.settings.geminiApiKey || "");
+  const editing = !saved || ui.editingGemini;
+  if (!editing) {
+    return `
+      <article class="gemini-card">
+        <p class="saved-line">${esc(geminiStatusLine(state))}</p>
+        <div class="split">
+          <button type="button" class="ghost" data-action="replace-gemini">Replace</button>
+          <button type="button" class="danger" data-action="ask-remove-gemini">Remove</button>
+        </div>
+      </article>`;
+  }
+  const draft = ui.geminiDraft ?? "";
+  const dirty = draft.trim().length > 0 && draft.trim() !== saved;
+  return `
+    <article class="gemini-card">
+      ${ui.geminiError ? `<p class="form-error">${esc(ui.geminiError)}</p>` : ""}
+      <label class="field">
+        <span>API key</span>
+        <span class="key-row">
+          <input id="gemini-key" type="${ui.revealKey ? "text" : "password"}" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste a free key" value="${esc(draft)}" />
+          <button type="button" class="ghost tiny" data-action="toggle-reveal">${ui.revealKey ? "Hide" : "Show"}</button>
+        </span>
+      </label>
+      <button type="button" class="primary" data-action="save-gemini" ${dirty && !ui.geminiBusy ? "" : "disabled"}>${ui.geminiBusy ? "Checking…" : "Save"}</button>
+    </article>`;
+}
+
+function reminderBlock(state, ui, permLabel, periodic) {
+  const pushReady = Boolean(String(WORKER_URL || "").trim() && String(VAPID_PUBLIC_KEY || "").trim());
+  const local = `<p class="lede">Status: ${esc(permLabel)}. ${esc(periodic)}</p>
+    <p class="lede">While Ember is open, a quest notifies you at its time. If the app was closed, you get it the next time you open Ember, unless closed-app reminders are turned on below.</p>
+    ${ui.notifyState === "granted" ? "" : `<button type="button" class="primary" data-action="enable-notify">Allow notifications</button>`}`;
+  if (!pushReady) return local;
+  return `${local}
+    <label class="field">
+      <span>Worker token</span>
+      <input id="worker-token" type="password" data-bind="workerToken" data-commit="settings" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="The secret from the worker" value="${esc(state.settings.workerToken || "")}" />
+    </label>
+    ${state.settings.pushOn
+      ? `<p class="saved-line">Closed-app reminders are on.</p><button type="button" class="ghost" data-action="push-off">Turn off closed-app reminders</button>`
+      : `<button type="button" class="primary" data-action="push-on">Turn on closed-app reminders</button>`}`;
+}
+
+function driveSection(state, ui) {
+  if (!String(GOOGLE_CLIENT_ID || "").trim()) return "";
+  const last = state.settings.driveLastBackupOn;
+  return `
+    <h2 class="section-title">Google Drive</h2>
+    <p class="lede">A hidden folder on your Google account. The Gemini key is not included. Ember keeps the latest 7 backups.</p>
+    <p class="lede">${last ? `Last backup ${esc(last)}.` : "No Drive backup yet."} ${esc(ui.driveStatus || "")}</p>
+    <div class="stack-actions">
+      <button type="button" class="primary" data-action="drive-backup">${state.settings.driveLinked ? "Back up now" : "Connect Google Drive"}</button>
+      <button type="button" class="ghost" data-action="drive-restore">Restore from Drive</button>
+    </div>`;
+}
+
+function installBlock(standalone, ui) {
+  if (standalone) return `<p class="lede">Installed as its own app. The icon should not wear a Chrome badge.</p>`;
+  if (ui.installEvent) {
+    return `<button type="button" class="primary" data-action="install">Install Ember</button>
+      <p class="lede">This uses Chrome’s install prompt, so the home screen gets a real app, not a shortcut.</p>`;
+  }
+  return `<p class="lede">In Chrome’s menu, choose Install app. If it only says Installera genväg, refresh once and use the menu again. A shortcut keeps the Chrome badge. A real install does not.</p>`;
 }
 
 function field(label, inner) {
@@ -372,7 +454,26 @@ export function sheetHtml(state, ui) {
   if (sheet.type === "task" || sheet.type === "template") return taskSheet(sheet, draft);
   if (sheet.type === "workout") return workoutSheet(state, draft);
   if (sheet.type === "generate") return generateSheet(draft);
+  if (sheet.type === "drive") return driveSheet(ui);
   return "";
+}
+
+function driveSheet(ui) {
+  const files = ui.driveFiles || [];
+  const rows = files.length
+    ? files.map((file) => `<button type="button" class="ex-row" data-action="drive-pick" data-id="${esc(file.id)}"><span><strong>${esc(file.name || "Backup")}</strong><small>${esc(file.createdTime || "")}</small></span></button>`).join("")
+    : `<p class="slot-empty">No Drive backups yet.</p>`;
+  return `
+    <div class="scrim" data-action="close-sheet"></div>
+    <div class="sheet">
+      <div class="handle"></div>
+      <div class="sheet-head">
+        <h2>Restore from Drive</h2>
+        <button type="button" class="icon-btn" data-action="close-sheet" aria-label="Close">${icon("close")}</button>
+      </div>
+      <p class="lede">This replaces quests and XP on this phone. Your Gemini key stays if the backup doesn't have one.</p>
+      <div class="list">${rows}</div>
+    </div>`;
 }
 
 function taskSheet(sheet, draft) {
