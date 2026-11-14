@@ -1898,7 +1898,15 @@ function bind() {
       driveScheduler.noteChange();
       return;
     }
-    if (ui.draft) assign(ui.draft, el.dataset.bind, el.type === "checkbox" ? el.checked : el.value);
+    if (ui.draft) {
+      assign(ui.draft, el.dataset.bind, el.type === "checkbox" ? el.checked : el.value);
+      // Send is disabled in the sheet HTML until there is text. Typing does not
+      // repaint (that would drop the caret), so the disabled flag has to move here.
+      if (el.dataset.bind === "draft" && el.form) {
+        const send = el.form.querySelector('button[type="submit"]');
+        if (send) send.disabled = Boolean(ui.draft.loading) || !String(el.value || "").trim();
+      }
+    }
   });
   app.addEventListener("change", (event) => {
     const copyCheck = event.target.closest("[data-copy-target]");
