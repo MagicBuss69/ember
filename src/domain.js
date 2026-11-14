@@ -122,6 +122,7 @@ export function createInitialState(now = new Date()) {
     customRewards: [],
     penaltyProcessed: [],
     penaltyReports: [],
+    penaltySince: today,
     lastPenaltyReport: null,
     crystalStress: 0,
     grants: {},
@@ -210,7 +211,7 @@ export function settle(state, { today, touchDate, touchDates, now }) {
 }
 
 export function prepare(state, now = new Date()) {
-  const migrated = migrateStateV2(state);
+  const migrated = migrateStateV2(state, now);
   const next = clone(migrated);
   const today = dateKey(now);
   settle(next, { today, touchDate: today, now });

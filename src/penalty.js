@@ -22,9 +22,11 @@ function blankSlots() {
 
 /** Days strictly before today that broke the streak (no quests done). */
 export function missedDatesBefore(state, today) {
+  const since = state.penaltySince || state.startedOn || today;
   const missed = [];
   let cursor = addDays(today, -1);
   for (let i = 0; i < 21; i += 1) {
+    if (cursor < since) return missed.reverse();
     if (isComplete(state, cursor)) return missed.reverse();
     if (taskCount(state, cursor) > 0) missed.push(cursor);
     else if (cursor < (state.startedOn || today)) return missed.reverse();
@@ -105,7 +107,13 @@ export function injectPenaltyQuest(state, date) {
  */
 export function processPenalties(state, today, now) {
   const processed = new Set(Array.isArray(state.penaltyProcessed) ? state.penaltyProcessed : []);
-  const missed = missedDatesBefore(state, today).filter((d) => !processed.has(d));
+  const since = state.penaltySince || today;
+  const pending = missedDatesBefore(state, today).filter((d) => !processed.has(d));
+  for (const date of pending) {
+    if (date < since) processed.add(date);
+  }
+  const missed = pending.filter((d) => d >= since);
+  state.penaltyProcessed = [...processed].slice(-120);
   if (!missed.length) {
     return { state, report: null, fresh: false };
   }
@@ -129,7 +137,6 @@ export function processPenalties(state, today, now) {
     processed.add(date);
   }
 
-  state.penaltyProcessed = [...processed].slice(-120);
   state.streakBrokenAt = today;
   state.crystalStress = Math.min(1, (Number(state.crystalStress) || 0) + 0.35 * missed.length);
 

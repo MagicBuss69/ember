@@ -168,6 +168,8 @@ export function sanitizeImport(raw, current = null) {
     : [];
   state.penaltyReports = Array.isArray(raw.penaltyReports) ? raw.penaltyReports.slice(0, 20) : [];
   state.lastPenaltyReport = raw.lastPenaltyReport && typeof raw.lastPenaltyReport === "object" ? raw.lastPenaltyReport : null;
+  const importedSince = normalizeDate(raw.penaltySince);
+  if (importedSince) state.penaltySince = importedSince;
 
   state.template = base.template;
   if (raw.template && typeof raw.template === "object") {
@@ -248,7 +250,7 @@ export function sanitizeImport(raw, current = null) {
       state.rivalDays[key] = value;
     }
   }
-  return migrateStateV2(state);
+  return migrateStateV2(state, new Date());
 }
 
 function reconcileMissingXp(state) {

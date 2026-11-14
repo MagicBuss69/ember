@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createInitialState, prepare, setTaskDone } from "../src/domain.js";
+import { migrateStateV2 } from "../src/migrate.js";
 import { XP_PENALTY_PER_QUEST } from "../src/penalty.js";
 import { totalXp } from "../src/stats.js";
 
@@ -24,6 +25,27 @@ test("penalty applies XP loss and injects a penalty quest on next prepare", () =
   const penalty = prepared.state.days[today].slots.morning.find((t) => t.penaltyTag);
   assert.ok(penalty);
   assert.match(penalty.title, /Penalty/i);
+});
+
+test("upgrade today does not penalize incomplete days before penaltySince", () => {
+  const upgrade = new Date("2026-11-14T08:00:00Z");
+  let state = createInitialState(new Date("2026-11-10T08:00:00Z"));
+  delete state.penaltySince;
+  state = migrateStateV2(state, upgrade);
+  assert.equal(state.penaltySince, "2026-11-14");
+  const prepared = prepare(state, upgrade);
+  assert.equal(prepared.penaltyReport, null);
+});
+
+test("a missed day on or after penaltySince triggers a penalty", () => {
+  let state = createInitialState(new Date("2026-11-14T08:00:00Z"));
+  const anchor = "2026-11-13";
+  const task = state.days[anchor].slots.morning[0];
+  state = setTaskDone(state, anchor, "morning", task.id, true, new Date(`${anchor}T08:00:00.000Z`));
+  state.penaltySince = "2026-11-14";
+  const prepared = prepare(state, new Date("2026-11-15T08:00:00Z"));
+  assert.ok(prepared.penaltyReport);
+  assert.ok(prepared.penaltyReport.dates.includes("2026-11-14"));
 });
 
 test("XP penalty cannot drop below current level floor", () => {

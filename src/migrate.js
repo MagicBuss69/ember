@@ -1,10 +1,11 @@
 import { FREEZE_REFUND_CRYSTALS } from "./penalty.js";
+import { dateKey } from "./time.js";
 
 /**
  * Runtime migration for saves still on v1 freeze/shop shape.
  * Safe to call on every load and import.
  */
-export function migrateStateV2(state) {
+export function migrateStateV2(state, now = new Date()) {
   if (!state || typeof state !== "object") return state;
   const next = structuredClone(state);
 
@@ -28,6 +29,8 @@ export function migrateStateV2(state) {
   next.penaltyProcessed = Array.isArray(next.penaltyProcessed) ? next.penaltyProcessed : [];
   next.penaltyReports = Array.isArray(next.penaltyReports) ? next.penaltyReports : [];
   next.crystalStress = Math.max(0, Math.min(1, Number(next.crystalStress) || 0));
+  const since = String(next.penaltySince || "").match(/^\d{4}-\d{2}-\d{2}$/) ? next.penaltySince : "";
+  if (!since) next.penaltySince = dateKey(now);
 
   const freezeCount = Math.max(0, Math.round(Number(next.freezes) || 0));
   if (freezeCount > 0 && !next.grants?.freezeMigrated) {
