@@ -7,7 +7,7 @@ compatibility_date = "2025-04-01"
 # the placeholder deploy will fail until it is replaced.
 [[kv_namespaces]]
 binding = "EMBER"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "e5f0b7180fcd413585ac142056c0d2ca"
 
 [triggers]
 crons = ["* * * * *"]
@@ -15,4 +15,4 @@ crons = ["* * * * *"]
 # Public key only. Set the same value in src/config.js.
 # Private key is a secret: npx wrangler secret put VAPID_PRIVATE_JWK
 [vars]
-VAPID_PUBLIC_KEY = ""
+VAPID_PUBLIC_KEY = "BE46YTBmWlRv-FQ78qSfBlxWAnlHriR4U1l3msgcG8_0UyXSpJyvQrFc0ae3pmmXQlBYH3VeuCm_1S0i_W3wNaQ"
