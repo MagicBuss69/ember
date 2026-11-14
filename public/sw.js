@@ -92,13 +92,23 @@ self.addEventListener("push", (event) => {
   } catch {
     data = { title: "Ember", body: event.data ? event.data.text() : "" };
   }
-  event.waitUntil(self.registration.showNotification(data.title || "Ember", {
-    body: data.body || "",
-    tag: data.tag || "ember-reminder",
-    icon: `${BASE}icons/icon-192.png`,
-    badge: `${BASE}icons/badge-96.png`,
-    data: { date: data.date || "" },
-  }));
+  const tag = data.tag || "ember-reminder";
+  event.waitUntil((async () => {
+    const flagKey = `flag:${tag}`;
+    // The phone may already have shown this quest. Re-showing the same tag
+    // silently replaces it instead of buzzing a second time.
+    const already = await kvGet(flagKey).catch(() => null);
+    await self.registration.showNotification(data.title || "Ember", {
+      body: data.body || "",
+      tag,
+      silent: Boolean(already),
+      renotify: false,
+      icon: `${BASE}icons/icon-192.png`,
+      badge: `${BASE}icons/badge-96.png`,
+      data: { date: data.date || "" },
+    });
+    if (!already) await kvSet(flagKey, Date.now()).catch(() => {});
+  })());
 });
 
 self.addEventListener("periodicsync", (event) => {

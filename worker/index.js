@@ -59,7 +59,7 @@ async function deliverDue(env, now = new Date()) {
     await sendWebPush(subscription, {
       title: item.label,
       body: `${item.time} · Stockholm`,
-      tag: item.key,
+      tag: `quest:${item.date}:${item.time}:${item.label}`,
       date: item.date,
     }, privateJwk, env.VAPID_PUBLIC_KEY);
     sent[item.key] = Date.now();

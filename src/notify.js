@@ -10,6 +10,11 @@ function publicUrl(file) {
   return `${BASE}${file}`;
 }
 
+/** One tag per quest occurrence, shared with the worker's push, so a reminder never shows twice. */
+export function questTag(date, time, title) {
+  return `quest:${date}:${time}:${title}`;
+}
+
 export function reminderRecords(state, now = new Date()) {
   const today = dateKey(now);
   const day = state.days?.[today];
@@ -20,7 +25,7 @@ export function reminderRecords(state, now = new Date()) {
     for (const task of day.slots?.[slot] || []) {
       if (!task.time || task.done) continue;
       records.push({
-        tag: `quest:${today}:${task.id}:${task.time}`,
+        tag: questTag(today, task.time, task.title),
         title: task.title,
         body: `${SLOT_LABEL[slot]} · ${task.time}`,
         when: zonedTimeToUtc(today, task.time),
