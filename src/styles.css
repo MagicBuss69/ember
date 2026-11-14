@@ -1691,6 +1691,19 @@ body.dragging-quest, body.dragging-quest * { cursor: grabbing !important; user-s
   margin-bottom: 10px;
 }
 .shop-item { margin-bottom: 8px; }
+.life-reward-item { align-items: center; }
+.life-reward-copy { flex: 1; min-width: 0; }
+.shop-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.icon-btn.danger-ghost {
+  color: var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
 .badge-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 16px; }
 .badge-pill {
   padding: 4px 10px;

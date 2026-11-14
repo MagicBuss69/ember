@@ -56,7 +56,7 @@ import {
 } from "./notify.js";
 import { ensureRivalHistory } from "./rivals.js";
 import { exerciseGroups, isComplete, openTodayCount, totalXp } from "./stats.js";
-import { addCustomReward, buyItem, equipCosmetic, redeemCustomReward, SHOP_CATALOG } from "./shop.js";
+import { addCustomReward, buyItem, equipCosmetic, redeemCustomReward, removeCustomReward, SHOP_CATALOG } from "./shop.js";
 import { ensureAudio, playSound } from "./sounds.js";
 import { burstAt, confettiFan, dailyCompleteBanner, shardBurstToCrystal } from "./ui/fx.js";
 import { addDays, dateKey, formatPretty, weekStart } from "./time.js";
@@ -1015,6 +1015,19 @@ const actions = {
     });
     toast("Redeemed. Go enjoy it.");
   },
+  "ask-remove-life-reward"(el) {
+    const reward = (state.customRewards || []).find((item) => item.id === el.dataset.reward);
+    if (!reward) return;
+    ui.confirm = {
+      title: `Remove “${reward.title}”?`,
+      body: "It disappears from your shop list. Redemptions you already spent shards on stay in the log.",
+      label: "Remove",
+      action: "remove-life-reward",
+      rewardId: reward.id,
+    };
+    ui.keepScroll = true;
+    paint();
+  },
   "equip-theme"(el) {
     commitAction((current) => equipTheme(current, el.dataset.theme), { quiet: true });
   },
@@ -1190,6 +1203,17 @@ const actions = {
       await commitAction((current) => deleteWorkout(current, confirm.id, new Date()), {
         pop: { text: "−40 XP", x: window.innerWidth / 2, y: 180, kind: "down" },
       });
+      return;
+    }
+    if (confirm.action === "remove-life-reward") {
+      await commitAction((current) => {
+        const result = removeCustomReward(current, confirm.rewardId);
+        return result.ok ? result.state : current;
+      }, { quiet: true });
+      ui.shopCat = "life";
+      ui.keepScroll = true;
+      toast("Life reward removed.");
+      paint();
       return;
     }
     if (confirm.action === "confirm-copy-day") {

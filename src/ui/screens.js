@@ -498,10 +498,13 @@ function shopSection(state, ui) {
   }).join("");
   const life = (state.customRewards || [])
     .map(
-      (reward) => `<article class="theme shop-item">
+      (reward) => `<article class="theme shop-item life-reward-item">
       <span class="swatch gem-swatch">${gemIcon()}</span>
-      <span><strong>${esc(reward.title)}</strong><small>Your reward token</small></span>
-      <button type="button" class="ghost tiny" data-action="redeem-life" data-reward="${reward.id}" ${state.crystals >= reward.price ? "" : "disabled"}>${reward.price} ${gemIcon()}</button>
+      <span class="life-reward-copy"><strong>${esc(reward.title)}</strong><small>${reward.price} shards to redeem</small></span>
+      <div class="shop-item-actions">
+        <button type="button" class="ghost tiny" data-action="redeem-life" data-reward="${reward.id}" ${state.crystals >= reward.price ? "" : "disabled"}>Redeem ${reward.price} ${gemIcon()}</button>
+        <button type="button" class="icon-btn danger-ghost" data-action="ask-remove-life-reward" data-reward="${reward.id}" aria-label="Remove ${esc(reward.title)}">${icon("trash")}</button>
+      </div>
     </article>`,
     )
     .join("");
@@ -509,8 +512,8 @@ function shopSection(state, ui) {
     <h2 class="section-title" id="shop">Shop</h2>
     <p class="lede">Spend shards on cosmetics, FX, sounds, and things you actually want IRL.</p>
     <div class="shop-tabs">${tabs}</div>
-  ${activeCat === "life" ? life || `<p class="slot-empty">Add a reward in Settings → Life rewards.</p>` : items || `<p class="slot-empty">Nothing here yet.</p>`}
-    <button type="button" class="ghost slim" data-action="add-life-reward">+ Add life reward token</button>`;
+  ${activeCat === "life" ? life || `<p class="slot-empty">No real-life rewards yet.</p>` : items || `<p class="slot-empty">Nothing here yet.</p>`}
+    ${activeCat === "life" ? `<button type="button" class="ghost slim" data-action="add-life-reward">+ Add life reward token</button>` : ""}`;
 }
 
 function equipButtonForItem(state, item) {

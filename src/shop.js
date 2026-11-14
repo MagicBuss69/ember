@@ -113,6 +113,14 @@ export function addCustomReward(state, { title, price }, now = new Date()) {
   return { state: next, ok: true };
 }
 
+export function removeCustomReward(state, rewardId) {
+  const next = structuredClone(state);
+  const before = (next.customRewards || []).length;
+  next.customRewards = (next.customRewards || []).filter((item) => item.id !== rewardId);
+  if (next.customRewards.length === before) return { state: next, ok: false };
+  return { state: next, ok: true };
+}
+
 export function redeemCustomReward(state, rewardId, now = new Date()) {
   const next = structuredClone(state);
   const reward = (next.customRewards || []).find((item) => item.id === rewardId);
