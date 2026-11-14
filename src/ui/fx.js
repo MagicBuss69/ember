@@ -7,7 +7,7 @@ function rand(min, max) {
 /** Shards that fly toward the crystal meter (quest check-off). */
 export function shardBurstToCrystal(fromX, fromY, reduced = false) {
   if (reduced) return;
-  const target = document.querySelector("[data-shard-hud] .shard-mark, [data-crystal-meter] .crystal-gem");
+  const target = document.querySelector("[data-shard-hud] .shard-mark img, [data-shard-hud] .currency-art, [data-crystal-meter] .crystal-gem");
   const root = document.getElementById("fx");
   if (!root || !target) {
     burstAt(fromX, fromY, reduced);

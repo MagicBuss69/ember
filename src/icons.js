@@ -27,20 +27,7 @@ export function icon(name) {
   return stroke(PATHS[name] || "");
 }
 
-/** Shop / HUD currency — amber coin, not the level-progress crystal. */
-export function shardIcon({ className = "shard-svg", size = 22 } = {}) {
-  const h = Math.round(size);
-  return `<svg class="${className}" width="${h}" height="${h}" viewBox="0 0 24 24" aria-hidden="true">
-    <circle class="shard-ring" cx="12" cy="12" r="9.5" />
-    <circle class="shard-face" cx="12" cy="12" r="7.2" />
-    <path class="shard-glint" d="M8.4 9.2 12 6.5 15.6 9.2 12 11.2Z" />
-    <ellipse class="shard-shade" cx="12" cy="14.5" rx="4.8" ry="1.6" />
-  </svg>`;
-}
-
-export function gemIcon(opts = {}) {
-  return shardIcon(opts);
-}
+export { currencyIcon, gemIcon, itemThumb, artUrl, catalogArtId } from "./art.js";
 
 /**
  * Faceted crystal: `fillPct` 0–1 lights the gem from the bottom (level progress).

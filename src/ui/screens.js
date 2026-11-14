@@ -9,7 +9,8 @@ import { geminiKeyEnding } from "../gemini.js";
 import { levelProgress, questXpForLevel } from "../economy.js";
 import { currencyBlocked, openPenaltyQuests } from "../penalty.js";
 import { esc, formatMaybe, formatNum, reasonLabel } from "../format.js";
-import { avatar, gemIcon, icon } from "../icons.js";
+import { currencyIcon, gemIcon, itemThumb } from "../art.js";
+import { avatar, icon } from "../icons.js";
 import { buildBoard } from "../rivals.js";
 import { exerciseGroups, rawGap, ringNumbers, streakCount, summarizeWeek, taskCount, totalXp, weekCompare } from "../stats.js";
 import { addDays, currentSlot, dateKey, formatPretty, formatWeekSpan, weekdayIso, weekdayLong, weekStart } from "../time.js";
@@ -489,9 +490,9 @@ function shopSection(state, ui) {
     const afford = state.crystals >= item.price;
     const action = owned
       ? equipButtonForItem(state, item)
-      : `<button type="button" class="ghost tiny" data-action="ask-buy-item" data-item="${item.id}" ${afford ? "" : "disabled"}>${item.price} ${gemIcon()}</button>`;
+      : `<button type="button" class="ghost tiny shop-price-btn" data-action="ask-buy-item" data-item="${item.id}" ${afford ? "" : "disabled"}><span class="num">${item.price}</span> ${currencyIcon({ size: 16 })}</button>`;
     return `<article class="theme shop-item">
-      <span class="swatch ${item.kind === "theme" ? "" : "gem-swatch"}" ${item.themeId ? `data-swatch="${item.themeId}"` : ""}>${item.kind === "theme" ? "" : gemIcon()}</span>
+      ${itemThumb(item.id, { alt: item.name })}
       <span><strong>${esc(item.name)}</strong><small>${esc(item.blurb)}</small></span>
       ${action}
     </article>`;
@@ -499,10 +500,10 @@ function shopSection(state, ui) {
   const life = (state.customRewards || [])
     .map(
       (reward) => `<article class="theme shop-item life-reward-item">
-      <span class="swatch gem-swatch">${gemIcon()}</span>
+      ${itemThumb("life-reward", { alt: reward.title })}
       <span class="life-reward-copy"><strong>${esc(reward.title)}</strong><small>${reward.price} shards to redeem</small></span>
       <div class="shop-item-actions">
-        <button type="button" class="ghost tiny" data-action="redeem-life" data-reward="${reward.id}" ${state.crystals >= reward.price ? "" : "disabled"}>Redeem ${reward.price} ${gemIcon()}</button>
+        <button type="button" class="ghost tiny shop-price-btn" data-action="redeem-life" data-reward="${reward.id}" ${state.crystals >= reward.price ? "" : "disabled"}">Redeem <span class="num">${reward.price}</span> ${currencyIcon({ size: 16 })}</button>
         <button type="button" class="icon-btn danger-ghost" data-action="ask-remove-life-reward" data-reward="${reward.id}" aria-label="Remove ${esc(reward.title)}">${icon("trash")}</button>
       </div>
     </article>`,
@@ -600,7 +601,10 @@ export function viewSettings(state, ui) {
   const themePick = THEMES.filter((t) => state.ownedThemes.includes(t.id))
     .map((theme) => {
       const active = state.settings.theme === theme.id;
-      return `<button type="button" class="ghost tiny ${active ? "is-on" : ""}" data-action="equip-theme" data-theme="${theme.id}">${esc(theme.name)}</button>`;
+      return `<button type="button" class="theme-art-btn ${active ? "is-on" : ""}" data-action="equip-theme" data-theme="${theme.id}" aria-pressed="${active ? "true" : "false"}">
+        ${itemThumb(`theme-${theme.id}`, { alt: theme.name, size: 52 })}
+        <span>${esc(theme.name)}</span>
+      </button>`;
     })
     .join("");
   return `
@@ -608,7 +612,7 @@ export function viewSettings(state, ui) {
       <h1 class="page-title">Settings</h1>
       <h2 class="section-title">Theme</h2>
       <p class="lede">Frost is the flagship System look. Each theme shifts the whole UI, not just the accent.</p>
-      <div class="theme-pick">${themePick}</div>
+      <div class="theme-pick theme-pick-art">${themePick}</div>
       <h2 class="section-title">Sound</h2>
       <button type="button" class="switch" role="switch" aria-checked="${state.settings.sound ? "true" : "false"}" data-action="toggle-setting" data-key="sound"><span>Sounds</span><i></i></button>
       <label class="field">
@@ -986,7 +990,7 @@ export function levelUpHtml(ui) {
         <p class="kicker">Level up</p>
         <h2 id="levelup-title">Level ${level}</h2>
         <p>The bar filled.</p>
-        ${crystals ? `<p class="award">${gemIcon()} +${crystals}</p>` : ""}
+        ${crystals ? `<p class="award">${currencyIcon({ size: 20 })} +${crystals}</p>` : ""}
         <button type="button" class="primary" data-action="dismiss-levelup">Keep going</button>
       </div>
     </div>`;
