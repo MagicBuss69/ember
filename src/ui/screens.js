@@ -50,17 +50,6 @@ function mustDoBanner(state, today) {
   </div>`;
 }
 
-function todayCompactBar(state, progress, ring, xp) {
-  return `<div id="today-compact" class="today-compact" aria-hidden="true">
-    <div class="today-compact-inner">
-      <span class="compact-ring num">${ring.done}/${ring.total}</span>
-      <div class="compact-track">${levelBar(progress, xp, false)}</div>
-      <span class="compact-lv num">Lv ${progress.level}</span>
-      <span class="compact-shards num">${formatNum(state.crystals)} ${gemIcon({ size: 14 })}</span>
-    </div>
-  </div>`;
-}
-
 export function viewToday(state, ui, now) {
   const today = dateKey(now);
   const date = ui.lookDate && ui.lookDate <= today ? ui.lookDate : today;
@@ -115,36 +104,43 @@ export function viewToday(state, ui, now) {
   const hint = lookingToday && !state.settings.dismissedHint
     ? `<div class="hint"><p>Starter week, picked for a school day in Sweden. Change or drag any quest. It only lives on this phone.</p><button type="button" data-action="dismiss-hint">Got it</button></div>`
     : "";
+  const railShards = `${formatNum(state.crystals)} ${gemIcon({ size: 14 })}`;
   return `
     <section class="today">
       ${lookingToday ? mustDoBanner(state, today) : ""}
-      ${lookingToday ? todayCompactBar(state, progress, ring, xp) : ""}
-      <div class="today-sticky" id="today-sticky">
-        <div class="sticky-board">
-          <div class="sticky-board-head">
-            ${ringHtml(ring.done, ring.total, ui.ringPulse)}
-            <div class="date-nav date-nav-sticky">
-              <button type="button" class="icon-btn icon-btn-tight" data-action="shift-day" data-dir="-1" aria-label="Previous day">${icon("chevL")}</button>
-              <div class="date-copy date-copy-left">
-                <h1>${lookingToday ? "Today" : esc(weekdayLong(date))}</h1>
-                <p>${esc(formatPretty(date))}</p>
+      <div class="today-sticky board-morph" id="today-sticky" style="--board-scroll: 0">
+        <div class="board-morph-stage">
+          <div class="sticky-board">
+            <div class="sticky-board-head">
+              <div class="board-morph-ring">${ringHtml(ring.done, ring.total, ui.ringPulse)}</div>
+              <div class="date-nav date-nav-sticky">
+                <button type="button" class="icon-btn icon-btn-tight" data-action="shift-day" data-dir="-1" aria-label="Previous day">${icon("chevL")}</button>
+                <div class="date-copy date-copy-left board-morph-title">
+                  <h1>${lookingToday ? "Today" : esc(weekdayLong(date))}</h1>
+                  <p class="board-morph-sub">${esc(formatPretty(date))}</p>
+                </div>
+                <button type="button" class="icon-btn icon-btn-tight" data-action="shift-day" data-dir="1" aria-label="Next day" ${lookingToday ? "disabled" : ""}>${icon("chevR")}</button>
               </div>
-              <button type="button" class="icon-btn icon-btn-tight" data-action="shift-day" data-dir="1" aria-label="Next day" ${lookingToday ? "disabled" : ""}>${icon("chevR")}</button>
+              <div class="board-morph-rail" aria-hidden="true">
+                <span class="num board-rail-lv">Lv ${progress.level}</span>
+                <span class="board-rail-shards num">${railShards}</span>
+              </div>
             </div>
+            <div class="board-morph-tail">
+              ${crystalMeterHtml({
+                progress,
+                rank,
+                stress: state.crystalStress,
+                pulse: ui.barPulse,
+                skin,
+                compact: true,
+              })}
+              <p class="streak-line board-morph-fade ${streak >= 7 ? "heat-3" : streak >= 3 ? "heat-2" : streak >= 1 ? "heat-1" : ""}">${icon("flame")} ${streak ? `${streak}-day streak` : "No streak yet"}</p>
+            </div>
+            <div class="board-morph-level">${levelBar(progress, xp, ui.barPulse)}</div>
           </div>
-          ${crystalMeterHtml({
-            progress,
-            rank,
-            stress: state.crystalStress,
-            pulse: ui.barPulse,
-            skin,
-            compact: true,
-          })}
         </div>
-        ${levelBar(progress, xp, ui.barPulse)}
-        <p class="streak-line ${streak >= 7 ? "heat-3" : streak >= 3 ? "heat-2" : streak >= 1 ? "heat-1" : ""}">${icon("flame")} ${streak ? `${streak}-day streak` : "No streak yet"}</p>
       </div>
-      <div id="today-sentinel" class="today-sentinel" aria-hidden="true"></div>
       ${!lookingToday ? `<button type="button" class="ghost slim" data-action="jump-today">Back to today</button>` : ""}
       ${gapNote(gap)}
       ${hint}

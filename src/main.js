@@ -110,7 +110,11 @@ const ui = {
 let levelTimer = 0;
 let genToken = 0;
 let audioPrimed = false;
-let todayBoardObserver = null;
+let todayMorphRaf = 0;
+let todayMorphMain = null;
+let todayMorphOnScroll = null;
+
+const BOARD_SCROLL_RANGE = 120;
 
 function tabFromHash() {
   const tab = location.hash.replace("#", "");
@@ -330,29 +334,41 @@ function paint() {
   }
   ui.enter = false;
   updateBadge();
-  if (ui.tab === "today") watchTodayBoard();
-  else {
-    todayBoardObserver?.disconnect();
-    todayBoardObserver = null;
-    document.body.classList.remove("today-slim");
+  if (ui.tab === "today") bindTodayBoardMorph();
+  else unbindTodayBoardMorph();
+}
+
+function unbindTodayBoardMorph() {
+  if (todayMorphMain && todayMorphOnScroll) {
+    todayMorphMain.removeEventListener("scroll", todayMorphOnScroll);
+  }
+  todayMorphMain = null;
+  todayMorphOnScroll = null;
+  if (todayMorphRaf) {
+    cancelAnimationFrame(todayMorphRaf);
+    todayMorphRaf = 0;
   }
 }
 
-function watchTodayBoard() {
-  const root = document.getElementById("main");
-  const sentinel = document.getElementById("today-sentinel");
-  const compact = document.getElementById("today-compact");
-  if (!root || !sentinel || !compact) return;
-  todayBoardObserver?.disconnect();
-  todayBoardObserver = new IntersectionObserver(
-    ([entry]) => {
-      const slim = !entry.isIntersecting;
-      document.body.classList.toggle("today-slim", slim);
-      compact.setAttribute("aria-hidden", slim ? "false" : "true");
-    },
-    { root, threshold: 0, rootMargin: "0px 0px -12px 0px" },
-  );
-  todayBoardObserver.observe(sentinel);
+function bindTodayBoardMorph() {
+  unbindTodayBoardMorph();
+  const main = document.getElementById("main");
+  const sticky = document.getElementById("today-sticky");
+  if (!main || !sticky || !sticky.classList.contains("board-morph")) return;
+  const apply = () => {
+    const progress = Math.min(1, Math.max(0, main.scrollTop / BOARD_SCROLL_RANGE));
+    sticky.style.setProperty("--board-scroll", progress.toFixed(4));
+  };
+  todayMorphOnScroll = () => {
+    if (todayMorphRaf) return;
+    todayMorphRaf = requestAnimationFrame(() => {
+      todayMorphRaf = 0;
+      apply();
+    });
+  };
+  todayMorphMain = main;
+  main.addEventListener("scroll", todayMorphOnScroll, { passive: true });
+  apply();
 }
 
 function soundOpts() {

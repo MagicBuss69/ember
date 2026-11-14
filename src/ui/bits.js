@@ -9,6 +9,7 @@ export const RING_CIRC = 2 * Math.PI * RADIUS;
 export function ringHtml(done, total, pulse) {
   const pct = total ? done / total : 0;
   const offset = pct <= 0 ? RING_CIRC : RING_CIRC * (1 - pct);
+  const label = `${done}/${total}`;
   return `
     <div class="ring-wrap ${pulse ? "pulse" : ""} ${pct <= 0 ? "is-empty" : ""} ${pct >= 1 ? "is-full" : ""}">
       <svg class="ring" viewBox="0 0 88 88" role="img" aria-label="${done} of ${total} quests done">
@@ -17,8 +18,8 @@ export function ringHtml(done, total, pulse) {
           stroke-dasharray="${RING_CIRC.toFixed(3)}"
           style="stroke-dashoffset:${offset.toFixed(3)}"
           transform="rotate(-90 44 44)"></circle>
+        <text class="ring-num" x="44" y="44" text-anchor="middle" dominant-baseline="central">${label}</text>
       </svg>
-      <div class="ring-label"><strong>${done}</strong><small>/${total}</small></div>
     </div>`;
 }
 
