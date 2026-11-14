@@ -1,5 +1,6 @@
 import { esc, formatNum } from "../format.js";
 import { currencyIcon } from "../art.js";
+import { icon } from "../icons.js";
 import { confirmHtml, levelUpHtml, navHtml, penaltyHtml, sheetHtml, viewRivals, viewSettings, viewToday, viewTrain, viewWeek, viewYou } from "./screens.js";
 
 const VIEWS = {
@@ -18,6 +19,7 @@ export function render(state, ui, now) {
     <div class="app">
       <header class="hud">
         <div class="brand"><i class="brand-dot"></i>Ember</div>
+        <button type="button" class="icon-btn hud-coach" data-action="open-coach" aria-label="Coach">${icon("chat")}</button>
         <button type="button" class="shard-btn hud-wallet" data-action="goto-shop" data-shard-hud aria-label="${formatNum(state.crystals)} shards in wallet">
           <span class="shard-mark ${ui.gemShine ? "shine" : ""}">${currencyIcon({ size: 22, eager: true })}</span>
           <span class="shard-count num" data-crystals>${formatNum(state.crystals)}</span>

@@ -14,6 +14,7 @@ import { avatar, icon } from "../icons.js";
 import { buildBoard } from "../rivals.js";
 import { exerciseGroups, rawGap, ringNumbers, streakCount, summarizeWeek, taskCount, totalXp, weekCompare } from "../stats.js";
 import { addDays, currentSlot, dateKey, formatPretty, formatWeekSpan, weekdayIso, weekdayLong, weekStart } from "../time.js";
+import { coachSheetHtml, rivalChatSheetHtml } from "./coachSheet.js";
 import { crystalMeterHtml, emptyState, levelBar, ringHtml, slotSection, weekChartHtml } from "./bits.js";
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -412,7 +413,7 @@ export function viewRivals(state, ui, now) {
   const delta = board.same.delta;
   const deltaText = delta > 0 ? `+${formatNum(delta)}` : delta < 0 ? `−${formatNum(-delta)}` : "0";
   const rows = board.board
-    .map((row) => `<article class="board-row ${row.you ? "you" : ""}">
+    .map((row) => `<article class="board-row ${row.you ? "you" : ""}"${row.you ? "" : ` data-action="open-rival" data-rival="${esc(row.id)}" role="button" tabindex="0"`}>
         <span class="rank num">${row.rank}</span>
         ${avatar(row.you ? "you" : row.id)}
         <span class="who"><strong>${esc(row.name)}</strong><small>${esc(row.city)} · ${esc(row.status)}</small></span>
@@ -769,6 +770,8 @@ export function sheetHtml(state, ui, now = new Date()) {
   if (sheet.type === "generate") return generateSheet(draft);
   if (sheet.type === "drive") return driveSheet(ui);
   if (sheet.type === "copy-day") return copyDaySheet(state, sheet, draft, now);
+  if (sheet.type === "coach") return coachSheetHtml(draft);
+  if (sheet.type === "rival-chat") return rivalChatSheetHtml(draft);
   return "";
 }
 
@@ -964,11 +967,16 @@ function generateSheet(draft) {
 export function confirmHtml(ui) {
   if (!ui.confirm) return "";
   const item = ui.confirm;
+  const list = item.list?.length
+    ? `<ul class="confirm-list">${item.list.map((line) => `<li>${esc(line)}</li>`).join("")}</ul>`
+    : "";
+  const body = item.body ? `<p>${esc(item.body)}</p>` : !list ? `<p></p>` : "";
   return `
     <div class="confirm" role="dialog" aria-modal="true">
       <div class="confirm-card">
         <h2>${esc(item.title)}</h2>
-        <p>${esc(item.body)}</p>
+        ${body}
+        ${list}
         <button type="button" class="primary" data-action="confirm-yes">${esc(item.label)}</button>
         <button type="button" class="ghost" data-action="confirm-no">Cancel</button>
       </div>

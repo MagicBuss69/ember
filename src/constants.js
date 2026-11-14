@@ -30,6 +30,10 @@ export const THEMES = [
 
 export const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-flash-latest"];
 
+/** In-app coach and rival chat (see Google AI Studio models doc). */
+export const CHAT_GEMINI_MODEL = "gemini-3.8-flash";
+export const CHAT_GEMINI_FALLBACK_MODEL = "gemini-3.5-flash-lite";
+
 export const DEFAULT_GOALS =
   "Get better at programming, train three times a week, sleep before 23:00, and feel more comfortable talking to people.";
 

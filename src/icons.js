@@ -21,6 +21,7 @@ const PATHS = {
   up: `<path d="M12 18V6M7 11l5-5 5 5"/>`,
   down: `<path d="M12 6v12M7 13l5 5 5-5"/>`,
   gear: `<circle cx="12" cy="12" r="2.8"/><path d="M12 3v1.8M12 19.2V21M3 12h1.8M19.2 12H21M5.5 5.5l1.2 1.2M17.3 17.3l1.2 1.2M18.5 5.5l-1.2 1.2M6.7 17.3l-1.2 1.2"/>`,
+  chat: `<path d="M5 6.5h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H10l-4.5 3.5V8.5a2 2 0 0 1 2-2Z"/>`,
 };
 
 export function icon(name) {

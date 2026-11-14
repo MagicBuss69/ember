@@ -20,6 +20,7 @@ export const RIVALS = [
     mult: 1,
     workoutRate: 0.55,
     quests: ["Push session", "Evening walk", "Lights out by 22:30", "Core work"],
+    voice: "Steady and a bit competitive. Talks like a gym buddy who trains most days and keeps score without being mean.",
   },
   {
     id: "maja",
@@ -31,6 +32,7 @@ export const RIVALS = [
     mult: 1.12,
     workoutRate: 0.34,
     quests: ["Focus block", "Easy run", "Language drill", "Cook a real dinner"],
+    voice: "Warm but streaky. Some weeks she disappears, then comes back with a sharp comeback.",
   },
   {
     id: "noah",
@@ -42,6 +44,7 @@ export const RIVALS = [
     mult: 1.2,
     workoutRate: 0.68,
     quests: ["Easy run", "Read 10 pages", "Mobility", "Early night"],
+    voice: "Quietly ahead, a little nerdy, proud of consistency and early nights.",
   },
   {
     id: "amina",
@@ -53,6 +56,7 @@ export const RIVALS = [
     mult: 0.9,
     workoutRate: 0.42,
     quests: ["Skill practice", "Mobility", "Cook dinner", "One hard problem"],
+    voice: "Dry Stockholm humor. Motivates without fluff; notices real effort.",
   },
 ];
 
@@ -294,4 +298,31 @@ export function buildBoard(state, now = new Date()) {
 
 export function xpOn(state, date) {
   return xpOnDate(state, date);
+}
+
+export function rivalPromptFacts(state, rivalId, now = new Date()) {
+  const rival = RIVALS.find((row) => row.id === rivalId);
+  if (!rival) return null;
+  const today = dateKey(now);
+  ensureRivalHistory(state, today);
+  const board = buildBoard(state, now);
+  const you = board.board.find((row) => row.you);
+  const partner = board.board.find((row) => row.id === rivalId);
+  const entry = cell(state, today, rivalId);
+  return {
+    id: rival.id,
+    name: rival.name,
+    city: rival.city,
+    voice: rival.voice,
+    weekXp: partner?.weekXp ?? rivalWeekXp(state, rivalId, today, now),
+    streak: partner?.streak ?? rivalStreak(state, rivalId, today, now),
+    status: partner?.status || "",
+    todayQuest: entry?.rest ? null : entry?.quest || null,
+    todayRest: Boolean(entry?.rest),
+    todayWorkout: Boolean(entry?.workout),
+    youWeekXp: you?.weekXp ?? 0,
+    youStreak: you?.streak ?? 0,
+    youTodayXp: board.same?.todayXp ?? 0,
+    noActions: true,
+  };
 }
