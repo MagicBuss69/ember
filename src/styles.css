@@ -741,7 +741,17 @@ button:active:not(:disabled) { transform: scale(0.98); }
 .quest.is-drag-armed {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 70%, transparent);
 }
-.quest[data-quest] .quest-body { -webkit-touch-callout: none; user-select: none; }
+/* Title text is selectable globally. On Android that long-press selects the
+   quest and pointercancels the hold, so a 1s drag never arms. touch-action
+   must not be manipulation here: that lets Chrome pan without consulting JS,
+   and the drag cannot cancel the scroll once the finger moves. */
+.quest[data-quest] .quest-body,
+.quest[data-quest] .quest-title {
+  touch-action: auto;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
 .today-tools {
   display: flex;
   align-items: center;

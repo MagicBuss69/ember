@@ -1455,6 +1455,7 @@ function bindQuestDrag(app) {
   let pendingHold = null;
   let suppressClickOnRow = null;
   let suppressTimer = 0;
+  let dragListeners = false;
 
   function armClickSuppression(row) {
     clearTimeout(suppressTimer);
@@ -1469,6 +1470,7 @@ function bindQuestDrag(app) {
     clearTimeout(pendingHold.timer);
     pendingHold.row?.classList.remove("is-hold-pending", "is-drag-armed");
     pendingHold = null;
+    if (!drag) detachActiveDragListeners();
   }
 
   function matchingDropCards() {
@@ -1580,11 +1582,15 @@ function bindQuestDrag(app) {
   }
 
   function attachActiveDragListeners() {
+    if (dragListeners) return;
+    dragListeners = true;
     window.addEventListener("pointermove", onActivePointerMove, { passive: false });
     window.addEventListener("touchmove", onActiveTouchMove, { passive: false });
   }
 
   function detachActiveDragListeners() {
+    if (!dragListeners) return;
+    dragListeners = false;
     window.removeEventListener("pointermove", onActivePointerMove);
     window.removeEventListener("touchmove", onActiveTouchMove);
   }
@@ -1694,6 +1700,9 @@ function bindQuestDrag(app) {
       });
     }, LONG_PRESS_MS);
     pendingHold = hold;
+    // Present before the first touchmove, so a later preventDefault can still
+    // stop the scroll. A listener added only after the 1s timer is too late.
+    attachActiveDragListeners();
   });
 
   app.addEventListener("scroll", () => {
@@ -1729,6 +1738,10 @@ function bindQuestDrag(app) {
   }, { passive: true });
 
   window.addEventListener("pointercancel", (event) => {
+    // Android fires pointercancel for long-press and when it considers a
+    // scroll, but touchmove/touchend usually still arrive. Aborting here
+    // cancels the hold or drops the drag. touchcancel still ends a real steal.
+    if (event.pointerType === "touch") return;
     if (pendingHold && event.pointerId === pendingHold.pointerId) cancelHold();
     if (!drag || event.pointerId !== drag.pointerId) return;
     finish(false);
