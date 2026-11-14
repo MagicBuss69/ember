@@ -110,13 +110,7 @@ const ui = {
 let levelTimer = 0;
 let genToken = 0;
 let audioPrimed = false;
-let todayMorphRaf = 0;
-let todayMorphMain = null;
-let todayMorphOnScroll = null;
-let todayMorphResize = null;
-
-const BOARD_SCROLL_RANGE = 120;
-const BOARD_COMPACT_H = 54;
+let todayBoardObserver = null;
 
 function tabFromHash() {
   const tab = location.hash.replace("#", "");
@@ -336,67 +330,33 @@ function paint() {
   }
   ui.enter = false;
   updateBadge();
-  if (ui.tab === "today") bindTodayBoardMorph();
-  else unbindTodayBoardMorph();
+  if (ui.tab === "today") watchTodayCompactBar();
+  else unbindTodayCompactBar();
 }
 
-function measureBoardMorph(sticky) {
-  const expanded = sticky.querySelector(".board-expanded-layer");
-  if (!expanded) return;
-  const full = Math.ceil(expanded.getBoundingClientRect().height);
-  const extra = Math.max(0, full - BOARD_COMPACT_H);
-  sticky.style.setProperty("--board-expand-extra", `${extra}px`);
+function unbindTodayCompactBar() {
+  todayBoardObserver?.disconnect();
+  todayBoardObserver = null;
+  document.body.classList.remove("today-compact-on");
 }
 
-function unbindTodayBoardMorph() {
-  if (todayMorphMain && todayMorphOnScroll) {
-    todayMorphMain.removeEventListener("scroll", todayMorphOnScroll);
-  }
-  todayMorphResize?.disconnect();
-  todayMorphResize = null;
-  todayMorphMain = null;
-  todayMorphOnScroll = null;
-  if (todayMorphRaf) {
-    cancelAnimationFrame(todayMorphRaf);
-    todayMorphRaf = 0;
-  }
-}
-
-function bindTodayBoardMorph() {
-  unbindTodayBoardMorph();
-  const main = document.getElementById("main");
-  const sticky = document.getElementById("today-sticky");
-  if (!main || !sticky || !sticky.classList.contains("board-morph")) return;
-  const compact = sticky.querySelector(".board-compact-layer");
-  const expanded = sticky.querySelector(".board-expanded-layer");
-  const apply = () => {
-    const progress = Math.min(1, Math.max(0, main.scrollTop / BOARD_SCROLL_RANGE));
-    sticky.style.setProperty("--board-scroll", progress.toFixed(4));
-    const extra =
-      Number.parseFloat(getComputedStyle(sticky).getPropertyValue("--board-expand-extra")) || 168;
-    const viewport = sticky.querySelector(".board-morph-viewport");
-    if (viewport) {
-      viewport.style.height = `${BOARD_COMPACT_H + (1 - progress) * extra}px`;
-    }
-    sticky.style.marginBottom = `${12 - progress * extra}px`;
-    if (compact) compact.setAttribute("aria-hidden", progress < 0.5 ? "true" : "false");
-    if (expanded) expanded.style.visibility = progress > 0.92 ? "hidden" : "visible";
+function watchTodayCompactBar() {
+  unbindTodayCompactBar();
+  const root = document.getElementById("main");
+  const expanded = document.getElementById("today-board-expanded");
+  const compact = document.getElementById("today-board-compact");
+  if (!root || !expanded) return;
+  const sync = (ratio) => {
+    const show = ratio < 0.15;
+    document.body.classList.toggle("today-compact-on", show);
+    if (compact) compact.setAttribute("aria-hidden", show ? "false" : "true");
   };
-  todayMorphOnScroll = () => {
-    if (todayMorphRaf) return;
-    todayMorphRaf = requestAnimationFrame(() => {
-      todayMorphRaf = 0;
-      apply();
-    });
-  };
-  todayMorphMain = main;
-  main.addEventListener("scroll", todayMorphOnScroll, { passive: true });
-  measureBoardMorph(sticky);
-  if (expanded && typeof ResizeObserver !== "undefined") {
-    todayMorphResize = new ResizeObserver(() => measureBoardMorph(sticky));
-    todayMorphResize.observe(expanded);
-  }
-  apply();
+  todayBoardObserver = new IntersectionObserver(
+    ([entry]) => sync(entry?.intersectionRatio ?? 0),
+    { root, threshold: [0, 0.08, 0.15, 0.5, 1] },
+  );
+  todayBoardObserver.observe(expanded);
+  sync(expanded.getBoundingClientRect().height > 0 ? 1 : 0);
 }
 
 function soundOpts() {
@@ -1510,7 +1470,7 @@ async function runCopyDay() {
 }
 
 function bindQuestDrag(app) {
-  const LONG_PRESS_MS = 360;
+  const LONG_PRESS_MS = 1000;
   const SCROLL_SLOP_PX = 8;
   let drag = null;
   let pendingHold = null;
@@ -1528,6 +1488,7 @@ function bindQuestDrag(app) {
   function cancelHold() {
     if (!pendingHold) return;
     clearTimeout(pendingHold.timer);
+    pendingHold.row?.classList.remove("is-hold-pending", "is-drag-armed");
     pendingHold = null;
   }
 
@@ -1662,6 +1623,7 @@ function bindQuestDrag(app) {
     document.getElementById("fx").appendChild(ghost);
     const marker = document.createElement("div");
     marker.className = "quest-drop-line";
+    row.classList.remove("is-drag-armed");
     row.classList.add("is-dragging");
     document.body.classList.add("dragging-quest");
     if (captureEl?.setPointerCapture && pointerId != null) {
@@ -1671,7 +1633,8 @@ function bindQuestDrag(app) {
         /* synthetic or touch-held pointers may not capture */
       }
     }
-    haptic("tick");
+    if (fromHold) haptic("warn");
+    else haptic("tick");
     const isTemplate = row.dataset.template === "true" || Boolean(row.dataset.weekday);
     drag = {
       pointerId,
@@ -1725,25 +1688,7 @@ function bindQuestDrag(app) {
     if (drag) return;
     if (event.pointerType === "mouse" && event.button !== 0) return;
 
-    const grip = event.target.closest("[data-grip]");
-    if (grip) {
-      const row = grip.closest("[data-quest]");
-      if (!row) return;
-      event.preventDefault();
-      cancelHold();
-      startDrag({
-        row,
-        pointerId: event.pointerId,
-        clientY: event.clientY,
-        captureEl: grip,
-        fromHold: false,
-      });
-      return;
-    }
-
-    // Touch long-press on a movable quest row (without blocking normal vertical scroll).
-    if (event.pointerType !== "touch") return;
-    if (event.target.closest(".check, .move-btns")) return;
+    if (event.target.closest(".check")) return;
     const row = event.target.closest("[data-quest]");
     if (!row) return;
     cancelHold();
@@ -1755,9 +1700,12 @@ function bindQuestDrag(app) {
       lastY: event.clientY,
       timer: 0,
     };
+    hold.row.classList.add("is-hold-pending");
     hold.timer = setTimeout(() => {
       if (pendingHold !== hold || drag) return;
       pendingHold = null;
+      hold.row.classList.remove("is-hold-pending");
+      hold.row.classList.add("is-drag-armed");
       startDrag({
         row: hold.row,
         pointerId: hold.pointerId,
@@ -1774,7 +1722,7 @@ function bindQuestDrag(app) {
   }, true);
 
   app.addEventListener("contextmenu", (event) => {
-    if (drag || pendingHold || event.target.closest("[data-grip]")) {
+    if (drag || pendingHold) {
       event.preventDefault();
     }
   });

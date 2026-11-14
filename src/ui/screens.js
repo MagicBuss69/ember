@@ -102,7 +102,7 @@ export function viewToday(state, ui, now) {
     }
   }
   const hint = lookingToday && !state.settings.dismissedHint
-    ? `<div class="hint"><p>Starter week, picked for a school day in Sweden. Change or drag any quest. It only lives on this phone.</p><button type="button" data-action="dismiss-hint">Got it</button></div>`
+    ? `<div class="hint"><p>Starter week, picked for a school day in Sweden. Change or drag any quest. Long-press a quest to move it. It only lives on this phone.</p><button type="button" data-action="dismiss-hint">Got it</button></div>`
     : "";
   const railShards = `${formatNum(state.crystals)} ${gemIcon({ size: 14 })}`;
   const scale = Math.max(0, Math.min(1, Number(progress.pct) || 0)).toFixed(4);
@@ -112,46 +112,46 @@ export function viewToday(state, ui, now) {
   return `
     <section class="today">
       ${lookingToday ? mustDoBanner(state, today) : ""}
-      <div class="today-sticky board-morph" id="today-sticky" style="--board-scroll: 0">
-        <div class="board-morph-viewport">
-          <div class="board-compact-layer" aria-hidden="true">
-            <div class="board-compact-row">
-              ${ringHtml(ring.done, ring.total, false, { compact: true })}
-              <p class="board-compact-title">${esc(compactTitle)}</p>
-              <span class="board-compact-lv num">Lv ${progress.level}</span>
-              <span class="board-compact-shards num">${railShards}</span>
-            </div>
-            <div class="board-compact-progress">
-              <div class="bar board-compact-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(progress.pct * 100)}" aria-label="Level progress">
-                <span data-bar data-pct="${scale}" style="transform:scaleX(${scale})"></span>
+      ${lookingToday
+        ? `<div id="today-board-compact" class="today-board-compact" aria-hidden="true">
+            <div class="today-board-compact-inner">
+              <div class="board-compact-row">
+                ${ringHtml(ring.done, ring.total, false, { compact: true })}
+                <p class="board-compact-title">${esc(compactTitle)}</p>
+                <span class="board-compact-lv num">Lv ${progress.level}</span>
+                <span class="board-compact-shards num">${railShards}</span>
               </div>
-            </div>
-          </div>
-          <div class="board-expanded-layer">
-            <div class="sticky-board">
-              <div class="sticky-board-head">
-                ${ringHtml(ring.done, ring.total, ui.ringPulse)}
-                <div class="date-nav date-nav-sticky">
-                  <button type="button" class="icon-btn icon-btn-tight" data-action="shift-day" data-dir="-1" aria-label="Previous day">${icon("chevL")}</button>
-                  <div class="date-copy date-copy-left">
-                    <h1>${lookingToday ? "Today" : esc(weekdayLong(date))}</h1>
-                    <p>${esc(formatPretty(date))}</p>
-                  </div>
-                  <button type="button" class="icon-btn icon-btn-tight" data-action="shift-day" data-dir="1" aria-label="Next day" ${lookingToday ? "disabled" : ""}>${icon("chevR")}</button>
+              <div class="board-compact-progress">
+                <div class="bar board-compact-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(progress.pct * 100)}" aria-label="Level progress">
+                  <span data-bar data-pct="${scale}" style="transform:scaleX(${scale})"></span>
                 </div>
               </div>
-              ${crystalMeterHtml({
-                progress,
-                rank,
-                stress: state.crystalStress,
-                pulse: ui.barPulse,
-                skin,
-                compact: false,
-              })}
-              ${levelBar(progress, xp, ui.barPulse)}
-              <p class="streak-line ${streak >= 7 ? "heat-3" : streak >= 3 ? "heat-2" : streak >= 1 ? "heat-1" : ""}">${icon("flame")} ${streak ? `${streak}-day streak` : "No streak yet"}</p>
+            </div>
+          </div>`
+        : ""}
+      <div id="today-board-expanded" class="today-board-expanded">
+        <div class="sticky-board">
+          <div class="sticky-board-head">
+            ${ringHtml(ring.done, ring.total, ui.ringPulse)}
+            <div class="date-nav date-nav-sticky">
+              <div class="date-nav-title-row">
+                <button type="button" class="icon-btn icon-btn-tight" data-action="shift-day" data-dir="-1" aria-label="Previous day">${icon("chevL")}</button>
+                <h1 class="date-nav-title">${lookingToday ? "Today" : esc(weekdayLong(date))}</h1>
+                <button type="button" class="icon-btn icon-btn-tight" data-action="shift-day" data-dir="1" aria-label="Next day" ${lookingToday ? "disabled" : ""}>${icon("chevR")}</button>
+              </div>
+              <p class="date-nav-sub">${esc(formatPretty(date))}</p>
             </div>
           </div>
+          ${crystalMeterHtml({
+            progress,
+            rank,
+            stress: state.crystalStress,
+            pulse: ui.barPulse,
+            skin,
+            compact: false,
+          })}
+          ${levelBar(progress, xp, ui.barPulse)}
+          <p class="streak-line ${streak >= 7 ? "heat-3" : streak >= 3 ? "heat-2" : streak >= 1 ? "heat-1" : ""}">${icon("flame")} ${streak ? `${streak}-day streak` : "No streak yet"}</p>
         </div>
       </div>
       ${!lookingToday ? `<button type="button" class="ghost slim" data-action="jump-today">Back to today</button>` : ""}
