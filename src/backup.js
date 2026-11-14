@@ -1,6 +1,7 @@
 import { SLOTS, THEMES, XP_TASK, XP_WORKOUT } from "./constants.js";
 import { createInitialState, validTime } from "./domain.js";
 import { levelFor } from "./economy.js";
+import { migrateStateV2 } from "./migrate.js";
 import { totalXp } from "./stats.js";
 
 const LIMITS = {
@@ -10,8 +11,8 @@ const LIMITS = {
   sets: 200,
   events: 50000,
   log: 500,
-  freezes: 1000,
   rivalDays: 400,
+  rewards: 80,
 };
 
 export function parseBackupText(text) {
@@ -76,8 +77,13 @@ export function sanitizeImport(raw, current = null) {
   state.settings = {
     geminiApiKey: importedGeminiKey,
     goals: typeof rawSettings.goals === "string" ? clip(rawSettings.goals, 2000) : base.settings.goals,
-    theme: "ember",
-    sound: Boolean(rawSettings.sound),
+    theme: "frost",
+    sound: rawSettings.sound !== false,
+    soundVolume: Math.max(0, Math.min(1, Number(rawSettings.soundVolume) || 0.72)),
+    crystalSkin: clip(rawSettings.crystalSkin, 24) || "default",
+    checkFx: clip(rawSettings.checkFx, 24) || "shards",
+    soundPack: clip(rawSettings.soundPack, 24) || "system",
+    equippedTitle: clip(rawSettings.equippedTitle, 40),
     haptics: rawSettings.haptics !== false,
     doneSlotsOpen:
       rawSettings.doneSlotsOpen && typeof rawSettings.doneSlotsOpen === "object" ? rawSettings.doneSlotsOpen : {},
@@ -100,6 +106,7 @@ export function sanitizeImport(raw, current = null) {
   state.crystals = nonNegInt(raw.crystals);
   state.freezes = nonNegInt(raw.freezes);
   state.longest = nonNegInt(raw.longest);
+  state.crystalStress = Math.max(0, Math.min(1, Number(raw.crystalStress) || 0));
   state.crystalLog = Array.isArray(raw.crystalLog)
     ? raw.crystalLog.slice(0, LIMITS.log).map((entry) => ({
         at: String(entry?.at || new Date().toISOString()),
@@ -107,14 +114,7 @@ export function sanitizeImport(raw, current = null) {
         reason: clip(entry?.reason, 40) || "crystals",
       }))
     : [];
-  state.freezeLog = Array.isArray(raw.freezeLog)
-    ? raw.freezeLog
-        .map((entry) => ({ date: normalizeDate(entry?.date), at: String(entry?.at || "") }))
-        .filter((entry) => entry.date)
-        .slice(0, LIMITS.freezes)
-    : [];
-
-  state.ownedThemes = ["ember"];
+  state.ownedThemes = ["ember", "frost"];
   if (Array.isArray(raw.ownedThemes)) {
     for (const id of raw.ownedThemes) {
       if (THEMES.some((theme) => theme.id === id) && !state.ownedThemes.includes(id)) {
@@ -125,7 +125,51 @@ export function sanitizeImport(raw, current = null) {
   const theme = rawSettings.theme;
   if (THEMES.some((item) => item.id === theme) && state.ownedThemes.includes(theme)) {
     state.settings.theme = theme;
+  } else if (!state.ownedThemes.includes(state.settings.theme)) {
+    state.settings.theme = state.ownedThemes.includes("frost") ? "frost" : "ember";
   }
+
+  state.ownedSkins = ["default"];
+  if (Array.isArray(raw.ownedSkins)) {
+    for (const id of raw.ownedSkins) {
+      const key = clip(id, 24);
+      if (key && !state.ownedSkins.includes(key)) state.ownedSkins.push(key);
+    }
+  }
+  state.ownedTitles = Array.isArray(raw.ownedTitles) ? raw.ownedTitles.map((id) => clip(id, 24)).filter(Boolean).slice(0, 40) : [];
+  state.ownedBadges = Array.isArray(raw.ownedBadges) ? raw.ownedBadges.map((id) => clip(id, 24)).filter(Boolean).slice(0, 40) : [];
+  state.ownedFx = ["shards"];
+  if (Array.isArray(raw.ownedFx)) {
+    for (const id of raw.ownedFx) {
+      const key = clip(id, 24);
+      if (key && !state.ownedFx.includes(key)) state.ownedFx.push(key);
+    }
+  }
+  state.ownedSoundPacks = ["system"];
+  if (Array.isArray(raw.ownedSoundPacks)) {
+    for (const id of raw.ownedSoundPacks) {
+      const key = clip(id, 24);
+      if (key && !state.ownedSoundPacks.includes(key)) state.ownedSoundPacks.push(key);
+    }
+  }
+  state.customRewards = Array.isArray(raw.customRewards)
+    ? raw.customRewards
+        .slice(0, LIMITS.rewards)
+        .map((item) => ({
+          id: clip(item?.id, 80) || `life-${Math.random().toString(36).slice(2, 8)}`,
+          title: clip(item?.title, 60),
+          price: Math.max(1, Math.min(999, Math.round(Number(item?.price) || 0))),
+          createdAt: normalizeIso(item?.createdAt) || new Date().toISOString(),
+        }))
+        .filter((item) => item.title)
+    : [];
+  state.penaltyProcessed = Array.isArray(raw.penaltyProcessed)
+    ? raw.penaltyProcessed.map((d) => normalizeDate(d)).filter(Boolean).slice(0, 120)
+    : [];
+  state.penaltyReports = Array.isArray(raw.penaltyReports) ? raw.penaltyReports.slice(0, 20) : [];
+  state.lastPenaltyReport = raw.lastPenaltyReport && typeof raw.lastPenaltyReport === "object" ? raw.lastPenaltyReport : null;
+  const importedSince = normalizeDate(raw.penaltySince);
+  if (importedSince) state.penaltySince = importedSince;
 
   state.template = base.template;
   if (raw.template && typeof raw.template === "object") {
@@ -206,7 +250,7 @@ export function sanitizeImport(raw, current = null) {
       state.rivalDays[key] = value;
     }
   }
-  return state;
+  return migrateStateV2(state, new Date());
 }
 
 function reconcileMissingXp(state) {
@@ -260,6 +304,7 @@ function cleanSlots(source, asTasks, datePrefix = "tpl") {
       };
       if (asTasks) {
         row.isEvent = Boolean(item?.isEvent);
+        row.penaltyTag = clip(item?.penaltyTag, 16) || undefined;
         row.done = Boolean(item?.done);
         row.doneAt = item?.doneAt ? String(item.doneAt) : null;
       }

@@ -4,7 +4,6 @@ import {
   CRYSTAL_MILESTONES,
   CRYSTAL_STREAK_DAY,
   DEFAULT_GOALS,
-  FREEZE_PRICE,
   SLOTS,
   THEMES,
   WEEKDAY_QUESTS,
@@ -14,7 +13,9 @@ import {
 } from "./constants.js";
 import { levelFor } from "./economy.js";
 import { uid } from "./format.js";
-import { isComplete, isFullDay, isFrozen, rawGap, streakCount, totalXp } from "./stats.js";
+import { migrateStateV2 } from "./migrate.js";
+import { clearPenaltyReport, processPenalties } from "./penalty.js";
+import { isComplete, isFullDay, streakCount, totalXp } from "./stats.js";
 import { addDays, dateKey, isWeekend, weekStart, weekdayIso } from "./time.js";
 
 function clone(value) {
@@ -92,8 +93,13 @@ export function createInitialState(now = new Date()) {
     settings: {
       geminiApiKey: "",
       goals: DEFAULT_GOALS,
-      theme: "ember",
-      sound: false,
+      theme: "frost",
+      sound: true,
+      soundVolume: 0.72,
+      crystalSkin: "default",
+      checkFx: "shards",
+      soundPack: "system",
+      equippedTitle: "",
       haptics: true,
       doneSlotsOpen: {},
       dismissedHint: false,
@@ -107,9 +113,18 @@ export function createInitialState(now = new Date()) {
     },
     crystals: 0,
     crystalLog: [],
-    freezes: 0,
-    freezeLog: [],
-    ownedThemes: ["ember"],
+    ownedThemes: ["ember", "frost"],
+    ownedSkins: ["default"],
+    ownedTitles: [],
+    ownedBadges: [],
+    ownedFx: ["shards"],
+    ownedSoundPacks: ["system"],
+    customRewards: [],
+    penaltyProcessed: [],
+    penaltyReports: [],
+    penaltySince: today,
+    lastPenaltyReport: null,
+    crystalStress: 0,
     grants: {},
     template,
     days,
@@ -132,19 +147,6 @@ function addCrystals(state, delta, reason, now) {
   state.crystals = Math.max(0, (state.crystals || 0) + delta);
   state.crystalLog.unshift({ at: now.toISOString(), delta, reason });
   state.crystalLog = state.crystalLog.slice(0, 80);
-}
-
-function applyFreezes(state, today, now) {
-  const gap = rawGap(state, today);
-  if (!gap.length || gap.length > state.freezes) return [];
-  const used = [];
-  for (const date of gap) {
-    state.freezes -= 1;
-    const entry = { date, at: now.toISOString() };
-    state.freezeLog.push(entry);
-    used.push(entry);
-  }
-  return used;
 }
 
 function applyDayGrants(state, date, now, today) {
@@ -196,7 +198,6 @@ function applyLevelGrants(state, now) {
 
 export function settle(state, { today, touchDate, touchDates, now }) {
   ensureWeek(state, today);
-  applyFreezes(state, today, now);
   state.longest = Math.max(state.longest || 0, streakCount(state, today));
   applyLevelGrants(state, now);
   const dates = new Set([today]);
@@ -210,11 +211,26 @@ export function settle(state, { today, touchDate, touchDates, now }) {
 }
 
 export function prepare(state, now = new Date()) {
-  const next = clone(state);
+  const migrated = migrateStateV2(state, now);
+  const next = clone(migrated);
   const today = dateKey(now);
-  const before = next.freezeLog.length;
   settle(next, { today, touchDate: today, now });
-  return { state: next, today, freezesUsed: next.freezeLog.slice(before) };
+  const penalty = processPenalties(next, today, now);
+  const out = penalty.state;
+  if (totalXp(out) > 0 && isFullDay(out, today)) {
+    out.crystalStress = Math.max(0, (Number(out.crystalStress) || 0) - 0.08);
+  }
+  return {
+    state: out,
+    today,
+    penaltyReport: penalty.report,
+    penaltyFresh: penalty.fresh,
+  };
+}
+
+export function acknowledgePenalty(state) {
+  const next = clone(state);
+  return clearPenaltyReport(next);
 }
 
 function pushXp(state, { date, amount, source, ref, now }) {
@@ -602,17 +618,6 @@ export function deleteWorkout(state, id, now = new Date()) {
   return next;
 }
 
-export function buyFreeze(state, now = new Date()) {
-  const next = clone(state);
-  if (next.crystals < FREEZE_PRICE) return { state: next, ok: false };
-  next.crystals -= FREEZE_PRICE;
-  next.freezes += 1;
-  next.crystalLog.unshift({ at: now.toISOString(), delta: -FREEZE_PRICE, reason: "spent-freeze" });
-  const today = dateKey(now);
-  settle(next, { today, touchDate: today, now });
-  return { state: next, ok: true };
-}
-
 export function buyTheme(state, themeId, now = new Date()) {
   const theme = THEMES.find((item) => item.id === themeId);
   const next = clone(state);
@@ -639,7 +644,25 @@ export function patchSettings(state, patch) {
   if (typeof patch.goals === "string") next.settings.goals = patch.goals.slice(0, 2000);
   if (typeof patch.geminiApiKey === "string") next.settings.geminiApiKey = patch.geminiApiKey.trim().slice(0, 200);
   if (typeof patch.sound === "boolean") next.settings.sound = patch.sound;
+  if (typeof patch.soundVolume === "number") {
+    next.settings.soundVolume = Math.max(0, Math.min(1, patch.soundVolume));
+  }
   if (typeof patch.haptics === "boolean") next.settings.haptics = patch.haptics;
+  if (typeof patch.theme === "string" && next.ownedThemes?.includes(patch.theme)) {
+    next.settings.theme = patch.theme;
+  }
+  if (typeof patch.crystalSkin === "string" && (next.ownedSkins || []).includes(patch.crystalSkin)) {
+    next.settings.crystalSkin = patch.crystalSkin;
+  }
+  if (typeof patch.equippedTitle === "string" && (!patch.equippedTitle || (next.ownedTitles || []).includes(patch.equippedTitle))) {
+    next.settings.equippedTitle = patch.equippedTitle.slice(0, 40);
+  }
+  if (typeof patch.checkFx === "string" && (next.ownedFx || []).includes(patch.checkFx)) {
+    next.settings.checkFx = patch.checkFx;
+  }
+  if (typeof patch.soundPack === "string" && (next.ownedSoundPacks || []).includes(patch.soundPack)) {
+    next.settings.soundPack = patch.soundPack;
+  }
   if (typeof patch.dismissedHint === "boolean") next.settings.dismissedHint = patch.dismissedHint;
   if (typeof patch.geminiKeyStatus === "string") next.settings.geminiKeyStatus = patch.geminiKeyStatus.slice(0, 20);
   if (typeof patch.driveLinked === "boolean") next.settings.driveLinked = patch.driveLinked;

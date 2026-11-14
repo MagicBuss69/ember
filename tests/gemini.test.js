@@ -41,7 +41,7 @@ test("backup round-trip keeps quests and drops a bad theme", () => {
     ref: "missing",
   });
   const imported = sanitizeImport(JSON.parse(JSON.stringify({ ...state, version: 1 })));
-  assert.equal(imported.settings.theme, "ember");
+  assert.equal(imported.settings.theme, "frost");
   assert.equal(imported.days["2026-11-13"].slots.morning.length, 2);
   assert.ok(imported.grants["level:2"]);
   assert.throws(() => sanitizeImport({ version: 2 }), /different Ember version/);

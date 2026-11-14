@@ -13,14 +13,14 @@ import { clearDriveToken, requestDriveToken } from "./driveAuth.js";
 import { createAutoBackupController } from "./driveSchedule.js";
 import { checkGeminiKey } from "./gemini.js";
 import { disableClosedReminders, enableClosedReminders } from "./pushClient.js";
-import { FREEZE_PRICE, THEMES } from "./constants.js";
+import { THEMES } from "./constants.js";
 import {
+  acknowledgePenalty,
   addTask,
   addTemplateTask,
   addWorkout,
   applyGeneratedPlan,
   applyTemplateToOpenDays,
-  buyFreeze,
   buyTheme,
   copyDayToDates,
   copyDayToTemplate,
@@ -55,16 +55,20 @@ import {
 } from "./notify.js";
 import { ensureRivalHistory } from "./rivals.js";
 import { exerciseGroups, isComplete, openTodayCount, totalXp } from "./stats.js";
-import { burstAt, confettiFan, dailyCompleteBanner } from "./ui/fx.js";
+import { addCustomReward, buyItem, equipCosmetic, redeemCustomReward, SHOP_CATALOG } from "./shop.js";
+import { playSound } from "./sounds.js";
+import { burstAt, confettiFan, dailyCompleteBanner, shardBurstToCrystal } from "./ui/fx.js";
 import { addDays, dateKey, formatPretty, weekStart } from "./time.js";
 import { render, shellError } from "./ui/render.js";
 
-const TABS = ["today", "week", "train", "rivals", "you"];
+const TABS = ["today", "week", "train", "rivals", "you", "settings"];
 const THEME_BG = {
   ember: "#100e0c",
   pine: "#0d1210",
-  frost: "#0c1016",
+  frost: "#0a1420",
   ink: "#070708",
+  aurora: "#0a1018",
+  blood: "#140808",
 };
 
 let state = createInitialState();
@@ -99,10 +103,13 @@ const ui = {
   collapsingId: null,
   comboCount: 0,
   lastCheckAt: 0,
+  todayCompact: false,
+  penaltyWindow: null,
+  shopCat: "themes",
 };
 let levelTimer = 0;
 let genToken = 0;
-let audioCtx = null;
+let todayScrollBound = false;
 
 function tabFromHash() {
   const tab = location.hash.replace("#", "");
@@ -322,6 +329,36 @@ function paint() {
   }
   ui.enter = false;
   updateBadge();
+  bindTodayScroll();
+}
+
+function bindTodayScroll() {
+  if (ui.tab !== "today") return;
+  const main = document.getElementById("main");
+  if (!main || todayScrollBound) return;
+  todayScrollBound = true;
+  main.addEventListener(
+    "scroll",
+    () => {
+      const compact = main.scrollTop > 72;
+      if (compact === ui.todayCompact) return;
+      ui.todayCompact = compact;
+      document.getElementById("today-sticky")?.classList.toggle("is-compact", compact);
+    },
+    { passive: true },
+  );
+}
+
+function soundOpts() {
+  return {
+    volume: state.settings?.soundVolume ?? 0.72,
+    pack: state.settings?.soundPack || "system",
+  };
+}
+
+function sfx(kind) {
+  if (!state.settings?.sound) return;
+  playSound(kind, soundOpts());
 }
 
 function toast(text) {
@@ -347,33 +384,6 @@ function floater(text, x, y, kind) {
   if (live) live.textContent = text;
   el.addEventListener("animationend", () => el.remove(), { once: true });
   setTimeout(() => el.remove(), 600);
-}
-
-function blip(kind) {
-  if (!state.settings?.sound) return;
-  const AudioCtx = window.AudioContext || window.webkitAudioContext;
-  if (!AudioCtx) return;
-  try {
-    audioCtx = audioCtx || new AudioCtx();
-    const notes = kind === "level" ? [392, 523, 659] : kind === "down" ? [280] : [620];
-    const now = audioCtx.currentTime;
-    notes.forEach((freq, index) => {
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = "sine";
-      osc.frequency.value = freq;
-      const start = now + index * 0.08;
-      gain.gain.setValueAtTime(0.0001, start);
-      gain.gain.exponentialRampToValueAtTime(0.045, start + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.16);
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start(start);
-      osc.stop(start + 0.18);
-    });
-  } catch {
-    /* autoplay or a missing device */
-  }
 }
 
 function haptic(kind) {
@@ -449,7 +459,7 @@ async function commitWrapped(mutator, fx = {}) {
   ui.justDoneId = null;
   if (fx.pop) {
     floater(fx.pop.text, fx.pop.x, fx.pop.y, fx.pop.kind);
-    blip(fx.pop.kind === "down" ? "down" : "tick");
+    sfx(fx.pop.kind === "down" ? "down" : "tick");
     haptic(fx.pop.kind === "down" ? "down" : "tick");
   }
   try {
@@ -463,10 +473,6 @@ async function commitWrapped(mutator, fx = {}) {
   }
   const fresh = state.crystalLog.slice(0, Math.max(0, state.crystalLog.length - logBefore));
   const messages = [];
-  if (prepared.freezesUsed.length) {
-    const days = prepared.freezesUsed.map((entry) => formatPretty(entry.date)).join(" and ");
-    messages.push(`Freeze covered ${days}. Streak kept.`);
-  }
   if (!fx.quiet) {
     const notes = fresh.filter((entry) => entry.delta > 0 && entry.reason !== "level");
     if (notes.length) messages.push(notes.map((entry) => `+${entry.delta} · ${reasonLabel(entry.reason)}`).join("  "));
@@ -480,7 +486,7 @@ async function commitWrapped(mutator, fx = {}) {
       ui.keepScroll = true;
       ui.enter = false;
       paint();
-      blip("level");
+      sfx("level");
       haptic("level");
     }, 740);
   }
@@ -503,7 +509,8 @@ const actions = {
     ui.exercise = null;
     ui.reordering = false;
     setHash(ui.tab);
-    if (ui.tab === "you") refreshNotify().then(() => paint());
+    if (ui.tab === "you" || ui.tab === "settings") refreshNotify().then(() => paint());
+    if (ui.tab !== "today") todayScrollBound = false;
     paint();
   },
   "toggle-reorder"() {
@@ -564,8 +571,13 @@ const actions = {
       },
     );
     if (done) {
-      burstAt(at.x, at.y, reduced);
-      if (ui.comboCount >= 2) haptic("combo");
+      const fxPack = state.settings?.checkFx || "shards";
+      if (fxPack === "shards") shardBurstToCrystal(at.x, at.y, reduced);
+      else burstAt(at.x, at.y, reduced);
+      if (ui.comboCount >= 2) {
+        sfx("combo");
+        haptic("combo");
+      }
       if (!ui.reordering) {
         ui.collapsingId = taskId;
         ui.keepScroll = true;
@@ -924,14 +936,71 @@ const actions = {
     };
     paint();
   },
-  "ask-buy-freeze"() {
+  "shop-cat"(el) {
+    ui.shopCat = el.dataset.cat || "themes";
+    ui.keepScroll = true;
+    paint();
+  },
+  "ask-buy-item"(el) {
+    const item = SHOP_CATALOG.find((entry) => entry.id === el.dataset.item);
+    if (!item) return;
     ui.confirm = {
-      title: "Buy a streak freeze?",
-      body: `Spend ${FREEZE_PRICE} crystals. It covers one missed day, and only if you own enough for the whole gap.`,
+      title: `Get ${item.name}?`,
+      body: `Spend ${item.price} crystals.`,
       label: "Spend",
-      action: "buy-freeze",
+      action: "buy-item",
+      item: item.id,
     };
     paint();
+  },
+  "equip-cosmetic"(el) {
+    const kind = el.dataset.kind;
+    const value = el.dataset.value;
+    const patch =
+      kind === "skin"
+        ? { crystalSkin: value }
+        : kind === "title"
+          ? { equippedTitle: value }
+          : kind === "fx"
+            ? { checkFx: value }
+            : kind === "soundPack"
+              ? { soundPack: value }
+              : {};
+    commitAction((current) => equipCosmetic(current, patch), { quiet: true });
+  },
+  async "dismiss-penalty"() {
+    ui.penaltyWindow = null;
+    await commitAction((current) => acknowledgePenalty(current), { quiet: true });
+    paint();
+  },
+  "sound-volume"(el) {
+    const vol = Math.max(0, Math.min(1, Number(el.value) / 100));
+    commitAction((current) => patchSettings(current, { soundVolume: vol }), { quiet: true });
+    sfx("tick");
+  },
+  async "add-life-reward"() {
+    const title = window.prompt("Life reward (e.g. 30 min gaming)");
+    if (!title?.trim()) return;
+    const priceRaw = window.prompt("Crystal price", "20");
+    const price = Number(priceRaw) || 20;
+    await commitAction(
+      (current) => {
+        const result = addCustomReward(current, { title: title.trim(), price }, new Date());
+        return result.ok ? result.state : current;
+      },
+      { quiet: true },
+    );
+    ui.shopCat = "life";
+    ui.keepScroll = true;
+    toast("Life reward added.");
+    paint();
+  },
+  "redeem-life"(el) {
+    commitAction((current) => {
+      const result = redeemCustomReward(current, el.dataset.reward, new Date());
+      return result.ok ? result.state : current;
+    });
+    toast("Redeemed. Go enjoy it.");
   },
   "equip-theme"(el) {
     commitAction((current) => equipTheme(current, el.dataset.theme), { quiet: true });
@@ -1096,11 +1165,12 @@ const actions = {
       toast("Theme equipped.");
       return;
     }
-    if (confirm.action === "buy-freeze") {
+    if (confirm.action === "buy-item") {
       await commitAction((current) => {
-        const result = buyFreeze(current, new Date());
+        const result = buyItem(current, confirm.item, new Date());
         return result.ok ? result.state : current;
-      });
+      }, { quiet: true });
+      toast("Unlocked.");
       return;
     }
     if (confirm.action === "delete-workout") {
@@ -1792,11 +1862,11 @@ function bind() {
   window.addEventListener("beforeinstallprompt", (event) => {
     event.preventDefault();
     ui.installEvent = event;
-    if (ui.tab === "you") paint();
+    if (ui.tab === "you" || ui.tab === "settings") paint();
   });
   window.addEventListener("appinstalled", () => {
     ui.installEvent = null;
-    if (ui.tab === "you") paint();
+    if (ui.tab === "you" || ui.tab === "settings") paint();
   });
   navigator.serviceWorker?.addEventListener("message", (event) => {
     if (event.data?.type !== "OPEN_TODAY") return;
@@ -1834,9 +1904,11 @@ async function boot() {
   }
   bind();
   paint();
-  if (prepared.freezesUsed.length) {
-    const days = prepared.freezesUsed.map((entry) => formatPretty(entry.date)).join(" and ");
-    toast(`Freeze covered ${days}. Streak kept.`);
+  if (state.lastPenaltyReport) {
+    ui.penaltyWindow = state.lastPenaltyReport;
+    sfx("penalty");
+    haptic("warn");
+    paint();
   }
   await registerServiceWorker();
   watchReminders(() => state);

@@ -210,9 +210,9 @@ test("exports in commit a911006 format and imports cleanly into new code without
   const expectedLevel = levelFor(expectedXp);
   assert.equal(expectedLevel, 6);
 
-  // Crystals stay at the exact backup balance (24): level grants aren't double-paid and falsy full:2026-11-14 did NOT claw back 3 crystals
-  assert.equal(prepared.crystals, 24);
-  assert.equal(prepared.freezes, 2);
+  // Crystals: backup balance plus freeze refunds (2 × 16), level grants aren't double-paid
+  assert.equal(prepared.crystals, 24 + 32);
+  assert.equal(prepared.freezes, undefined);
   assert.equal(prepared.longest, 5);
   assert.equal(streakCount(prepared, "2026-11-14"), 3);
 

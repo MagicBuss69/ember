@@ -1,6 +1,7 @@
 import { SLOTS, SLOT_LABEL } from "../constants.js";
 import { formatNum, esc } from "../format.js";
 import { icon } from "../icons.js";
+import { rankForLevel } from "../rank.js";
 
 const RADIUS = 36;
 export const RING_CIRC = 2 * Math.PI * RADIUS;
@@ -34,6 +35,24 @@ export function levelBar(progress, total, pulse) {
       </div>
       <div class="bar ${pulse ? "pulse" : ""}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(progress.pct * 100)}" aria-label="Level progress">
         <span data-bar data-pct="${scale}" style="transform:scaleX(${scale})"></span>
+      </div>
+    </div>`;
+}
+
+export function crystalMeterHtml({ progress, rank, stress = 0, pulse = false, skin = "default", compact = false }) {
+  const fill = Math.max(0, Math.min(1, Number(progress.pct) || 0)).toFixed(4);
+  const stressCl = stress > 0.55 ? "is-cracked" : stress > 0.25 ? "is-dim" : "";
+  const rankLetter = rank || rankForLevel(progress.level);
+  return `
+    <div class="crystal-meter ${compact ? "is-compact" : ""} ${stressCl} skin-${esc(skin)}" data-crystal-meter>
+      <div class="rank-chip" aria-label="Rank ${rankLetter}"><span class="display">${esc(rankLetter)}</span></div>
+      <div class="crystal-gem ${pulse ? "pulse" : ""}" aria-hidden="true">
+        <i class="crystal-fill" style="transform:scaleY(${fill})"></i>
+        <i class="crystal-sheen"></i>
+      </div>
+      <div class="crystal-copy">
+        <strong class="display">Lv ${progress.level}</strong>
+        <span class="num crystal-xp">${progress.maxed ? "MAX" : `${Math.round(progress.pct * 100)}%`}</span>
       </div>
     </div>`;
 }
@@ -94,7 +113,8 @@ export function questRows({
     .map((task, index) => {
       const meta = [task.time, !task.done && task.why ? task.why : ""].filter(Boolean).join("  ·  ");
       const eventBadge = task.isEvent ? `<span class="event-pill">Event</span>` : "";
-      const titleHtml = `<span class="quest-head"><span class="quest-title">${esc(task.title)}</span>${eventBadge}</span>`;
+      const penaltyBadge = task.penaltyTag ? `<span class="event-pill penalty-pill">Penalty</span>` : "";
+      const titleHtml = `<span class="quest-head"><span class="quest-title">${esc(task.title)}</span>${penaltyBadge}${eventBadge}</span>`;
       const collapsing = collapsingId === task.id ? "is-collapsing" : "";
       if (readOnly) {
         return `
@@ -127,7 +147,7 @@ export function questRows({
       const noCheck = template || !canToggle;
       const toggled = justDoneId === task.id ? "just-toggled" : "";
       return `
-        <div class="quest ${task.done ? "done" : ""} ${task.isEvent ? "is-event" : ""} ${noCheck ? "no-check" : ""} ${reordering ? "reordering" : ""} ${toggled} ${collapsing}" ${rowAttrs}>
+        <div class="quest ${task.done ? "done" : ""} ${task.isEvent ? "is-event" : ""} ${task.penaltyTag ? "is-penalty" : ""} ${noCheck ? "no-check" : ""} ${reordering ? "reordering" : ""} ${toggled} ${collapsing}" ${rowAttrs}>
           ${check}
           <button type="button" class="quest-body" data-action="${template ? "edit-template" : "edit-task"}" ${where}>
             ${titleHtml}
