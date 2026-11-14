@@ -78,6 +78,36 @@ function findTemplateTask(state, taskId) {
   return null;
 }
 
+const WEEKDAY_LABELS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const TEMPLATE_MISS = Symbol("templateMiss");
+
+function previewTitle(task, action) {
+  const title = String(task?.title || action?.title || "").trim().slice(0, 40);
+  return title || "unknown";
+}
+
+function weekdayLabel(value) {
+  if (value == null || value === "") return "?";
+  const text = String(value);
+  const index = Number(text);
+  if (Number.isInteger(index) && WEEKDAY_LABELS[index - 1]) return WEEKDAY_LABELS[index - 1];
+  return `weekday ${text}`;
+}
+
+function weekdayText(value) {
+  if (value == null || value === "") return "";
+  return String(value);
+}
+
+function templateHas(state, weekday, slot, taskId) {
+  const list = state.template?.[weekday]?.[slot];
+  return Array.isArray(list) && list.some((item) => item.id === taskId);
+}
+
+function missTemplate() {
+  return { [TEMPLATE_MISS]: "That template quest wasn't found." };
+}
+
 function actionMode(action) {
   return action.mode === "append" ? "append" : "replace";
 }
@@ -86,6 +116,7 @@ export function isDestructiveAction(action, state) {
   const name = action?.name;
   if (!name) return true;
   if (name === "deleteQuest" || name === "deleteEvent" || name === "deleteTemplateQuest") return true;
+  if (name === "setQuestDone") return true;
   if (name === "updateQuest" || name === "updateEvent" || name === "updateTemplateQuest") return true;
   if (name === "saveDayToTemplate") return true;
   if (name === "applyWeekPlan" || name === "setGoals") return true;
@@ -111,7 +142,21 @@ export function previewCoachAction(action, state) {
   if (name === "addQuest" || name === "addEvent") {
     return `Add ${name === "addEvent" ? "event" : "quest"} “${String(action.title || "").slice(0, 40)}” on ${action.date || "?"}`;
   }
-  if (name === "deleteQuest" || name === "deleteEvent") return `Delete quest on ${action.date || "?"}`;
+  if (name === "deleteQuest" || name === "deleteEvent" || name === "updateQuest" || name === "updateEvent") {
+    const found = action.taskId ? findDayTask(state, action.taskId) : null;
+    const title = previewTitle(found?.task, action);
+    const date = found?.date || action.date || "?";
+    const kind = name === "deleteEvent" || name === "updateEvent" ? "event" : "quest";
+    const verb = name.startsWith("delete") ? "Delete" : "Update";
+    return `${verb} ${kind} “${title}” on ${date}`;
+  }
+  if (name === "updateTemplateQuest" || name === "deleteTemplateQuest") {
+    const found = action.taskId ? findTemplateTask(state, action.taskId) : null;
+    const title = previewTitle(found?.task, action);
+    const day = weekdayLabel(found?.weekday ?? action.weekday);
+    const verb = name === "deleteTemplateQuest" ? "Delete" : "Update";
+    return `${verb} template quest “${title}” on ${day}`;
+  }
   if (name === "setGoals") return "Replace your goals text";
   if (name === "applyWeekPlan") return "Replace the weekly template from Gemini's plan";
   if (name === "copyDay" && actionMode(action) === "replace") return "Replace quests on selected days";
@@ -123,7 +168,7 @@ export function previewCoachAction(action, state) {
 
 function sanitizeList(actions) {
   if (!Array.isArray(actions)) return [];
-  return actions.slice(0, MAX_COACH_ACTIONS).map((raw) => {
+  return actions.map((raw) => {
     if (!raw || typeof raw !== "object") return null;
     const name = String(raw.name || "").trim();
     if (!ALLOWED.has(name)) return { invalid: true, name };
@@ -147,17 +192,18 @@ export function planCoachTurn(state, rawActions, { confirmed = false } = {}) {
   if (actions.length > MAX_COACH_ACTIONS) {
     return { ok: false, error: "Too many actions at once.", state };
   }
-  const destructive = actions.filter((a) => isDestructiveAction(a, state));
+  const accepted = actions.slice(0, MAX_COACH_ACTIONS);
+  const destructive = accepted.filter((a) => isDestructiveAction(a, state));
   if (destructive.length && !confirmed) {
     return {
       ok: false,
       needsConfirm: true,
       state,
-      actions,
-      previews: actions.map((a) => previewCoachAction(a, state)),
+      actions: accepted,
+      previews: accepted.map((a) => previewCoachAction(a, state)),
     };
   }
-  return { ok: true, state, actions, destructive: destructive.length > 0 };
+  return { ok: true, state, actions: accepted, destructive: destructive.length > 0 };
 }
 
 function applyOne(state, action, now) {
@@ -232,22 +278,17 @@ function applyOne(state, action, now) {
   }
 
   if (name === "updateTemplateQuest") {
-    const wd = String(action.weekday);
+    let wd = weekdayText(action.weekday);
     let slot = action.slot;
     const taskId = action.taskId;
-    if (!taskId) return state;
+    if (!taskId) return missTemplate();
     if (!wd || !slot) {
       const found = findTemplateTask(state, taskId);
-      if (!found) return state;
+      if (!found) return missTemplate();
+      wd = found.weekday;
       slot = found.slot;
-      return updateTemplateTask(state, found.weekday, found.slot, taskId, {
-        title: action.title,
-        why: action.why,
-        time: action.time,
-        slot: action.slot,
-      });
     }
-    if (!isWeekday(wd) || !isSlot(slot)) return state;
+    if (!isWeekday(wd) || !isSlot(slot) || !templateHas(state, wd, slot, taskId)) return missTemplate();
     return updateTemplateTask(state, wd, slot, taskId, {
       title: action.title,
       why: action.why,
@@ -271,15 +312,17 @@ function applyOne(state, action, now) {
   }
 
   if (name === "deleteTemplateQuest") {
-    const wd = String(action.weekday);
+    let wd = weekdayText(action.weekday);
     let slot = action.slot;
     const taskId = action.taskId;
-    if (!taskId) return state;
+    if (!taskId) return missTemplate();
     if (!wd || !slot) {
       const found = findTemplateTask(state, taskId);
-      if (!found) return state;
-      return deleteTemplateTask(state, found.weekday, found.slot, taskId);
+      if (!found) return missTemplate();
+      wd = found.weekday;
+      slot = found.slot;
     }
+    if (!isWeekday(wd) || !isSlot(slot) || !templateHas(state, wd, slot, taskId)) return missTemplate();
     return deleteTemplateTask(state, wd, slot, taskId);
   }
 
@@ -367,7 +410,11 @@ export function applyCoachActions(state, actions, now = new Date(), options = {}
   let next = state;
   for (const action of plan.actions) {
     const before = next;
-    next = applyOne(next, action, now);
+    const result = applyOne(next, action, now);
+    if (result?.[TEMPLATE_MISS]) {
+      return { ok: false, error: result[TEMPLATE_MISS], state };
+    }
+    next = result;
     if (next === before && action.name.startsWith("delete")) {
       /* penalty or missing ids — continue */
     }
