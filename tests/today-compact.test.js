@@ -1,18 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compactBarVisible, intersectionRatio } from "../src/ui/todayCompact.js";
+import {
+  COMPACT_BAR_FALLBACK_SCROLL,
+  compactBarFromScroll,
+} from "../src/ui/todayCompact.js";
 
-test("intersectionRatio and compactBarVisible follow the 0.15 compact threshold", () => {
-  const root = { top: 52, bottom: 800, height: 748 };
-  const full = { top: 60, bottom: 280, height: 220 };
-  assert.equal(intersectionRatio(root, full), 1);
-  assert.equal(compactBarVisible(1), false);
+test("compactBarFromScroll uses expanded bottom minus peek, with 140px fallback", () => {
+  const bottom = 280;
+  assert.equal(compactBarFromScroll(100, bottom), false);
+  assert.equal(compactBarFromScroll(221, bottom), true);
+  assert.equal(compactBarFromScroll(220, bottom), false);
 
-  const peeking = { top: 40, bottom: 70, height: 220 };
-  assert.ok(intersectionRatio(root, peeking) < 0.15);
-  assert.equal(compactBarVisible(intersectionRatio(root, peeking)), true);
-
-  const gone = { top: 20, bottom: 40, height: 220 };
-  assert.equal(intersectionRatio(root, gone), 0);
-  assert.equal(compactBarVisible(0), true);
+  assert.equal(compactBarFromScroll(141, 0), true);
+  assert.equal(compactBarFromScroll(140, 0), false);
+  assert.equal(compactBarFromScroll(COMPACT_BAR_FALLBACK_SCROLL + 1, null), true);
 });

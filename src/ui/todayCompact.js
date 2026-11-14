@@ -1,12 +1,10 @@
-/** Intersection visibility of the expanded Today board inside #main (0–1). */
-export function intersectionRatio(rootRect, targetRect) {
-  const visibleTop = Math.max(targetRect.top, rootRect.top);
-  const visibleBottom = Math.min(targetRect.bottom, rootRect.bottom);
-  const visible = Math.max(0, visibleBottom - visibleTop);
-  const height = Math.max(targetRect.height, 1);
-  return visible / height;
-}
+/** Default scroll cutoff when the expanded board node is missing. */
+export const COMPACT_BAR_FALLBACK_SCROLL = 140;
+export const COMPACT_BAR_PEEK_PX = 60;
 
-export function compactBarVisible(ratio, threshold = 0.15) {
-  return ratio < threshold;
+/** True when scrollTop has passed the expanded board bottom minus a small peek strip. */
+export function compactBarFromScroll(scrollTop, expandedBottom, peek = COMPACT_BAR_PEEK_PX, fallback = COMPACT_BAR_FALLBACK_SCROLL) {
+  if (!Number.isFinite(expandedBottom) || expandedBottom <= 0) return scrollTop > fallback;
+  const cutoff = Math.max(peek, expandedBottom - peek);
+  return scrollTop > cutoff;
 }

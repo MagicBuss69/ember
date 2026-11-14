@@ -61,7 +61,11 @@ import { ensureAudio, playSound } from "./sounds.js";
 import { burstAt, confettiFan, dailyCompleteBanner, shardBurstToCrystal } from "./ui/fx.js";
 import { addDays, dateKey, formatPretty, weekStart } from "./time.js";
 import { render, shellError } from "./ui/render.js";
-import { compactBarVisible, intersectionRatio } from "./ui/todayCompact.js";
+import {
+  installTodayCompactScroll,
+  refreshTodayCompactBarMarkup,
+  scheduleTodayCompactScroll,
+} from "./ui/todayCompactBar.js";
 
 const TABS = ["today", "week", "train", "rivals", "you", "settings"];
 const THEME_BG = {
@@ -111,7 +115,6 @@ const ui = {
 let levelTimer = 0;
 let genToken = 0;
 let audioPrimed = false;
-let todayBoardObserver = null;
 
 function tabFromHash() {
   const tab = location.hash.replace("#", "");
@@ -331,67 +334,8 @@ function paint() {
   }
   ui.enter = false;
   updateBadge();
-  if (ui.tab === "today") bindTodayCompactBar();
-  else unbindTodayCompactBar();
-}
-
-function syncTodayCompactBar(show) {
-  document.body.classList.toggle("today-compact-on", show);
-  document.getElementById("today-board-compact")?.setAttribute("aria-hidden", show ? "false" : "true");
-}
-
-function disconnectTodayCompactObserver() {
-  todayBoardObserver?.disconnect();
-  todayBoardObserver = null;
-}
-
-function unbindTodayCompactBar() {
-  disconnectTodayCompactObserver();
-  syncTodayCompactBar(false);
-}
-
-function measureTodayCompactBar(root, expanded) {
-  if (!root || !expanded?.isConnected) return null;
-  return intersectionRatio(root.getBoundingClientRect(), expanded.getBoundingClientRect());
-}
-
-function bindTodayCompactBar() {
-  disconnectTodayCompactObserver();
-  const root = document.getElementById("main");
-  const expanded = document.getElementById("today-board-expanded");
-  if (!root || !expanded) {
-    syncTodayCompactBar(false);
-    return;
-  }
-  const applyRatio = (ratio) => syncTodayCompactBar(compactBarVisible(ratio));
-  const measureNow = () => {
-    const liveRoot = document.getElementById("main");
-    const liveExpanded = document.getElementById("today-board-expanded");
-    if (!liveRoot || !liveExpanded?.isConnected) {
-      syncTodayCompactBar(false);
-      return;
-    }
-    if (liveExpanded !== expanded || liveRoot !== root) {
-      bindTodayCompactBar();
-      return;
-    }
-    const ratio = measureTodayCompactBar(liveRoot, liveExpanded);
-    if (ratio != null) applyRatio(ratio);
-  };
-  todayBoardObserver = new IntersectionObserver(
-    ([entry]) => {
-      const live = document.getElementById("today-board-expanded");
-      if (!entry?.target?.isConnected || entry.target !== live) {
-        bindTodayCompactBar();
-        return;
-      }
-      applyRatio(entry.intersectionRatio ?? 0);
-    },
-    { root, threshold: [0, 0.08, 0.15, 0.5, 1] },
-  );
-  todayBoardObserver.observe(expanded);
-  measureNow();
-  requestAnimationFrame(measureNow);
+  refreshTodayCompactBarMarkup(state, ui, new Date());
+  scheduleTodayCompactScroll();
 }
 
 function soundOpts() {
@@ -1811,6 +1755,7 @@ function bindQuestDrag(app) {
 
 function bind() {
   const app = document.getElementById("app");
+  installTodayCompactScroll(() => ui.tab);
   ensureBackupInput();
   const primeAudio = () => {
     if (audioPrimed) return;
