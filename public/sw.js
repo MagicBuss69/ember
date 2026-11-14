@@ -7,7 +7,29 @@
 const BASE = "/ember/";
 const ICON_URL = `${BASE}icons/icon-192.png`;
 const BADGE_URL = `${BASE}icons/badge-96.png`;
-const CACHE = "ember-shell-v7";
+const CACHE = "ember-shell-v8";
+const ART_WEBP = [
+  "badge-fullday",
+  "badge-streak7",
+  "currency",
+  "fx-nova",
+  "fx-shards",
+  "life-reward",
+  "skin-ember",
+  "skin-ice",
+  "skin-void",
+  "sound-arcade",
+  "sound-chime",
+  "theme-aurora",
+  "theme-blood",
+  "theme-ember",
+  "theme-frost",
+  "theme-ink",
+  "theme-pine",
+  "title-hunter",
+  "title-monarch",
+  "title-shadow",
+];
 const DB_NAME = "ember";
 const DB_VERSION = 1;
 const STORE = "kv";
@@ -21,6 +43,7 @@ const SHELL = [
   BADGE_URL,
   `${BASE}icons/icon-512.png`,
   `${BASE}icons/icon-maskable-512.png`,
+  ...ART_WEBP.map((name) => `${BASE}art/${name}.webp`),
 ];
 
 self.addEventListener("install", (event) => {

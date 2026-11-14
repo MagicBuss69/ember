@@ -1,5 +1,5 @@
 import { esc, formatNum } from "../format.js";
-import { gemIcon } from "../icons.js";
+import { currencyIcon } from "../art.js";
 import { confirmHtml, levelUpHtml, navHtml, penaltyHtml, sheetHtml, viewRivals, viewSettings, viewToday, viewTrain, viewWeek, viewYou } from "./screens.js";
 
 const VIEWS = {
@@ -19,7 +19,7 @@ export function render(state, ui, now) {
       <header class="hud">
         <div class="brand"><i class="brand-dot"></i>Ember</div>
         <button type="button" class="shard-btn hud-wallet" data-action="goto-shop" data-shard-hud aria-label="${formatNum(state.crystals)} shards in wallet">
-          <span class="shard-mark ${ui.gemShine ? "shine" : ""}">${gemIcon({ size: 22 })}</span>
+          <span class="shard-mark ${ui.gemShine ? "shine" : ""}">${currencyIcon({ size: 22, eager: true })}</span>
           <span class="shard-count num" data-crystals>${formatNum(state.crystals)}</span>
         </button>
       </header>
