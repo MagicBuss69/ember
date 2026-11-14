@@ -24,7 +24,7 @@ test("penalty applies XP loss and injects a penalty quest on next prepare", () =
   const today = "2026-11-12";
   const penalty = prepared.state.days[today].slots.morning.find((t) => t.penaltyTag);
   assert.ok(penalty);
-  assert.match(penalty.title, /Penalty/i);
+  assert.match(penalty.title, /Must-do/i);
 });
 
 test("upgrade today does not penalize incomplete days before penaltySince", () => {

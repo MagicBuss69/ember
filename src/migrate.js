@@ -1,4 +1,7 @@
+import { LEVEL_START, legacyLevelFor, levelFor } from "./economy.js";
+import { uid } from "./format.js";
 import { FREEZE_REFUND_CRYSTALS } from "./penalty.js";
+import { totalXp } from "./stats.js";
 import { dateKey } from "./time.js";
 
 /**
@@ -11,7 +14,7 @@ export function migrateStateV2(state, now = new Date()) {
 
   next.settings = next.settings || {};
   if (next.settings.soundVolume == null) {
-    next.settings.soundVolume = 0.72;
+    next.settings.soundVolume = 0.8;
   }
   if (next.settings.sound === undefined) {
     next.settings.sound = true;
@@ -49,6 +52,28 @@ export function migrateStateV2(state, now = new Date()) {
   delete next.freezeLog;
 
   if (next.version == null) next.version = 1;
+
+  if (!next.grants?.progressionV3) {
+    const xp = totalXp(next);
+    const oldLevel = legacyLevelFor(xp);
+    const newLevel = levelFor(xp);
+    if (newLevel < oldLevel) {
+      const target = LEVEL_START[Math.max(0, oldLevel - 1)] || 0;
+      const bump = target - xp;
+      if (bump > 0) {
+        next.xpEvents = next.xpEvents || [];
+        next.xpEvents.push({
+          id: uid(),
+          at: new Date().toISOString(),
+          date: dateKey(now),
+          amount: bump,
+          source: "migration",
+          ref: "progression-v3",
+        });
+      }
+    }
+    next.grants = { ...(next.grants || {}), progressionV3: true };
+  }
 
   return next;
 }

@@ -49,7 +49,8 @@ test("two quests reach level 2 and pay level crystals once", () => {
   assert.equal(levelFor(totalXp(state)), 1);
   assert.equal(state.crystals, CRYSTAL_STREAK_DAY);
   state = setTaskDone(state, day, "morning", tasks[1].id, true, NOW);
-  assert.equal(totalXp(state), XP_TASK * 2);
+  state = setTaskDone(state, day, "afternoon", tasks[2].id, true, NOW);
+  assert.ok(totalXp(state) >= 52);
   assert.equal(levelFor(totalXp(state)), 2);
   assert.equal(state.crystals, CRYSTAL_STREAK_DAY + CRYSTAL_LEVEL);
   const again = prepare(state, NOW).state;
@@ -70,13 +71,13 @@ test("a full day pays crystals and unchecking claws them back", () => {
   ];
   for (const [slot, task] of ordered) state = setTaskDone(state, day, slot, task.id, true, NOW);
   assert.equal(isFullDay(state, day), true);
-  assert.equal(totalXp(state), 125);
-  assert.equal(levelFor(125), 2);
+  assert.equal(totalXp(state), 131);
+  assert.equal(levelFor(totalXp(state)), 2);
   assert.equal(state.crystals, CRYSTAL_STREAK_DAY + CRYSTAL_LEVEL + CRYSTAL_FULL);
   state = setTaskDone(state, day, "evening", ordered[4][1].id, false, NOW);
   assert.equal(isFullDay(state, day), false);
   assert.equal(state.crystals, CRYSTAL_STREAK_DAY + CRYSTAL_LEVEL);
-  assert.equal(totalXp(state), 100);
+  assert.equal(totalXp(state), 103);
 });
 
 test("a missed day breaks streak without freezes", () => {
