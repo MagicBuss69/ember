@@ -11,12 +11,14 @@
   --accent-2: #ffc089;
   --accent-ink: #2a1408;
   --accent-soft: rgba(255, 138, 61, 0.16);
+  --accent-glow: color-mix(in srgb, var(--accent) 55%, transparent);
   --crystal: #6ee0c5;
   --good: #b7d7a2;
   --behind: #e7b39a;
   --danger: #ff8d7a;
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.4);
-  --nav: rgba(16, 14, 12, 0.9);
+  --card-glow: 0 0 0 1px var(--line), 0 8px 32px rgba(0, 0, 0, 0.35);
+  --nav: rgba(16, 14, 12, 0.92);
   --font: "Outfit", "Segoe UI", system-ui, sans-serif;
   --display: "Fraunces", Georgia, serif;
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -82,13 +84,22 @@ html, body {
 }
 body {
   margin: 0;
-  background: var(--bg);
+  background:
+    radial-gradient(ellipse 120% 80% at 50% -20%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 55%),
+    var(--bg);
   color: var(--text);
   font-size: 16px;
   line-height: 1.4;
   overflow: hidden;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
+}
+#fx {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  overflow: hidden;
 }
 button, input, textarea { font: inherit; color: inherit; }
 button, a, label, input, textarea, [role="switch"] { touch-action: manipulation; }
@@ -218,7 +229,13 @@ main.enter > * {
   letter-spacing: 0.03em;
 }
 .nav button svg { width: 22px; height: 22px; transition: transform 150ms var(--ease); }
-.nav button[aria-current="page"] { color: var(--accent); }
+.nav button[aria-current="page"] {
+  color: var(--accent);
+  text-shadow: 0 0 18px var(--accent-glow);
+}
+.nav button[aria-current="page"] svg {
+  filter: drop-shadow(0 0 6px var(--accent-glow));
+}
 .nav button:active svg { transform: scale(0.9); }
 
 h1.page-title, .date-copy h1 {
@@ -361,6 +378,68 @@ h1.page-title, .date-copy h1 {
   font-weight: 600;
 }
 .streak-line svg { width: 16px; height: 16px; color: var(--accent); }
+.streak-line.heat-1 svg { filter: drop-shadow(0 0 4px var(--accent-glow)); }
+.streak-line.heat-2 svg { filter: drop-shadow(0 0 8px var(--accent-glow)); animation: flame-flicker 2.4s ease-in-out infinite; }
+.streak-line.heat-3 svg { filter: drop-shadow(0 0 12px var(--accent-glow)); animation: flame-flicker 1.6s ease-in-out infinite; }
+@keyframes flame-flicker {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.08); opacity: 0.92; }
+}
+.quest.is-collapsing {
+  overflow: hidden;
+  max-height: 64px;
+  will-change: transform, opacity, max-height;
+  animation: quest-collapse 220ms var(--ease) forwards;
+  pointer-events: none;
+}
+@keyframes quest-collapse {
+  to {
+    opacity: 0;
+    transform: translate3d(0, -4px, 0) scale(0.96);
+    max-height: 0;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border-width: 0;
+  }
+}
+.done-drawer {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  color: var(--text);
+  min-height: 52px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  border-radius: 0 0 14px 14px;
+  margin-top: 2px;
+}
+.done-drawer.is-cleared {
+  border-top: 0;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 14%, transparent), color-mix(in srgb, var(--crystal) 8%, transparent));
+  border-radius: 14px;
+  margin: 4px 0 2px;
+}
+.done-drawer.is-open .done-drawer-glyph { transform: rotate(90deg); }
+.done-drawer-glyph {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  color: var(--accent-2);
+  font-size: 16px;
+  flex: none;
+  transition: transform 180ms var(--ease);
+}
+.done-drawer-glyph svg { width: 18px; height: 18px; }
+.done-drawer-copy { min-width: 0; }
+.done-drawer-copy strong { display: block; font-size: 15px; font-weight: 650; }
+.done-drawer-copy small { display: block; color: var(--faint); font-size: 12px; margin-top: 2px; }
+.done-list { border-top: 1px dashed var(--line); margin-top: 2px; padding-top: 2px; }
 
 .hint, .note {
   background: var(--accent-soft);
@@ -448,7 +527,16 @@ button:active:not(:disabled) { transform: scale(0.98); }
   border: 1px solid var(--line);
   border-radius: 20px;
   padding: 2px 8px 6px;
+  box-shadow: var(--card-glow);
 }
+.slot-card.is-cleared {
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: linear-gradient(165deg, color-mix(in srgb, var(--accent) 8%, var(--bg-elev)), var(--bg-elev));
+}
+.slot-card.has-done-open {
+  padding-bottom: 4px;
+}
+.slot-all-done header .count { color: var(--accent-2); }
 .slot-empty { padding: 10px 8px 0; }
 .quest {
   display: flex;
@@ -886,7 +974,36 @@ body.dragging-quest, body.dragging-quest * { cursor: grabbing !important; user-s
 .tone-even .delta { color: var(--text); }
 .race { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
 .race-row { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
-.track { height: 6px; border-radius: 99px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.track {
+  position: relative;
+  height: 8px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: visible;
+}
+.track.race-live {
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.track span { overflow: hidden; border-radius: inherit; }
+.race-pin {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  border-radius: 50%;
+  transform: translate3d(0, -50%, 0);
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.4);
+}
+.race-pin.you {
+  background: var(--accent-2);
+  border: 2px solid var(--accent-ink);
+  z-index: 2;
+}
+.race-pin.ghost {
+  background: var(--faint);
+  opacity: 0.85;
+}
 .track span {
   display: block;
   height: 100%;
@@ -1259,6 +1376,82 @@ body.dragging-quest, body.dragging-quest * { cursor: grabbing !important; user-s
   28% { opacity: 1; transform: translate3d(calc(var(--fx-x, 0px) - 50%), var(--fx-y, 0px), 0) scale(1.04); }
   75% { opacity: 1; transform: translate3d(calc(var(--fx-x, 0px) - 50%), calc(var(--fx-y, 0px) - 24px), 0) scale(1); }
   100% { opacity: 0; transform: translate3d(calc(var(--fx-x, 0px) - 50%), calc(var(--fx-y, 0px) - 34px), 0) scale(0.98); }
+}
+
+.particle {
+  position: fixed;
+  width: 7px;
+  height: 7px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  pointer-events: none;
+  will-change: transform, opacity;
+  animation: particle-out 420ms var(--ease) forwards;
+}
+@keyframes particle-out {
+  to {
+    opacity: 0;
+    transform: translate3d(var(--px), var(--py), 0) scale(0.2);
+  }
+}
+.confetti {
+  position: fixed;
+  width: 8px;
+  height: 5px;
+  margin: -2px 0 0 -4px;
+  border-radius: 2px;
+  pointer-events: none;
+  will-change: transform, opacity;
+  animation: confetti-fall 820ms var(--ease) forwards;
+}
+@keyframes confetti-fall {
+  to {
+    opacity: 0;
+    transform: translate3d(var(--px), var(--py), 0) rotate(var(--rot, 0deg));
+  }
+}
+.daily-banner {
+  position: fixed;
+  left: 50%;
+  top: 28%;
+  z-index: 66;
+  transform: translate3d(-50%, 0, 0);
+  text-align: center;
+  padding: 16px 22px;
+  border-radius: 20px;
+  background: var(--bg-elev);
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  box-shadow: var(--shadow), 0 0 40px color-mix(in srgb, var(--accent) 30%, transparent);
+  will-change: transform, opacity;
+  animation: daily-pop 2.4s var(--ease) forwards;
+}
+.daily-banner.is-reduced { animation-duration: 1s; }
+.daily-banner strong {
+  display: block;
+  font-family: var(--display);
+  font-size: 22px;
+  letter-spacing: -0.03em;
+  margin-bottom: 4px;
+}
+.daily-banner span { color: var(--muted); font-size: 14px; }
+@keyframes daily-pop {
+  0% { opacity: 0; transform: translate3d(-50%, 12px, 0) scale(0.94); }
+  12% { opacity: 1; transform: translate3d(-50%, 0, 0) scale(1); }
+  78% { opacity: 1; transform: translate3d(-50%, 0, 0) scale(1); }
+  100% { opacity: 0; transform: translate3d(-50%, -8px, 0) scale(0.98); }
+}
+.hero-card, .rivals .hero-card {
+  box-shadow: var(--card-glow), 0 0 48px color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.medallion {
+  box-shadow: inset 0 0 24px color-mix(in srgb, var(--accent) 12%, transparent), 0 0 20px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.levelup-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 60%);
+  pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -54,7 +54,8 @@ import {
   watchReminders,
 } from "./notify.js";
 import { ensureRivalHistory } from "./rivals.js";
-import { exerciseGroups, openTodayCount, totalXp } from "./stats.js";
+import { exerciseGroups, isComplete, openTodayCount, totalXp } from "./stats.js";
+import { burstAt, confettiFan, dailyCompleteBanner } from "./ui/fx.js";
 import { addDays, dateKey, formatPretty, weekStart } from "./time.js";
 import { render, shellError } from "./ui/render.js";
 
@@ -95,6 +96,9 @@ const ui = {
   revealKey: false,
   scrollTo: null,
   ignorePop: false,
+  collapsingId: null,
+  comboCount: 0,
+  lastCheckAt: 0,
 };
 let levelTimer = 0;
 let genToken = 0;
@@ -379,8 +383,14 @@ function haptic(kind) {
     down: [8],
     level: [18, 36, 20, 48, 28],
     warn: [22, 36, 22],
+    combo: [8, 14, 22],
+    day: [16, 28, 16, 40],
   };
   navigator.vibrate(pattern[kind] || [12]);
+}
+
+function waitMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function updateBadge() {
@@ -526,11 +536,67 @@ const actions = {
   async toggle(el) {
     const done = el.getAttribute("aria-pressed") !== "true";
     const at = pointOf(el);
-    ui.justDoneId = el.dataset.id;
-    await commitAction((current) => setTaskDone(current, el.dataset.date, el.dataset.slot, el.dataset.id, done, new Date()), {
-      pop: { text: done ? "+25 XP" : "−25 XP", ...at, kind: done ? "xp" : "down" },
-      ring: true,
-    });
+    const date = el.dataset.date;
+    const taskId = el.dataset.id;
+    const wasDayComplete = isComplete(state, date);
+    const reduced = prefersReducedMotion();
+    ui.justDoneId = taskId;
+    if (done) {
+      const now = Date.now();
+      ui.comboCount = now - (ui.lastCheckAt || 0) < 4000 ? Math.min(9, (ui.comboCount || 0) + 1) : 1;
+      ui.lastCheckAt = now;
+    } else {
+      ui.comboCount = 0;
+    }
+    await commitAction(
+      (current) => setTaskDone(current, el.dataset.date, el.dataset.slot, taskId, done, new Date()),
+      {
+        pop: {
+          text: done
+            ? ui.comboCount >= 2
+              ? `+25 XP · ×${ui.comboCount}`
+              : "+25 XP"
+            : "−25 XP",
+          ...at,
+          kind: done ? "xp" : "down",
+        },
+        ring: true,
+      },
+    );
+    if (done) {
+      burstAt(at.x, at.y, reduced);
+      if (ui.comboCount >= 2) haptic("combo");
+      if (!ui.reordering) {
+        ui.collapsingId = taskId;
+        ui.keepScroll = true;
+        paint();
+        if (!reduced) {
+          await waitMs(160);
+          const row = document.querySelector(`[data-row-id="${taskId}"]`);
+          row?.classList.add("is-collapsing");
+          await waitMs(220);
+        }
+        ui.collapsingId = null;
+        ui.keepScroll = true;
+        paint();
+      }
+      if (!wasDayComplete && isComplete(state, date)) {
+        dailyCompleteBanner(reduced);
+        confettiFan(reduced);
+        haptic("day");
+        toast("Day complete — every quest done.");
+      }
+    }
+  },
+  "toggle-done-drawer"(el) {
+    const key = el.dataset.doneKey;
+    if (!key) return;
+    const open = state.settings?.doneSlotsOpen || {};
+    const next = { ...open };
+    if (next[key]) delete next[key];
+    else next[key] = true;
+    haptic("tick");
+    commitAction((current) => patchSettings(current, { doneSlotsOpen: next }), { quiet: true });
   },
   "shift-day"(el) {
     const today = dateKey(new Date());

@@ -93,8 +93,9 @@ export function createInitialState(now = new Date()) {
       geminiApiKey: "",
       goals: DEFAULT_GOALS,
       theme: "ember",
-      sound: true,
+      sound: false,
       haptics: true,
+      doneSlotsOpen: {},
       dismissedHint: false,
       geminiKeyStatus: "",
       driveLinked: false,
@@ -647,6 +648,13 @@ export function patchSettings(state, patch) {
   if (typeof patch.driveLastBackupAt === "string") next.settings.driveLastBackupAt = patch.driveLastBackupAt.slice(0, 40);
   if (typeof patch.workerToken === "string") next.settings.workerToken = patch.workerToken.trim().slice(0, 200);
   if (typeof patch.pushOn === "boolean") next.settings.pushOn = patch.pushOn;
+  if (patch.doneSlotsOpen && typeof patch.doneSlotsOpen === "object") {
+    const clean = {};
+    for (const [key, value] of Object.entries(patch.doneSlotsOpen)) {
+      if (value && typeof key === "string" && key.length <= 48) clean[key.slice(0, 48)] = true;
+    }
+    next.settings.doneSlotsOpen = clean;
+  }
   return next;
 }
 

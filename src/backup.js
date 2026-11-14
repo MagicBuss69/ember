@@ -77,8 +77,10 @@ export function sanitizeImport(raw, current = null) {
     geminiApiKey: importedGeminiKey,
     goals: typeof rawSettings.goals === "string" ? clip(rawSettings.goals, 2000) : base.settings.goals,
     theme: "ember",
-    sound: rawSettings.sound !== false,
+    sound: Boolean(rawSettings.sound),
     haptics: rawSettings.haptics !== false,
+    doneSlotsOpen:
+      rawSettings.doneSlotsOpen && typeof rawSettings.doneSlotsOpen === "object" ? rawSettings.doneSlotsOpen : {},
     dismissedHint: Boolean(rawSettings.dismissedHint),
     geminiKeyStatus: importedGeminiKey ? importedKeyStatus : "",
     driveLinked: "driveLinked" in rawSettings ? Boolean(rawSettings.driveLinked) : Boolean(prevSettings.driveLinked),

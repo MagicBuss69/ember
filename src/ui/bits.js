@@ -55,6 +55,26 @@ export function reorderBarHtml(hasAny, reordering) {
   </div>`;
 }
 
+function doneSlotKey({ date, weekday, slot, template }) {
+  if (template) return `t|${weekday}|${slot}`;
+  return `d|${date}|${slot}`;
+}
+
+function doneDrawerRow({ doneKey, doneCount, expanded, allCleared }) {
+  if (!doneCount) return "";
+  const label = allCleared && !expanded ? "Section cleared" : `Done (${doneCount})`;
+  const sub = allCleared && !expanded ? `${doneCount} quest${doneCount === 1 ? "" : "s"}` : expanded ? "Tap to hide" : "Tap to view or undo";
+  return `
+    <button type="button" class="done-drawer ${allCleared && !expanded ? "is-cleared" : ""} ${expanded ? "is-open" : ""}"
+      data-action="toggle-done-drawer" data-done-key="${esc(doneKey)}" aria-expanded="${expanded ? "true" : "false"}">
+      <span class="done-drawer-glyph" aria-hidden="true">${allCleared && !expanded ? "✦" : icon("chevR")}</span>
+      <span class="done-drawer-copy">
+        <strong>${esc(label)}</strong>
+        <small>${esc(sub)}</small>
+      </span>
+    </button>`;
+}
+
 export function questRows({
   items,
   date,
@@ -66,6 +86,8 @@ export function questRows({
   reordering,
   readOnly = false,
   canToggle = true,
+  collapsingId = null,
+  showAdd = true,
 }) {
   const slotIdx = SLOTS.indexOf(slot);
   const rows = items
@@ -73,9 +95,10 @@ export function questRows({
       const meta = [task.time, !task.done && task.why ? task.why : ""].filter(Boolean).join("  ·  ");
       const eventBadge = task.isEvent ? `<span class="event-pill">Event</span>` : "";
       const titleHtml = `<span class="quest-head"><span class="quest-title">${esc(task.title)}</span>${eventBadge}</span>`;
+      const collapsing = collapsingId === task.id ? "is-collapsing" : "";
       if (readOnly) {
         return `
-          <div class="quest ${task.done ? "done" : ""} ${task.isEvent ? "is-event" : ""} is-readonly" data-row-id="${esc(task.id)}">
+          <div class="quest ${task.done ? "done" : ""} ${task.isEvent ? "is-event" : ""} is-readonly ${collapsing}" data-row-id="${esc(task.id)}">
             <span class="check static" aria-hidden="true"><i class="${task.done ? "is-done" : ""}"></i></span>
             <div class="quest-body static">
               ${titleHtml}
@@ -104,7 +127,7 @@ export function questRows({
       const noCheck = template || !canToggle;
       const toggled = justDoneId === task.id ? "just-toggled" : "";
       return `
-        <div class="quest ${task.done ? "done" : ""} ${task.isEvent ? "is-event" : ""} ${noCheck ? "no-check" : ""} ${reordering ? "reordering" : ""} ${toggled}" ${rowAttrs}>
+        <div class="quest ${task.done ? "done" : ""} ${task.isEvent ? "is-event" : ""} ${noCheck ? "no-check" : ""} ${reordering ? "reordering" : ""} ${toggled} ${collapsing}" ${rowAttrs}>
           ${check}
           <button type="button" class="quest-body" data-action="${template ? "edit-template" : "edit-task"}" ${where}>
             ${titleHtml}
@@ -115,7 +138,7 @@ export function questRows({
         </div>`;
     })
     .join("");
-  if (readOnly) return rows;
+  if (readOnly || !showAdd) return rows;
   const addWhere = template
     ? `data-weekday="${weekday}" data-slot="${slot}"`
     : `data-date="${date}" data-slot="${slot}"`;
@@ -136,6 +159,8 @@ export function slotSection({
   reordering = false,
   readOnly = false,
   canToggle = true,
+  doneSlotsOpen = {},
+  collapsingId = null,
 }) {
   const done = items.filter((task) => task.done).length;
   const dropTarget = template
@@ -143,16 +168,73 @@ export function slotSection({
     : `data-date="${date}"`;
   const dropAttrs = movable ? `data-slot-drop="${slot}" ${dropTarget}` : "";
   const countText = template || !canToggle ? String(items.length) : `${done}/${items.length}`;
+  const hideDone = !template && !reordering;
+  const doneKey = hideDone ? doneSlotKey({ date, weekday, slot, template }) : "";
+  const doneExpanded = hideDone && Boolean(doneSlotsOpen[doneKey]);
+  const doneItems = hideDone ? items.filter((task) => task.done && task.id !== collapsingId) : [];
+  const openItems = hideDone
+    ? items.filter((task) => !task.done || task.id === collapsingId)
+    : items;
+  const allCleared = hideDone && items.length > 0 && done === items.length;
+  const showDrawer = hideDone && doneItems.length > 0;
+  const onlyCleared = showDrawer && openItems.length === 0 && !doneExpanded;
+
+  let cardInner = "";
+  if (!items.length) {
+    cardInner = `<p class="slot-empty">Nothing ${SLOT_LABEL[slot].toLowerCase()}.</p>`;
+  } else if (onlyCleared) {
+    cardInner = doneDrawerRow({ doneKey, doneCount: doneItems.length, expanded: false, allCleared: true });
+  } else {
+  cardInner = questRows({
+    items: openItems,
+    date,
+    weekday,
+    slot,
+    template,
+    justDoneId,
+    movable,
+    reordering,
+    readOnly,
+    canToggle,
+    collapsingId,
+  });
+    if (doneExpanded && doneItems.length) {
+      cardInner += `<div class="done-list">`;
+      cardInner += questRows({
+        items: doneItems,
+        date,
+        weekday,
+        slot,
+        template,
+        justDoneId,
+        movable,
+        reordering,
+        readOnly,
+        canToggle,
+        collapsingId,
+        showAdd: false,
+      });
+      cardInner += `</div>`;
+    }
+    if (showDrawer && !onlyCleared) {
+      cardInner += doneDrawerRow({
+        doneKey,
+        doneCount: doneItems.length,
+        expanded: doneExpanded,
+        allCleared: allCleared && openItems.length === 0,
+      });
+    }
+  }
+
   return `
-    <section class="slot">
+    <section class="slot ${allCleared ? "slot-all-done" : ""}">
       <header>
         <h2>${SLOT_LABEL[slot]}</h2>
         ${!template && slot === nowSlot ? `<span class="now">Now</span>` : ""}
         <span class="count num">${countText}</span>
       </header>
-      <div class="slot-card" ${dropAttrs}>
-        ${items.length ? "" : `<p class="slot-empty">Nothing ${SLOT_LABEL[slot].toLowerCase()}.</p>`}
-        ${questRows({ items, date, weekday, slot, template, justDoneId, movable, reordering, readOnly, canToggle })}
+      <div class="slot-card ${allCleared ? "is-cleared" : ""} ${doneExpanded ? "has-done-open" : ""}" ${dropAttrs}>
+        ${cardInner}
       </div>
     </section>`;
 }
