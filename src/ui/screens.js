@@ -104,31 +104,9 @@ export function viewToday(state, ui, now) {
   const hint = lookingToday && !state.settings.dismissedHint
     ? `<div class="hint"><p>Starter week, picked for a school day in Sweden. Change or drag any quest. Long-press a quest to move it. It only lives on this phone.</p><button type="button" data-action="dismiss-hint">Got it</button></div>`
     : "";
-  const railShards = `${formatNum(state.crystals)} ${gemIcon({ size: 14 })}`;
-  const scale = Math.max(0, Math.min(1, Number(progress.pct) || 0)).toFixed(4);
-  const compactTitle = lookingToday
-    ? `Today · ${formatPretty(date)}`
-    : `${weekdayLong(date)} · ${formatPretty(date)}`;
   return `
     <section class="today">
       ${lookingToday ? mustDoBanner(state, today) : ""}
-      ${lookingToday
-        ? `<div id="today-board-compact" class="today-board-compact" aria-hidden="true">
-            <div class="today-board-compact-inner">
-              <div class="board-compact-row">
-                ${ringHtml(ring.done, ring.total, false, { compact: true })}
-                <p class="board-compact-title">${esc(compactTitle)}</p>
-                <span class="board-compact-lv num">Lv ${progress.level}</span>
-                <span class="board-compact-shards num">${railShards}</span>
-              </div>
-              <div class="board-compact-progress">
-                <div class="bar board-compact-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(progress.pct * 100)}" aria-label="Level progress">
-                  <span data-bar data-pct="${scale}" style="transform:scaleX(${scale})"></span>
-                </div>
-              </div>
-            </div>
-          </div>`
-        : ""}
       <div id="today-board-expanded" class="today-board-expanded">
         <div class="sticky-board">
           <div class="sticky-board-head">

@@ -193,7 +193,13 @@ export async function periodicStatus() {
 export async function registerServiceWorker() {
   if (!navigator.serviceWorker) return null;
   try {
-    return await navigator.serviceWorker.register(publicUrl("sw.js"), { scope: BASE });
+    const registration = await navigator.serviceWorker.register(publicUrl("sw.js"), { scope: BASE });
+    try {
+      await registration.update();
+    } catch {
+      /* update can fail offline */
+    }
+    return registration;
   } catch {
     return null;
   }

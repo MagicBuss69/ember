@@ -189,6 +189,8 @@ a { color: var(--accent-2); }
 }
 
 .hud {
+  position: relative;
+  z-index: 30;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1626,7 +1628,7 @@ body.dragging-quest, body.dragging-quest * { cursor: grabbing !important; user-s
 }
 .today-board-compact {
   position: fixed;
-  z-index: 12;
+  z-index: 28;
   left: 50%;
   top: calc(env(safe-area-inset-top, 0px) + var(--hud-h));
   width: min(100%, 480px);
@@ -1636,6 +1638,10 @@ body.dragging-quest, body.dragging-quest * { cursor: grabbing !important; user-s
   pointer-events: none;
   will-change: transform, opacity;
   transition: transform 180ms var(--ease), opacity 180ms ease;
+}
+.today-board-compact.is-dormant {
+  visibility: hidden;
+  pointer-events: none;
 }
 body.today-compact-on .today-board-compact {
   transform: translate3d(-50%, 0, 0);
