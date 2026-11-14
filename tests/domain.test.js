@@ -82,6 +82,7 @@ test("a full day pays crystals and unchecking claws them back", () => {
 
 test("a missed day breaks streak without freezes", () => {
   let state = createInitialState(new Date("2026-11-11T08:00:00Z"));
+  state.startedOn = "2026-11-10";
   const task = firstTask(state, "2026-11-10");
   state = setTaskDone(state, "2026-11-10", "morning", task.id, true, new Date("2026-11-10T08:00:00Z"));
   const prepared = prepare(state, new Date("2026-11-12T08:00:00Z"));

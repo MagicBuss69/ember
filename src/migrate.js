@@ -1,8 +1,60 @@
+import { SLOTS } from "./constants.js";
 import { LEVEL_START, legacyLevelFor, levelFor } from "./economy.js";
 import { uid } from "./format.js";
-import { FREEZE_REFUND_CRYSTALS } from "./penalty.js";
+import { FREEZE_REFUND_CRYSTALS, PENALTY_TAG, firstUseDate, penaltyFloorDate } from "./penalty.js";
 import { totalXp } from "./stats.js";
 import { dateKey } from "./time.js";
+
+function stripMustDoQuests(state) {
+  let removed = 0;
+  for (const key of Object.keys(state.days || {})) {
+    const day = state.days[key];
+    if (!day?.slots) continue;
+    for (const slot of SLOTS) {
+      const list = day.slots[slot] || [];
+      const kept = list.filter((task) => task?.penaltyTag !== PENALTY_TAG);
+      removed += list.length - kept.length;
+      day.slots[slot] = kept;
+    }
+  }
+  return removed;
+}
+
+function phantomPenaltyState(state, today) {
+  const started = state.startedOn || today;
+  const since = state.penaltySince || started;
+  if (since < started) return true;
+  if ((state.penaltyProcessed || []).some((d) => d < started)) return true;
+  if ((state.penaltyReports || []).some((r) => (r.dates || []).some((d) => d < started))) return true;
+  if ((state.lastPenaltyReport?.dates || []).some((d) => d < started)) return true;
+  return false;
+}
+
+function migratePhantomPenalties(state, now) {
+  const today = dateKey(now);
+  const started = state.startedOn || today;
+  const use = firstUseDate(state, today);
+  const floor = use > penaltyFloorDate(state, today) ? use : penaltyFloorDate(state, today);
+  const phantom = phantomPenaltyState(state, today);
+
+  state.penaltyProcessed = (state.penaltyProcessed || []).filter((d) => d >= floor);
+  state.penaltyReports = (state.penaltyReports || []).filter(
+    (r) => !(r.dates || []).some((d) => d < floor),
+  );
+
+  if (phantom) {
+    stripMustDoQuests(state);
+    state.lastPenaltyReport = null;
+    state.penaltySince = today;
+    if (Number(state.crystalStress) > 0) state.crystalStress = 0;
+    if (state.streakBrokenAt && state.streakBrokenAt < floor) delete state.streakBrokenAt;
+  } else if ((state.penaltySince || started) < started) {
+    state.penaltySince = today;
+  }
+
+  state.grants = { ...(state.grants || {}), penaltyPhantomV1: true };
+  return state;
+}
 
 /**
  * Runtime migration for saves still on v1 freeze/shop shape.
@@ -73,6 +125,10 @@ export function migrateStateV2(state, now = new Date()) {
       }
     }
     next.grants = { ...(next.grants || {}), progressionV3: true };
+  }
+
+  if (!next.grants?.penaltyPhantomV1) {
+    migratePhantomPenalties(next, now);
   }
 
   return next;

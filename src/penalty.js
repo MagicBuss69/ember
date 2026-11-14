@@ -2,9 +2,10 @@ import { SLOTS } from "./constants.js";
 import { LEVEL_START, levelFor } from "./economy.js";
 import { uid } from "./format.js";
 import { addDays, dateKey } from "./time.js";
-import { doneCount, isComplete, taskCount, totalXp } from "./stats.js";
+import { doneCount, isComplete, isFullDay, taskCount, totalXp } from "./stats.js";
 
 export const XP_PENALTY_PER_QUEST = 15;
+export const STREAK_BREAK_XP_PER_DAY = 8;
 export const FREEZE_REFUND_CRYSTALS = 16;
 export const PENALTY_TAG = "must-do";
 
@@ -31,16 +32,58 @@ function blankSlots() {
   return { morning: [], afternoon: [], evening: [] };
 }
 
-/** Days strictly before today that broke the streak (no quests done). */
+/** Earliest calendar day penalties and misses may apply (install day vs penalty cursor). */
+export function penaltyFloorDate(state, today) {
+  const started = state.startedOn || today;
+  const since = state.penaltySince || started;
+  return started > since ? started : since;
+}
+
+/** First day the user actually used Ember (install or first completed quest). */
+export function firstUseDate(state, today) {
+  const started = state.startedOn || today;
+  let earliest = started;
+  for (const event of state.xpEvents || []) {
+    const d = event?.date;
+    if (d && /^\d{4}-\d{2}-\d{2}$/.test(d) && d < earliest) earliest = d;
+  }
+  for (const [date, day] of Object.entries(state.days || {})) {
+    if (!day?.slots) continue;
+    let anyDone = false;
+    for (const slot of SLOTS) {
+      for (const task of day.slots[slot] || []) {
+        if (task?.done) anyDone = true;
+      }
+    }
+    if (anyDone && date < earliest) earliest = date;
+  }
+  return earliest;
+}
+
+function missFloor(state, today) {
+  const use = firstUseDate(state, today);
+  const floor = penaltyFloorDate(state, today);
+  return use > floor ? use : floor;
+}
+
+function isScheduledIncomplete(state, date, today) {
+  if (date >= today) return false;
+  if (date <= (state.startedOn || today)) return false;
+  const total = taskCount(state, date);
+  if (!total) return false;
+  return !isFullDay(state, date);
+}
+
+/** Days strictly before today with scheduled quests still incomplete (since first use / penalty floor). */
 export function missedDatesBefore(state, today) {
-  const since = state.penaltySince || state.startedOn || today;
+  const floor = missFloor(state, today);
   const missed = [];
   let cursor = addDays(today, -1);
   for (let i = 0; i < 21; i += 1) {
-    if (cursor < since) return missed.reverse();
+    if (cursor < floor) break;
+    if (cursor <= (state.startedOn || today)) break;
     if (isComplete(state, cursor)) return missed.reverse();
-    if (taskCount(state, cursor) > 0) missed.push(cursor);
-    else if (cursor < (state.startedOn || today)) return missed.reverse();
+    if (isScheduledIncomplete(state, cursor, today)) missed.push(cursor);
     cursor = addDays(cursor, -1);
   }
   return missed.reverse();
@@ -93,6 +136,30 @@ export function mustDoQuestCount(missedDayCount) {
   return Math.min(6, k + 1 + Math.floor((k - 1) / 2));
 }
 
+/** Consecutive completed days immediately before the first newly missed day. */
+export function streakLostLength(state, missedDates) {
+  if (!missedDates?.length) return 0;
+  const started = state.startedOn || missedDates[0];
+  let cursor = addDays(missedDates[0], -1);
+  let count = 0;
+  for (let i = 0; i < 500; i += 1) {
+    if (cursor <= started) break;
+    if (!isComplete(state, cursor)) break;
+    count += 1;
+    cursor = addDays(cursor, -1);
+  }
+  return count;
+}
+
+/** Extra must-do quests added when a streak ends (on top of miss count). */
+export function streakBreakMustDoExtra(streakLost) {
+  const n = Math.max(0, Math.round(Number(streakLost) || 0));
+  if (!n) return 0;
+  if (n < 3) return 1;
+  if (n < 7) return 2;
+  return Math.min(5, 2 + Math.floor((n - 7) / 3));
+}
+
 export function hasOpenPenaltyQuest(state, date) {
   const day = state.days?.[date];
   if (!day) return false;
@@ -120,8 +187,9 @@ export function openPenaltyQuests(state, date) {
   return list;
 }
 
-function injectMustDoPenalties(state, today, missedDates) {
-  const count = mustDoQuestCount(missedDates.length);
+function injectMustDoPenalties(state, today, missedDates, streakExtra = 0) {
+  const missCount = mustDoQuestCount(missedDates.length);
+  const count = missCount + Math.max(0, Number(streakExtra) || 0);
   if (!count) return 0;
   if (!state.days[today]) state.days[today] = { slots: blankSlots() };
   let added = 0;
@@ -129,8 +197,11 @@ function injectMustDoPenalties(state, today, missedDates) {
     SLOTS.flatMap((slot) => (state.days[today].slots[slot] || []).map((t) => t.title)),
   );
   for (let i = 0; i < count; i += 1) {
-    const difficulty = Math.min(3, 1 + Math.floor((missedDates.length + i) / 2));
-    const seed = `${today}|${missedDates.join(",")}|${i}`;
+    const fromStreak = i >= missCount;
+    const difficulty = fromStreak
+      ? Math.min(3, 2 + Math.floor(i / 2))
+      : Math.min(3, 1 + Math.floor((missedDates.length + i) / 2));
+    const seed = fromStreak ? `${today}|streak-break|${i}` : `${today}|${missedDates.join(",")}|${i}`;
     let spec = pickFromPool(difficulty, seed);
     let tries = 0;
     while (seen.has(spec.title) && tries < PENALTY_CATALOG.length) {
@@ -161,12 +232,12 @@ function injectMustDoPenalties(state, today, missedDates) {
  */
 export function processPenalties(state, today, now) {
   const processed = new Set(Array.isArray(state.penaltyProcessed) ? state.penaltyProcessed : []);
-  const since = state.penaltySince || today;
+  const since = penaltyFloorDate(state, today);
   const pending = missedDatesBefore(state, today).filter((d) => !processed.has(d));
   for (const date of pending) {
     if (date < since) processed.add(date);
   }
-  const missed = pending.filter((d) => d >= since);
+  const missed = pending.filter((d) => d >= since && isScheduledIncomplete(state, d, today));
   state.penaltyProcessed = [...processed].slice(-120);
   if (!missed.length) {
     return { state, report: null, fresh: false };
@@ -191,10 +262,19 @@ export function processPenalties(state, today, now) {
     processed.add(date);
   }
 
+  const streakLost = streakLostLength(state, missed);
+  const streakMustDoExtra = streakBreakMustDoExtra(streakLost);
+  let streakXpLost = 0;
+  if (streakLost > 0) {
+    streakXpLost = applyXpPenalty(state, streakLost * STREAK_BREAK_XP_PER_DAY, `streak-break:${streakLost}`, now);
+    xpLost += streakXpLost;
+  }
+
   state.streakBrokenAt = today;
   state.crystalStress = Math.min(1, (Number(state.crystalStress) || 0) + 0.35 * missed.length);
 
-  const mustDoAdded = injectMustDoPenalties(state, today, missed);
+  const missMustDoAdded = mustDoQuestCount(missed.length);
+  const mustDoAdded = injectMustDoPenalties(state, today, missed, streakMustDoExtra);
 
   const report = {
     id: uid(),
@@ -203,6 +283,10 @@ export function processPenalties(state, today, now) {
     questsMissed,
     xpLost,
     streakReset: true,
+    streakLost,
+    streakXpLost,
+    missMustDoAdded,
+    streakMustDoAdded: streakMustDoExtra,
     mustDoAdded,
   };
 

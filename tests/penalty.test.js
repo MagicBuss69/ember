@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createInitialState, prepare, setTaskDone } from "../src/domain.js";
 import { migrateStateV2 } from "../src/migrate.js";
-import { XP_PENALTY_PER_QUEST } from "../src/penalty.js";
+import { STREAK_BREAK_XP_PER_DAY, XP_PENALTY_PER_QUEST } from "../src/penalty.js";
 import { totalXp } from "../src/stats.js";
 
 test("penalty applies XP loss and injects a penalty quest on next prepare", () => {
   const seeded = new Date("2026-11-11T08:00:00Z");
   let state = createInitialState(seeded);
+  state.startedOn = "2026-11-08";
   const day = "2026-11-10";
   const slots = state.days[day].slots;
   for (const slot of ["morning", "afternoon", "evening"]) {
@@ -20,7 +21,12 @@ test("penalty applies XP loss and injects a penalty quest on next prepare", () =
   assert.ok(prepared.penaltyReport);
   const missedQuests = prepared.penaltyReport.questsMissed;
   assert.ok(missedQuests > 0);
-  assert.equal(prepared.penaltyReport.xpLost, XP_PENALTY_PER_QUEST * missedQuests);
+  const questXpLost = XP_PENALTY_PER_QUEST * missedQuests;
+  const streakXp = prepared.penaltyReport.streakXpLost || 0;
+  assert.equal(prepared.penaltyReport.xpLost, questXpLost + streakXp);
+  if (prepared.penaltyReport.streakLost > 0) {
+    assert.ok(streakXp <= prepared.penaltyReport.streakLost * STREAK_BREAK_XP_PER_DAY);
+  }
   const today = "2026-11-12";
   const penalty = prepared.state.days[today].slots.morning.find((t) => t.penaltyTag);
   assert.ok(penalty);
@@ -39,6 +45,7 @@ test("upgrade today does not penalize incomplete days before penaltySince", () =
 
 test("a missed day on or after penaltySince triggers a penalty", () => {
   let state = createInitialState(new Date("2026-11-14T08:00:00Z"));
+  state.startedOn = "2026-11-12";
   const anchor = "2026-11-13";
   const task = state.days[anchor].slots.morning[0];
   state = setTaskDone(state, anchor, "morning", task.id, true, new Date(`${anchor}T08:00:00.000Z`));
