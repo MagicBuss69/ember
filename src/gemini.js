@@ -172,23 +172,31 @@ async function postChatJson(model, apiKey, prompt, signal, withThinking) {
     },
   };
   if (withThinking) body.generationConfig.thinkingConfig = { thinkingBudget: 0 };
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
+  let response;
+  try {
+    response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify(body),
+        signal,
       },
-      body: JSON.stringify(body),
-      signal,
-    },
-  );
+    );
+  } catch {
+    const error = new Error("Couldn't reach Gemini.");
+    error.network = true;
+    throw error;
+  }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     const msg = payload?.error?.message || "";
     const error = new Error(chatFriendly(response.status, msg, apiKey));
     error.status = response.status;
+    error.apiStatus = payload?.error?.status || "";
     error.detail = redactSensitive(msg, apiKey);
     throw error;
   }
@@ -206,17 +214,19 @@ async function chatWithModel(model, apiKey, prompt, signal) {
   }
 }
 
+function chatShouldFallback(error) {
+  const status = error?.status;
+  if (error?.network || status === 404 || status === 429 || status === 500 || status === 503) return true;
+  const text = `${error?.apiStatus || ""} ${error?.detail || ""} ${error?.message || ""}`;
+  return /unavailable|overloaded|high demand|resource_exhausted/i.test(text);
+}
+
 async function chatWithFallback(apiKey, prompt, signal) {
   try {
     return await chatWithModel(CHAT_GEMINI_MODEL, apiKey, prompt, signal);
   } catch (error) {
-    if (error.status === 429 || /RESOURCE_EXHAUSTED/i.test(error.detail || "")) {
-      return chatWithModel(CHAT_GEMINI_FALLBACK_MODEL, apiKey, prompt, signal);
-    }
-    if (error.status === 404) {
-      return chatWithModel(CHAT_GEMINI_FALLBACK_MODEL, apiKey, prompt, signal);
-    }
-    throw error;
+    if (!chatShouldFallback(error)) throw error;
+    return chatWithModel(CHAT_GEMINI_FALLBACK_MODEL, apiKey, prompt, signal);
   }
 }
 
