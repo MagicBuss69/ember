@@ -1624,51 +1624,64 @@ body.dragging-quest, body.dragging-quest * { cursor: grabbing !important; user-s
 }
 .today-sticky.board-morph {
   --board-scroll: 0;
-  --board-collapse: 88px;
-  margin-bottom: calc(12px - var(--board-scroll) * var(--board-collapse));
-  overflow: clip;
+  --board-compact-h: 54px;
+  --board-expand-extra: 168px;
+  position: sticky;
+  top: 0;
+  padding: 0;
+  background: var(--bg-elev);
+  border-radius: 16px;
+  overflow: hidden;
+  margin-bottom: calc(12px - var(--board-scroll) * var(--board-expand-extra));
   contain: layout style;
 }
-.board-morph-stage {
-  transform-origin: top center;
-  transform: scale(calc(1 - var(--board-scroll) * 0.05), calc(1 - var(--board-scroll) * 0.48));
-  will-change: transform;
-}
-.board-morph-ring {
-  flex-shrink: 0;
-  transform: scale(calc(1 - var(--board-scroll) * 0.36));
-  transform-origin: left center;
-  will-change: transform;
-}
-.board-morph-title h1 {
-  transform: scale(calc(1 - var(--board-scroll) * 0.08));
-  transform-origin: left center;
-}
-.board-morph-sub {
-  opacity: calc(1 - var(--board-scroll));
-  transform: translateY(calc(var(--board-scroll) * -4px));
-}
-.board-morph-rail {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  margin-left: auto;
-  max-width: calc(var(--board-scroll) * 180px);
+.board-morph-viewport {
+  position: relative;
+  height: calc(var(--board-compact-h) + (1 - var(--board-scroll)) * var(--board-expand-extra));
   overflow: hidden;
-  opacity: calc(min(1, max(0, (var(--board-scroll) - 0.15) * 1.35)));
-  transform: scale(calc(0.9 + 0.1 * (1 - var(--board-scroll))));
-  pointer-events: none;
+  border-radius: inherit;
+  background: var(--bg-elev);
 }
-.board-morph .sticky-board-head {
-  flex-wrap: nowrap;
+.board-compact-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 6px 8px 8px;
+  background: var(--bg-elev);
+  opacity: 1;
+  clip-path: inset(0 0 calc((1 - var(--board-scroll)) * 100%) 0);
+  pointer-events: calc(var(--board-scroll) > 0.85 ? auto : none);
+  border-radius: inherit;
+}
+.board-compact-row {
+  display: flex;
   align-items: center;
+  gap: 8px;
+  min-height: 32px;
 }
-.board-morph .date-nav-sticky .icon-btn {
-  opacity: calc(1 - min(1, var(--board-scroll) * 1.25));
-  transform: scale(calc(1 - var(--board-scroll) * 0.25));
+.board-compact-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.board-morph-rail .board-rail-shards {
+.board-compact-lv {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.board-compact-shards {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1677,37 +1690,22 @@ body.dragging-quest, body.dragging-quest * { cursor: grabbing !important; user-s
   color: #ffd27a;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
 }
-.board-morph-rail .board-rail-lv {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--muted);
+.board-compact-progress { padding: 0 2px; }
+.board-compact-bar {
+  height: 4px;
+  margin: 0;
+  border-radius: 99px;
 }
-.board-morph-tail {
-  transform-origin: top center;
-  opacity: calc(1 - min(1, var(--board-scroll) * 1.15));
-  transform: scaleY(calc(1 - var(--board-scroll) * 0.92)) translateY(calc(var(--board-scroll) * -6px));
-  clip-path: inset(0 0 calc(var(--board-scroll) * 100%) 0);
-  pointer-events: none;
-}
-.board-morph-level {
-  transform: translateY(calc(var(--board-scroll) * -56px));
-  transform-origin: top center;
-  will-change: transform;
-}
-.board-morph-level .level-row {
-  opacity: calc(1 - min(1, var(--board-scroll) * 1.3));
-  transform: scaleY(calc(1 - var(--board-scroll)));
-  transform-origin: top;
-}
-.board-morph-level .level-block {
-  margin-top: calc(6px * (1 - var(--board-scroll)));
-}
-.board-morph-level .bar {
-  transform: scaleY(calc(1 - var(--board-scroll) * 0.35));
-  transform-origin: center;
-}
-.sticky-board-head .board-morph-ring .ring-num {
-  font-size: calc(15px - var(--board-scroll) * 4px);
+.ring-wrap-sm { width: 32px; height: 32px; flex-shrink: 0; }
+.ring-wrap-sm .ring-sm { width: 32px; height: 32px; display: block; }
+.ring-wrap-sm .ring-track,
+.ring-wrap-sm .ring-fg { stroke-width: 4; }
+.board-expanded-layer {
+  position: relative;
+  z-index: 1;
+  padding: 8px;
+  opacity: calc(1 - var(--board-scroll));
+  pointer-events: calc(var(--board-scroll) < 0.45 ? auto : none);
 }
 .sticky-board {
   display: flex;
@@ -1937,6 +1935,17 @@ body.dragging-quest, body.dragging-quest * { cursor: grabbing !important; user-s
 .crystal-svg .cg-f1 { fill: color-mix(in srgb, var(--crystal) 42%, var(--bg-sunken)); }
 .crystal-svg .cg-f2 { fill: color-mix(in srgb, var(--crystal) 28%, var(--bg-sunken)); }
 .crystal-svg .cg-f3 { fill: color-mix(in srgb, var(--crystal) 22%, var(--bg-sunken)); }
+.crystal-meter .hero-gem .cg-body { fill: color-mix(in srgb, var(--crystal) 32%, var(--bg-sunken)); }
+.crystal-meter .hero-gem .cg-f1 { fill: color-mix(in srgb, var(--crystal) 58%, var(--bg-sunken)); }
+.crystal-meter .hero-gem .cg-f2 { fill: color-mix(in srgb, var(--crystal) 46%, var(--bg-sunken)); }
+.crystal-meter .hero-gem .cg-f3 { fill: color-mix(in srgb, var(--crystal) 38%, var(--bg-sunken)); }
+.crystal-meter .hero-gem .cg-shine { opacity: 0.7; }
+.crystal-meter .hero-gem .cg-outline { display: none; }
+.crystal-meter .hero-gem .cg-stack { clip-path: none; }
+.crystal-meter .hero-gem .cg-f1,
+.crystal-meter .hero-gem .cg-f2,
+.crystal-meter .hero-gem .cg-f3,
+.crystal-meter .hero-gem .cg-body { opacity: calc(0.55 + var(--cg-fill, 0.35) * 0.45); }
 .crystal-svg .cg-shine { fill: rgba(255, 255, 255, 0.35); opacity: 0.55; }
 .crystal-svg .cg-stack {
   clip-path: inset(calc((1 - var(--cg-fill, 0)) * 100%) 0 0 0);

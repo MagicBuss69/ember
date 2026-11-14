@@ -6,19 +6,28 @@ import { rankForLevel } from "../rank.js";
 const RADIUS = 36;
 export const RING_CIRC = 2 * Math.PI * RADIUS;
 
-export function ringHtml(done, total, pulse) {
+const RING_COMPACT = { view: 40, r: 14, stroke: 4, font: 9 };
+
+export function ringHtml(done, total, pulse, { compact = false } = {}) {
   const pct = total ? done / total : 0;
-  const offset = pct <= 0 ? RING_CIRC : RING_CIRC * (1 - pct);
+  const view = compact ? RING_COMPACT.view : 88;
+  const r = compact ? RING_COMPACT.r : RADIUS;
+  const circ = 2 * Math.PI * r;
+  const offset = pct <= 0 ? circ : circ * (1 - pct);
   const label = `${done}/${total}`;
+  const mid = view / 2;
+  const stroke = compact ? RING_COMPACT.stroke : 7;
+  const sizeCl = compact ? " ring-wrap-sm" : "";
   return `
-    <div class="ring-wrap ${pulse ? "pulse" : ""} ${pct <= 0 ? "is-empty" : ""} ${pct >= 1 ? "is-full" : ""}">
-      <svg class="ring" viewBox="0 0 88 88" role="img" aria-label="${done} of ${total} quests done">
-        <circle class="ring-track" cx="44" cy="44" r="${RADIUS}"></circle>
-        <circle class="ring-fg" data-ring cx="44" cy="44" r="${RADIUS}"
-          stroke-dasharray="${RING_CIRC.toFixed(3)}"
+    <div class="ring-wrap${sizeCl} ${pulse ? "pulse" : ""} ${pct <= 0 ? "is-empty" : ""} ${pct >= 1 ? "is-full" : ""}">
+      <svg class="ring${compact ? " ring-sm" : ""}" viewBox="0 0 ${view} ${view}" role="img" aria-label="${done} of ${total} quests done">
+        <circle class="ring-track" cx="${mid}" cy="${mid}" r="${r}"></circle>
+        <circle class="ring-fg" data-ring cx="${mid}" cy="${mid}" r="${r}"
+          stroke-width="${stroke}"
+          stroke-dasharray="${circ.toFixed(3)}"
           style="stroke-dashoffset:${offset.toFixed(3)}"
-          transform="rotate(-90 44 44)"></circle>
-        <text class="ring-num" x="44" y="44" text-anchor="middle" dominant-baseline="central">${label}</text>
+          transform="rotate(-90 ${mid} ${mid})"></circle>
+        <text class="ring-num" x="${mid}" y="${mid}" text-anchor="middle" dominant-baseline="central"${compact ? ` style="font-size:${RING_COMPACT.font}px"` : ""}>${label}</text>
       </svg>
     </div>`;
 }
@@ -42,14 +51,15 @@ export function levelBar(progress, total, pulse) {
 
 export function crystalMeterHtml({ progress, rank, stress = 0, pulse = false, skin = "default", compact = false }) {
   const fill = Math.max(0, Math.min(1, Number(progress.pct) || 0));
+  const gemFill = Math.max(0.35, fill);
   const stressCl = stress > 0.55 ? "is-cracked" : stress > 0.25 ? "is-dim" : "";
   const rankLetter = rank || rankForLevel(progress.level);
-  const gemSize = compact ? 44 : 52;
+    const gemSize = compact ? 44 : 56;
   return `
     <div class="crystal-meter ${compact ? "is-compact" : ""} ${stressCl} skin-${esc(skin)}" data-crystal-meter>
       <div class="rank-chip" aria-label="Rank ${rankLetter}"><span class="display">${esc(rankLetter)}</span></div>
       <div class="crystal-gem-wrap ${pulse ? "pulse" : ""}" aria-hidden="true">
-        ${crystalGemSvg({ size: gemSize, fillPct: fill, className: "crystal-svg hero-gem" })}
+        ${crystalGemSvg({ size: gemSize, fillPct: gemFill, className: "crystal-svg hero-gem", compact: false })}
       </div>
       <div class="crystal-copy">
         <strong class="display">Lv ${progress.level}</strong>
