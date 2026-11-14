@@ -75,8 +75,8 @@ export function playSound(kind, { volume = 0.8, pack = "system" } = {}) {
 
     if (kind === "check") {
       const out = masterGain(audio, vol, now, 1, 0.32);
-      const base = pack === "arcade" ? [659, 988, 1572] : [988, 1319, 1760];
-      base.forEach((f, i) => tone(audio, f, pack === "arcade" ? "square" : "sine", now + i * 0.035, 0.12, out, 0.72));
+      const base = pack === "arcade" ? [659, 988, 1572] : pack === "chime" ? [2093, 2637, 3136] : [988, 1319, 1760];
+      base.forEach((f, i) => tone(audio, f, pack === "arcade" ? "square" : "sine", now + i * (pack === "chime" ? 0.07 : 0.035), pack === "chime" ? 0.22 : 0.12, out, 0.72));
       tone(audio, 220, "triangle", now + 0.02, 0.08, out, 0.35);
       return;
     }

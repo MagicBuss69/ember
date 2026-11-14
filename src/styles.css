@@ -1846,6 +1846,9 @@ body.today-compact-on main {
   opacity: 0.7;
 }
 .crystal-meter.is-dim .crystal-fill { opacity: 0.45; filter: grayscale(0.4); }
+.crystal-meter.skin-ice { --crystal: #e7f7ff; }
+.crystal-meter.skin-ember { --crystal: #ff6a1a; }
+.crystal-meter.skin-void { --crystal: #c9a6ff; }
 .crystal-copy strong { display: block; font-size: 16px; }
 .crystal-xp { color: var(--faint); font-size: 12px; }
 .note.warn { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, transparent); }

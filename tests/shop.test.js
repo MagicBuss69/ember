@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createInitialState } from "../src/domain.js";
-import { addCustomReward, buyItem, isOwned, removeCustomReward, SHOP_CATALOG } from "../src/shop.js";
+import { addCustomReward, buyItem, equipCosmetic, isOwned, removeCustomReward, SHOP_CATALOG } from "../src/shop.js";
 
 test("shop purchase spends crystals and equips theme", () => {
   let state = createInitialState(new Date());
@@ -26,6 +27,33 @@ test("custom life rewards can be removed from the shop list", () => {
   assert.equal(removed.state.customRewards.length, 0);
   const miss = removeCustomReward(removed.state, id);
   assert.equal(miss.ok, false);
+});
+
+test("every shop item id has an equipped effect", () => {
+  const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+  const sounds = readFileSync(new URL("../src/sounds.js", import.meta.url), "utf8");
+  const ui = readFileSync(new URL("../src/ui/screens.js", import.meta.url), "utf8");
+  const app = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
+  for (const item of SHOP_CATALOG) {
+    const ok = item.kind === "theme" ? css.includes(`[data-theme="${item.themeId}"]`)
+      : item.kind === "skin" ? css.includes(`.skin-${item.skinId}`)
+      : item.kind === "title" ? ui.includes("equippedTitle")
+      : item.kind === "badge" ? ui.includes("ownedBadges")
+      : item.kind === "fx" ? app.includes(item.fxId === "shards" ? '=== "shards"' : "burstAt")
+      : item.kind === "soundPack" ? sounds.includes(`=== "${item.soundPackId}"`)
+      : false;
+    assert.equal(ok, true, item.id);
+  }
+  let state = createInitialState(new Date());
+  state.ownedSkins.push("ice");
+  state.ownedTitles.push("hunter");
+  state.ownedFx.push("nova");
+  state.ownedSoundPacks.push("chime");
+  state = equipCosmetic(state, { crystalSkin: "ice", equippedTitle: "hunter", checkFx: "nova", soundPack: "chime" });
+  assert.equal(state.settings.crystalSkin, "ice");
+  assert.equal(state.settings.equippedTitle, "hunter");
+  assert.equal(state.settings.checkFx, "nova");
+  assert.equal(state.settings.soundPack, "chime");
 });
 
 test("cannot buy twice", () => {

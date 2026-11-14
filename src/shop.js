@@ -141,11 +141,11 @@ export function equipCosmetic(state, patch) {
   if (patch.crystalSkin && (next.ownedSkins || []).includes(patch.crystalSkin)) {
     next.settings.crystalSkin = patch.crystalSkin;
   }
-  if (patch.title && (next.ownedTitles || []).includes(patch.title)) {
-    next.settings.equippedTitle = patch.title;
+  if (patch.equippedTitle && (next.ownedTitles || []).includes(patch.equippedTitle)) {
+    next.settings.equippedTitle = patch.equippedTitle;
   }
-  if (patch.fx && (next.ownedFx || []).includes(patch.fx)) {
-    next.settings.checkFx = patch.fx;
+  if (patch.checkFx && (next.ownedFx || []).includes(patch.checkFx)) {
+    next.settings.checkFx = patch.checkFx;
   }
   if (patch.soundPack && (next.ownedSoundPacks || []).includes(patch.soundPack)) {
     next.settings.soundPack = patch.soundPack;
