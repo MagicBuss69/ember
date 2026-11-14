@@ -47,15 +47,38 @@ export function emptyState({ title, body, actions = "" }) {
     </div>`;
 }
 
-export function questRows({ items, date, weekday, slot, template, justDoneId, movable, reordering }) {
+export function questRows({
+  items,
+  date,
+  weekday,
+  slot,
+  template,
+  justDoneId,
+  movable,
+  reordering,
+  readOnly = false,
+  canToggle = true,
+}) {
   const slotIdx = SLOTS.indexOf(slot);
   const rows = items
     .map((task, index) => {
       const meta = [task.time, !task.done && task.why ? task.why : ""].filter(Boolean).join("  ·  ");
+      const eventBadge = task.isEvent ? `<span class="event-pill">Event</span>` : "";
+      const titleHtml = `<span class="quest-head"><span class="quest-title">${esc(task.title)}</span>${eventBadge}</span>`;
+      if (readOnly) {
+        return `
+          <div class="quest ${task.done ? "done" : ""} ${task.isEvent ? "is-event" : ""} is-readonly">
+            <span class="check static" aria-hidden="true"><i class="${task.done ? "is-done" : ""}"></i></span>
+            <div class="quest-body static">
+              ${titleHtml}
+              ${meta ? `<span class="quest-meta">${esc(meta)}</span>` : ""}
+            </div>
+          </div>`;
+      }
       const where = template
         ? `data-weekday="${weekday}" data-slot="${slot}" data-id="${esc(task.id)}"`
         : `data-date="${date}" data-slot="${slot}" data-id="${esc(task.id)}"`;
-      const check = template
+      const check = template || !canToggle
         ? ""
         : `<button type="button" class="check ${justDoneId === task.id ? "just" : ""}" data-action="toggle" ${where} aria-pressed="${task.done ? "true" : "false"}" aria-label="${task.done ? "Mark not done" : "Mark done"}: ${esc(task.title)}"><i></i></button>`;
       const atVeryTop = slotIdx === 0 && index === 0;
@@ -73,10 +96,10 @@ export function questRows({ items, date, weekday, slot, template, justDoneId, mo
         ? `data-quest data-date="${date}" data-slot="${slot}" data-id="${esc(task.id)}"`
         : "";
       return `
-        <div class="quest ${task.done ? "done" : ""} ${reordering ? "reordering" : ""}" ${rowAttrs}>
+        <div class="quest ${task.done ? "done" : ""} ${task.isEvent ? "is-event" : ""} ${!template && !canToggle ? "no-check" : ""} ${reordering ? "reordering" : ""}" ${rowAttrs}>
           ${check}
           <button type="button" class="quest-body" data-action="${template ? "edit-template" : "edit-task"}" ${where}>
-            <span class="quest-title">${esc(task.title)}</span>
+            ${titleHtml}
             ${meta ? `<span class="quest-meta">${esc(meta)}</span>` : ""}
           </button>
           ${stepper}
@@ -84,6 +107,7 @@ export function questRows({ items, date, weekday, slot, template, justDoneId, mo
         </div>`;
     })
     .join("");
+  if (readOnly) return rows;
   const addWhere = template
     ? `data-weekday="${weekday}" data-slot="${slot}"`
     : `data-date="${date}" data-slot="${slot}"`;
@@ -92,19 +116,32 @@ export function questRows({ items, date, weekday, slot, template, justDoneId, mo
     <button type="button" class="add" data-action="${template ? "add-template" : "add-task"}" ${addWhere}>${icon("plus")} Add a quest</button>`;
 }
 
-export function slotSection({ slot, items, nowSlot, date, weekday, template, justDoneId, movable = false, reordering = false }) {
+export function slotSection({
+  slot,
+  items,
+  nowSlot,
+  date,
+  weekday,
+  template,
+  justDoneId,
+  movable = false,
+  reordering = false,
+  readOnly = false,
+  canToggle = true,
+}) {
   const done = items.filter((task) => task.done).length;
   const dropAttrs = movable ? `data-slot-drop="${slot}" data-date="${date}"` : "";
+  const countText = template || !canToggle ? String(items.length) : `${done}/${items.length}`;
   return `
     <section class="slot">
       <header>
         <h2>${SLOT_LABEL[slot]}</h2>
         ${!template && slot === nowSlot ? `<span class="now">Now</span>` : ""}
-        <span class="count num">${template ? items.length : `${done}/${items.length}`}</span>
+        <span class="count num">${countText}</span>
       </header>
       <div class="slot-card" ${dropAttrs}>
         ${items.length ? "" : `<p class="slot-empty">Nothing ${SLOT_LABEL[slot].toLowerCase()}.</p>`}
-        ${questRows({ items, date, weekday, slot, template, justDoneId, movable, reordering })}
+        ${questRows({ items, date, weekday, slot, template, justDoneId, movable, reordering, readOnly, canToggle })}
       </div>
     </section>`;
 }

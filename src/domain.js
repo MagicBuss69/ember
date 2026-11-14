@@ -37,6 +37,7 @@ function blueprint(partial) {
 function taskFrom(partial) {
   return {
     ...blueprint(partial),
+    isEvent: Boolean(partial.isEvent),
     done: false,
     doneAt: null,
   };
@@ -145,7 +146,8 @@ function applyFreezes(state, today, now) {
   return used;
 }
 
-function applyDayGrants(state, date, now) {
+function applyDayGrants(state, date, now, today) {
+  if (today && date > today) return;
   const complete = isComplete(state, date);
   const full = isFullDay(state, date);
   const streakKey = `streakday:${date}`;
@@ -201,7 +203,7 @@ export function settle(state, { today, touchDate, touchDates, now }) {
   if (Array.isArray(touchDates)) {
     for (const date of touchDates) if (date) dates.add(date);
   }
-  for (const date of dates) applyDayGrants(state, date, now);
+  for (const date of dates) applyDayGrants(state, date, now, today);
   applyMilestones(state, today, now);
   return state;
 }
@@ -272,6 +274,7 @@ export function updateTask(state, date, slot, taskId, fields, now = new Date()) 
   task.title = title;
   task.why = String(fields.why || "").trim().slice(0, 160);
   task.time = validTime(fields.time);
+  if (typeof fields.isEvent === "boolean") task.isEvent = fields.isEvent;
   const target = SLOTS.includes(fields.slot) ? fields.slot : slot;
   if (target !== slot) {
     list.splice(index, 1);
@@ -462,6 +465,16 @@ export function copyTemplateWeekday(state, sourceWeekday, targetWeekdays, mode =
   return { state: next, copied: targets.length };
 }
 
+function mergeTemplatePreservingEvents(template, existingDay, date) {
+  const fresh = dayFromTemplate(template, date);
+  if (!existingDay?.slots) return fresh;
+  for (const slot of SLOTS) {
+    const events = (existingDay.slots[slot] || []).filter((item) => item.isEvent);
+    if (events.length) fresh.slots[slot] = [...events, ...fresh.slots[slot]];
+  }
+  return fresh;
+}
+
 export function applyTemplateToOpenDays(state, today, now = new Date()) {
   const next = clone(state);
   const start = weekStart(today);
@@ -471,7 +484,7 @@ export function applyTemplateToOpenDays(state, today, now = new Date()) {
     const day = next.days[date];
     const started = day && SLOTS.some((slot) => (day.slots[slot] || []).some((task) => task.done));
     if (started) continue;
-    next.days[date] = dayFromTemplate(next.template, date);
+    next.days[date] = mergeTemplatePreservingEvents(next.template, day, date);
     filled += 1;
   }
   settle(next, { today, touchDate: today, now });
@@ -605,7 +618,7 @@ export function replaceDayFromTemplate(state, date, now = new Date()) {
   const next = clone(state);
   const day = next.days[date];
   if (day && SLOTS.some((slot) => (day.slots[slot] || []).some((task) => task.done))) return next;
-  next.days[date] = dayFromTemplate(next.template, date);
+  next.days[date] = mergeTemplatePreservingEvents(next.template, day, date);
   settle(next, { today: dateKey(now), touchDate: date, now });
   return next;
 }

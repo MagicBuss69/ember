@@ -6,6 +6,7 @@ import "@fontsource/fraunces/latin-600.css";
 import "./styles.css";
 
 import { formatRestoreSummary, parseBackupText, sanitizeImport, summarizeBackup } from "./backup.js";
+import { addMonths, monthKey } from "./calendar.js";
 import { GOOGLE_CLIENT_ID } from "./config.js";
 import { downloadBackup, listBackups, pruneBackups, restoreKeepingSecrets, uploadBackup } from "./drive.js";
 import { clearDriveToken, requestDriveToken } from "./driveAuth.js";
@@ -64,6 +65,8 @@ const ui = {
   weekMode: "week",
   selectedDate: null,
   selectedWeekday: null,
+  calMonth: null,
+  calDate: null,
   sheet: null,
   draft: null,
   confirm: null,
@@ -415,7 +418,13 @@ const actions = {
   "add-task"(el) {
     openSheet(
       { type: "task", date: el.dataset.date, slot: el.dataset.slot, taskId: null },
-      { title: "", why: "", time: "", slot: el.dataset.slot, saveTemplate: false, error: "" },
+      { title: "", why: "", time: "", slot: el.dataset.slot, isEvent: false, saveTemplate: false, error: "" },
+    );
+  },
+  "add-event"(el) {
+    openSheet(
+      { type: "task", date: el.dataset.date, slot: el.dataset.slot, taskId: null },
+      { title: "", why: "", time: "", slot: el.dataset.slot, isEvent: true, saveTemplate: false, error: "" },
     );
   },
   "edit-task"(el) {
@@ -423,7 +432,7 @@ const actions = {
     if (!task) return;
     openSheet(
       { type: "task", date: el.dataset.date, slot: el.dataset.slot, taskId: task.id },
-      { title: task.title, why: task.why, time: task.time, slot: el.dataset.slot, error: "" },
+      { title: task.title, why: task.why, time: task.time, slot: el.dataset.slot, isEvent: Boolean(task.isEvent), error: "" },
     );
   },
   "add-template"(el) {
@@ -491,7 +500,34 @@ const actions = {
   },
   "week-mode"(el) {
     ui.weekMode = el.dataset.mode;
+    if (ui.weekMode === "calendar") {
+      const today = dateKey(new Date());
+      if (!ui.calDate) ui.calDate = today;
+      if (!ui.calMonth) ui.calMonth = monthKey(ui.calDate);
+    }
     ui.keepScroll = false;
+    paint();
+  },
+  "shift-month"(el) {
+    const today = dateKey(new Date());
+    const current = ui.calMonth || monthKey(ui.calDate || today);
+    ui.calMonth = addMonths(current, Number(el.dataset.dir));
+    ui.keepScroll = true;
+    paint();
+  },
+  "cal-select-date"(el) {
+    const picked = el.dataset.date;
+    if (!picked) return;
+    ui.calDate = picked;
+    ui.calMonth = monthKey(picked);
+    ui.keepScroll = true;
+    paint();
+  },
+  "cal-today"() {
+    const today = dateKey(new Date());
+    ui.calDate = today;
+    ui.calMonth = monthKey(today);
+    ui.keepScroll = true;
     paint();
   },
   "open-copy-day"(el) {
@@ -915,6 +951,8 @@ const actions = {
       await saveState(state);
       ui.tab = "today";
       ui.lookDate = null;
+      ui.calDate = null;
+      ui.calMonth = null;
       ui.exercise = null;
       setHash("today");
       paint();
@@ -1074,6 +1112,8 @@ async function applyRestoredState(imported, options = {}) {
   ui.lookDate = null;
   ui.selectedDate = null;
   ui.selectedWeekday = null;
+  ui.calDate = null;
+  ui.calMonth = null;
   ui.exercise = null;
   ui.reordering = false;
   ui.keepScroll = false;
@@ -1318,6 +1358,11 @@ function bind() {
     }
     if (!ui.draft) return;
     assign(ui.draft, el.dataset.bind, el.type === "checkbox" ? el.checked : el.value);
+    if ("rerenderCheck" in el.dataset) {
+      if (el.dataset.bind === "isEvent" && el.checked) ui.draft.saveTemplate = false;
+      ui.keepScroll = true;
+      paint();
+    }
   });
   window.addEventListener("pagehide", () => {
     flushSettingsInputs();

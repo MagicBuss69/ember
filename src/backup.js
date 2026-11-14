@@ -257,6 +257,7 @@ function cleanSlots(source, asTasks, datePrefix = "tpl") {
         time: validTime(item?.time),
       };
       if (asTasks) {
+        row.isEvent = Boolean(item?.isEvent);
         row.done = Boolean(item?.done);
         row.doneAt = item?.doneAt ? String(item.doneAt) : null;
       }

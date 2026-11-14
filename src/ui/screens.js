@@ -1,3 +1,4 @@
+import { buildMonthGrid, daySummary, monthKey } from "../calendar.js";
 import { GOOGLE_CLIENT_ID, VAPID_PUBLIC_KEY, WORKER_URL } from "../config.js";
 import { FREEZE_PRICE, SLOTS, SLOT_LABEL, SUGGESTED_EXERCISES, THEMES } from "../constants.js";
 import { templateTaskCount } from "../domain.js";
@@ -106,7 +107,27 @@ export function viewToday(state, ui, now) {
 export function viewWeek(state, ui, now) {
   const today = dateKey(now);
   const start = weekStart(today);
-  const mode = ui.weekMode === "template" ? "template" : "week";
+  const mode = ui.weekMode === "template"
+    ? "template"
+    : ui.weekMode === "calendar"
+      ? "calendar"
+      : "week";
+  const tabs = `
+    <div class="segment" role="tablist">
+      <button type="button" data-action="week-mode" data-mode="week" aria-pressed="${mode === "week"}">This week</button>
+      <button type="button" data-action="week-mode" data-mode="calendar" aria-pressed="${mode === "calendar"}">Calendar</button>
+      <button type="button" data-action="week-mode" data-mode="template" aria-pressed="${mode === "template"}">Template</button>
+    </div>`;
+
+  if (mode === "calendar") {
+    return `
+      <section>
+        <h1 class="page-title">Week</h1>
+        ${tabs}
+        ${calendarBody(state, ui, now, today)}
+      </section>`;
+  }
+
   let selected = ui.selectedDate || today;
   if (selected < start || selected > addDays(start, 6)) selected = today;
   const weekday = String(ui.selectedWeekday || weekdayIso(selected));
@@ -115,9 +136,11 @@ export function viewWeek(state, ui, now) {
         const date = addDays(start, i);
         const day = state.days[date];
         const hasDone = day && SLOTS.some((slot) => (day.slots[slot] || []).some((task) => task.done));
+        const hasEvent = day && SLOTS.some((slot) => (day.slots[slot] || []).some((task) => task.isEvent));
         const on = date === selected;
+        const dots = `${hasEvent ? `<i class="dot is-event"></i>` : ""}${hasDone ? `<i class="dot"></i>` : ""}`;
         return `<button type="button" class="day-chip" data-action="select-date" data-date="${date}" aria-pressed="${on}">
-          <span class="dow">${DOW[i]}</span><span class="dom num">${Number(date.slice(-2))}</span>${hasDone ? `<i class="dot"></i>` : ""}
+          <span class="dow">${DOW[i]}</span><span class="dom num">${Number(date.slice(-2))}</span>${dots ? `<span class="chip-dots">${dots}</span>` : ""}
         </button>`;
       }).join("")
     : WEEKDAYS.map((name, i) => {
@@ -135,6 +158,7 @@ export function viewWeek(state, ui, now) {
           date: selected,
           template: false,
           justDoneId: ui.justDoneId,
+          canToggle: selected <= today,
         }),
       ).join("")
     : SLOTS.map((slot) =>
@@ -161,15 +185,105 @@ export function viewWeek(state, ui, now) {
   return `
     <section>
       <h1 class="page-title">Week</h1>
-      <div class="segment" role="tablist">
-        <button type="button" data-action="week-mode" data-mode="week" aria-pressed="${mode === "week"}">This week</button>
-        <button type="button" data-action="week-mode" data-mode="template" aria-pressed="${mode === "template"}">Template</button>
-      </div>
+      ${tabs}
       <p class="lede">${mode === "week" ? esc(formatWeekSpan(start)) : "Monday to Sunday"}</p>
       <div class="day-strip">${chips}</div>
       ${sections}
       ${actions}
     </section>`;
+}
+
+function calendarBody(state, ui, now, today) {
+  const calDate = /^\d{4}-\d{2}-\d{2}$/.test(ui.calDate || "") ? ui.calDate : today;
+  const ym = /^\d{4}-\d{2}$/.test(ui.calMonth || "") ? ui.calMonth : monthKey(calDate);
+  const grid = buildMonthGrid(ym, state, today);
+  const isCurrentMonth = ym === monthKey(today);
+  const dowRow = DOW.map((letter) => `<span>${letter}</span>`).join("");
+  const cells = grid.cells
+    .map((cell) => {
+      const selected = cell.date === calDate;
+      const cls = [
+        "cal-cell",
+        cell.inMonth ? "" : "is-outside",
+        cell.isToday ? "is-today" : "",
+        cell.hasEvents ? "has-event" : "",
+      ].filter(Boolean).join(" ");
+      const dots = `${cell.hasEvents ? `<i class="cal-dot is-event"></i>` : ""}${cell.hasQuests ? `<i class="cal-dot ${cell.doneCount === cell.totalCount && cell.totalCount > 0 ? "is-done" : ""}"></i>` : ""}`;
+      return `<button type="button" class="${cls}" data-action="cal-select-date" data-date="${cell.date}" aria-pressed="${selected}" aria-label="${esc(formatPretty(cell.date))}${cell.hasEvents ? ", has event" : ""}${cell.hasQuests ? `, ${cell.questCount} quests` : ""}">
+        <span class="cal-num num">${cell.day}</span>
+        <span class="cal-dots">${dots}</span>
+      </button>`;
+    })
+    .join("");
+
+  const isPast = calDate < today;
+  const isToday = calDate === today;
+  const summary = daySummary(state, calDate);
+  const day = state.days[calDate];
+  const nowSlot = currentSlot(now);
+  const tagText = isToday ? "Today" : isPast ? "Past · view only" : "Upcoming";
+
+  let dayBody = "";
+  if (isPast) {
+    if (!day || summary.totalCount === 0) {
+      dayBody = `<p class="slot-empty">Nothing was scheduled on ${esc(formatPretty(calDate))}.</p>`;
+    } else {
+      dayBody = SLOTS.map((slot) => {
+        const items = day.slots[slot] || [];
+        if (!items.length) return "";
+        return slotSection({
+          slot,
+          items,
+          nowSlot: null,
+          date: calDate,
+          template: false,
+          justDoneId: null,
+          readOnly: true,
+        });
+      }).join("");
+    }
+  } else {
+    const canPrefill = !day || summary.questCount === 0;
+    const prefillBtn = canPrefill
+      ? `<button type="button" class="ghost" data-action="use-template-day" data-date="${calDate}">Use ${esc(weekdayLong(calDate))} template</button>`
+      : "";
+    const slotsHtml = SLOTS.map((slot) =>
+      slotSection({
+        slot,
+        items: day?.slots?.[slot] || [],
+        nowSlot: isToday ? nowSlot : null,
+        date: calDate,
+        template: false,
+        justDoneId: ui.justDoneId,
+        canToggle: isToday,
+      }),
+    ).join("");
+    dayBody = `
+      <div class="cal-quick">
+        <button type="button" class="primary" data-action="add-event" data-date="${calDate}" data-slot="${isToday ? nowSlot : "morning"}">${icon("plus")} Add an event</button>
+        ${prefillBtn}
+      </div>
+      ${slotsHtml}`;
+  }
+
+  return `
+    <div class="cal-bar">
+      <button type="button" class="icon-btn" data-action="shift-month" data-dir="-1" aria-label="Previous month">${icon("chevL")}</button>
+      <div class="cal-month-title">
+        <strong>${esc(grid.label)}</strong>
+        ${!isCurrentMonth || calDate !== today ? `<button type="button" class="cal-jump" data-action="cal-today">Today</button>` : ""}
+      </div>
+      <button type="button" class="icon-btn" data-action="shift-month" data-dir="1" aria-label="Next month">${icon("chevR")}</button>
+    </div>
+    <div class="cal-dow" aria-hidden="true">${dowRow}</div>
+    <div class="cal-grid" role="grid" aria-label="${esc(grid.label)}">${cells}</div>
+    <div class="cal-day-head">
+      <div>
+        <h2>${esc(formatPretty(calDate))}</h2>
+        <span class="cal-tag ${isPast ? "is-past" : isToday ? "is-now" : ""}">${tagText}</span>
+      </div>
+    </div>
+    ${dayBody}`;
 }
 
 export function viewTrain(state, ui, now) {
@@ -569,25 +683,32 @@ function driveSheet(ui) {
 
 function taskSheet(sheet, draft) {
   const editing = Boolean(sheet.taskId);
+  const isEvent = Boolean(draft.isEvent);
   const error = draft.error ? `<p class="form-error">${esc(draft.error)}</p>` : "";
+  const heading = editing
+    ? (isEvent ? "Edit event" : "Edit quest")
+    : (isEvent ? "New event" : "New quest");
+  const submitLabel = isEvent ? "Save event" : "Save quest";
+  const deleteLabel = isEvent ? "Delete event" : "Delete quest";
   return `
     <div class="scrim" data-action="close-sheet"></div>
     <form class="sheet" data-form="save-task">
       <div class="handle"></div>
       <div class="sheet-head">
-        <h2>${editing ? "Edit quest" : "New quest"}</h2>
+        <h2>${heading}</h2>
         <button type="button" class="icon-btn" data-action="close-sheet" aria-label="Close">${icon("close")}</button>
       </div>
       ${error}
-      ${field("Title", `<input data-bind="title" maxlength="80" required placeholder="What will you actually do?" value="${esc(draft.title || "")}">`)}
+      ${field("Title", `<input data-bind="title" maxlength="80" required placeholder="${isEvent ? "Exam, dentist, match…" : "What will you actually do?"}" value="${esc(draft.title || "")}">`)}
       ${field("Why it matters", `<input data-bind="why" maxlength="160" placeholder="Optional, one line" value="${esc(draft.why || "")}">`)}
       ${field("Reminder", `<input data-bind="time" type="time" value="${esc(draft.time || "")}">`)}
       <div class="segment">
         ${SLOTS.map((slot) => `<button type="button" data-action="set-slot" data-slot="${slot}" aria-pressed="${(draft.slot || sheet.slot) === slot}">${SLOT_LABEL[slot]}</button>`).join("")}
       </div>
-      ${sheet.type === "task" && !editing ? `<label class="checkline"><input type="checkbox" data-bind="saveTemplate" ${draft.saveTemplate ? "checked" : ""}> Also save onto this weekday’s template</label>` : ""}
-      <button type="submit" class="primary">Save quest</button>
-      ${editing ? `<button type="button" class="danger" data-action="delete-task">Delete quest</button>` : ""}
+      ${sheet.type === "task" ? `<label class="checkline"><input type="checkbox" data-bind="isEvent" data-rerender-check ${isEvent ? "checked" : ""}> Mark as one-off Event (stands out on the calendar)</label>` : ""}
+      ${sheet.type === "task" && !editing && !isEvent ? `<label class="checkline"><input type="checkbox" data-bind="saveTemplate" ${draft.saveTemplate ? "checked" : ""}> Also save onto this weekday’s template</label>` : ""}
+      <button type="submit" class="primary">${submitLabel}</button>
+      ${editing ? `<button type="button" class="danger" data-action="delete-task">${deleteLabel}</button>` : ""}
     </form>`;
 }
 

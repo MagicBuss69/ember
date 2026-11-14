@@ -4,7 +4,7 @@ import { syncPushSchedule } from "./pushClient.js";
 import { addDays, dateKey, zonedTimeToUtc } from "./time.js";
 
 const PERIODIC_TAG = "ember-reminders";
-const BASE = import.meta.env.BASE_URL;
+const BASE = import.meta.env?.BASE_URL || "/ember/";
 
 function publicUrl(file) {
   return `${BASE}${file}`;
