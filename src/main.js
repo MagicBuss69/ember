@@ -43,6 +43,7 @@ import {
   updateTemplateTask,
 } from "./domain.js";
 import { levelFor } from "./economy.js";
+import { rankForLevel } from "./rank.js";
 import { parseNum, reasonLabel } from "./format.js";
 import { generateWeek } from "./gemini.js";
 import { kvClear, loadState, saveState } from "./idb.js";
@@ -56,7 +57,7 @@ import {
 import { ensureRivalHistory } from "./rivals.js";
 import { exerciseGroups, isComplete, openTodayCount, totalXp } from "./stats.js";
 import { addCustomReward, buyItem, equipCosmetic, redeemCustomReward, SHOP_CATALOG } from "./shop.js";
-import { playSound } from "./sounds.js";
+import { ensureAudio, playSound } from "./sounds.js";
 import { burstAt, confettiFan, dailyCompleteBanner, shardBurstToCrystal } from "./ui/fx.js";
 import { addDays, dateKey, formatPretty, weekStart } from "./time.js";
 import { render, shellError } from "./ui/render.js";
@@ -103,13 +104,12 @@ const ui = {
   collapsingId: null,
   comboCount: 0,
   lastCheckAt: 0,
-  todayCompact: false,
   penaltyWindow: null,
   shopCat: "themes",
 };
 let levelTimer = 0;
 let genToken = 0;
-let todayScrollBound = false;
+let audioPrimed = false;
 
 function tabFromHash() {
   const tab = location.hash.replace("#", "");
@@ -329,24 +329,6 @@ function paint() {
   }
   ui.enter = false;
   updateBadge();
-  bindTodayScroll();
-}
-
-function bindTodayScroll() {
-  if (ui.tab !== "today") return;
-  const main = document.getElementById("main");
-  if (!main || todayScrollBound) return;
-  todayScrollBound = true;
-  main.addEventListener(
-    "scroll",
-    () => {
-      const compact = main.scrollTop > 72;
-      if (compact === ui.todayCompact) return;
-      ui.todayCompact = compact;
-      document.getElementById("today-sticky")?.classList.toggle("is-compact", compact);
-    },
-    { passive: true },
-  );
 }
 
 function soundOpts() {
@@ -363,6 +345,7 @@ function sfx(kind) {
 
 function toast(text) {
   if (!text) return;
+  if (/popup|pop-up|blocked/i.test(String(text))) return;
   const root = document.getElementById("fx");
   const el = document.createElement("div");
   el.className = "toast";
@@ -434,6 +417,7 @@ function closeSheet() {
 async function commitWrapped(mutator, fx = {}) {
   const prevXp = totalXp(state);
   const prevLevel = levelFor(prevXp);
+  const prevRank = rankForLevel(prevLevel);
   const logBefore = state.crystalLog.length;
   const beforeCrystals = state.crystals;
   state = mutator(state);
@@ -448,6 +432,7 @@ async function commitWrapped(mutator, fx = {}) {
   }
   const saving = saveState(state);
   const level = levelFor(totalXp(state));
+  const newRank = rankForLevel(level);
   ui.barPulse = totalXp(state) > prevXp;
   ui.gemShine = state.crystals > beforeCrystals;
   ui.ringPulse = Boolean(fx.ring);
@@ -459,7 +444,7 @@ async function commitWrapped(mutator, fx = {}) {
   ui.justDoneId = null;
   if (fx.pop) {
     floater(fx.pop.text, fx.pop.x, fx.pop.y, fx.pop.kind);
-    sfx(fx.pop.kind === "down" ? "down" : "tick");
+    sfx(fx.pop.kind === "down" ? "down" : fx.pop.kind === "crystal" ? "crystal" : "check");
     haptic(fx.pop.kind === "down" ? "down" : "tick");
   }
   try {
@@ -475,7 +460,10 @@ async function commitWrapped(mutator, fx = {}) {
   const messages = [];
   if (!fx.quiet) {
     const notes = fresh.filter((entry) => entry.delta > 0 && entry.reason !== "level");
-    if (notes.length) messages.push(notes.map((entry) => `+${entry.delta} · ${reasonLabel(entry.reason)}`).join("  "));
+    if (notes.length) {
+      messages.push(notes.map((entry) => `+${entry.delta} · ${reasonLabel(entry.reason)}`).join("  "));
+      if (notes.some((entry) => entry.delta > 0)) sfx("crystal");
+    }
   }
   if (messages.length) toast(messages.join("  "));
   if (level > prevLevel) {
@@ -486,9 +474,11 @@ async function commitWrapped(mutator, fx = {}) {
       ui.keepScroll = true;
       ui.enter = false;
       paint();
-      sfx("level");
+      sfx(newRank !== prevRank ? "rank" : "level");
       haptic("level");
     }, 740);
+  } else if (newRank !== prevRank && totalXp(state) > prevXp) {
+    sfx("rank");
   }
   syncReminderSchedule(state).catch(() => {});
   if (!fx.skipDriveSchedule) driveScheduler.noteChange();
@@ -507,16 +497,8 @@ const actions = {
     ui.enter = true;
     ui.keepScroll = false;
     ui.exercise = null;
-    ui.reordering = false;
     setHash(ui.tab);
     if (ui.tab === "you" || ui.tab === "settings") refreshNotify().then(() => paint());
-    if (ui.tab !== "today") todayScrollBound = false;
-    paint();
-  },
-  "toggle-reorder"() {
-    ui.reordering = !ui.reordering;
-    ui.keepScroll = true;
-    haptic("tick");
     paint();
   },
   async "step-quest"(el) {
@@ -578,20 +560,18 @@ const actions = {
         sfx("combo");
         haptic("combo");
       }
-      if (!ui.reordering) {
-        ui.collapsingId = taskId;
-        ui.keepScroll = true;
-        paint();
-        if (!reduced) {
-          await waitMs(160);
-          const row = document.querySelector(`[data-row-id="${taskId}"]`);
-          row?.classList.add("is-collapsing");
-          await waitMs(220);
-        }
-        ui.collapsingId = null;
-        ui.keepScroll = true;
-        paint();
+      ui.collapsingId = taskId;
+      ui.keepScroll = true;
+      paint();
+      if (!reduced) {
+        await waitMs(160);
+        const row = document.querySelector(`[data-row-id="${taskId}"]`);
+        row?.classList.add("is-collapsing");
+        await waitMs(220);
       }
+      ui.collapsingId = null;
+      ui.keepScroll = true;
+      paint();
       if (!wasDayComplete && isComplete(state, date)) {
         dailyCompleteBanner(reduced);
         confettiFan(reduced);
@@ -1261,8 +1241,7 @@ const actions = {
   async "enable-notify"() {
     const result = await enableNotifications();
     await refreshNotify();
-    if (!result.ok) toast(result.reason);
-    else {
+    if (result.ok) {
       toast("Reminders can fire while Ember is open.");
       syncReminderSchedule(state).catch(() => {});
     }
@@ -1387,7 +1366,6 @@ async function applyRestoredState(imported, options = {}) {
   ui.calDate = null;
   ui.calMonth = null;
   ui.exercise = null;
-  ui.reordering = false;
   ui.keepScroll = false;
   try {
     await saveState(state);
@@ -1750,6 +1728,12 @@ function bindQuestDrag(app) {
 function bind() {
   const app = document.getElementById("app");
   ensureBackupInput();
+  const primeAudio = () => {
+    if (audioPrimed) return;
+    audioPrimed = true;
+    ensureAudio();
+  };
+  app.addEventListener("pointerdown", primeAudio, { once: true, passive: true });
   const shouldSuppressClick = bindQuestDrag(app);
   app.addEventListener("click", (event) => {
     if (shouldSuppressClick(event.target)) {
@@ -1911,6 +1895,13 @@ async function boot() {
     paint();
   }
   await registerServiceWorker();
+  if (navigator.serviceWorker) {
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (sessionStorage.getItem("ember-sw-reload")) return;
+      sessionStorage.setItem("ember-sw-reload", "1");
+      location.reload();
+    });
+  }
   watchReminders(() => state);
   syncReminderSchedule(state).catch(() => {});
   refreshNotify().then(() => {

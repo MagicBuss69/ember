@@ -27,8 +27,31 @@ export function icon(name) {
   return stroke(PATHS[name] || "");
 }
 
-export function gemIcon() {
-  return `<svg class="gem-svg" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 1.7 20.2 7.2v9.6L12 22.3 3.8 16.8V7.2L12 1.7Z"/><path fill="#06342c" fill-opacity=".45" d="m12 1.7 8.2 5.5L12 12 3.8 7.2 12 1.7Z"/><path fill="#d9fff4" fill-opacity=".55" d="M12 1.7 16.2 8.4 12 12 7.8 8.4 12 1.7Z"/></svg>`;
+export function gemIcon({ className = "gem-svg", size = 24 } = {}) {
+  return crystalGemSvg({ size, fillPct: 1, className, compact: true });
+}
+
+/**
+ * Faceted crystal: `fillPct` 0–1 lights the gem from the bottom (level progress).
+ */
+export function crystalGemSvg({ size = 48, fillPct = 0.5, className = "crystal-svg", compact = false } = {}) {
+  const pct = Math.max(0, Math.min(1, Number(fillPct) || 0)).toFixed(3);
+  const h = Math.round(size);
+  const d = compact ? "M12 2 20.5 8 12 22 3.5 8Z" : "M12 1.5 21 8.5 12 22.5 3 8.5Z";
+  const crown = compact ? "M12 2 20.5 8 12 12 3.5 8Z" : "M12 1.5 21 8.5 12 12.5 3 8.5Z";
+  const right = compact ? "M12 12 20.5 8 12 22Z" : "M12 12.5 21 8.5 12 22.5Z";
+  const left = compact ? "M12 12 3.5 8 12 22Z" : "M12 12.5 3 8.5 12 22.5Z";
+  const shine = compact ? "M9 5 12 2 15 8 12 11Z" : "M8 4 12 1.5 16 7.5 12 10.5Z";
+  return `<svg class="${className}" width="${h}" height="${h}" viewBox="0 0 24 24" aria-hidden="true" style="--cg-fill:${pct}">
+    <g class="cg-stack">
+      <path class="cg-body" d="${d}" />
+      <path class="cg-f1" d="${crown}" />
+      <path class="cg-f2" d="${right}" />
+      <path class="cg-f3" d="${left}" />
+      <path class="cg-shine" d="${shine}" />
+    </g>
+    <path class="cg-outline" d="${d}" fill="none" stroke="currentColor" stroke-width="0.55" stroke-linejoin="round" />
+  </svg>`;
 }
 
 const AVATARS = {
