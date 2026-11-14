@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createInitialState, prepare, setTaskDone } from "../src/domain.js";
 import { migrateStateV2 } from "../src/migrate.js";
-import { XP_PENALTY_PER_QUEST } from "../src/penalty.js";
+import { STREAK_BREAK_XP_PER_DAY, XP_PENALTY_PER_QUEST } from "../src/penalty.js";
 import { totalXp } from "../src/stats.js";
 
 test("penalty applies XP loss and injects a penalty quest on next prepare", () => {
@@ -21,7 +21,12 @@ test("penalty applies XP loss and injects a penalty quest on next prepare", () =
   assert.ok(prepared.penaltyReport);
   const missedQuests = prepared.penaltyReport.questsMissed;
   assert.ok(missedQuests > 0);
-  assert.equal(prepared.penaltyReport.xpLost, XP_PENALTY_PER_QUEST * missedQuests);
+  const questXpLost = XP_PENALTY_PER_QUEST * missedQuests;
+  const streakXp = prepared.penaltyReport.streakXpLost || 0;
+  assert.equal(prepared.penaltyReport.xpLost, questXpLost + streakXp);
+  if (prepared.penaltyReport.streakLost > 0) {
+    assert.ok(streakXp <= prepared.penaltyReport.streakLost * STREAK_BREAK_XP_PER_DAY);
+  }
   const today = "2026-11-12";
   const penalty = prepared.state.days[today].slots.morning.find((t) => t.penaltyTag);
   assert.ok(penalty);

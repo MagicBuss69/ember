@@ -120,8 +120,18 @@ export function viewToday(state, ui, now) {
       ${lookingToday ? mustDoBanner(state, today) : ""}
       ${lookingToday ? todayCompactBar(state, progress, ring, xp) : ""}
       <div class="today-sticky" id="today-sticky">
-        <div class="sticky-row">
-          ${ringHtml(ring.done, ring.total, ui.ringPulse)}
+        <div class="sticky-board">
+          <div class="sticky-board-head">
+            ${ringHtml(ring.done, ring.total, ui.ringPulse)}
+            <div class="date-nav date-nav-sticky">
+              <button type="button" class="icon-btn icon-btn-tight" data-action="shift-day" data-dir="-1" aria-label="Previous day">${icon("chevL")}</button>
+              <div class="date-copy date-copy-left">
+                <h1>${lookingToday ? "Today" : esc(weekdayLong(date))}</h1>
+                <p>${esc(formatPretty(date))}</p>
+              </div>
+              <button type="button" class="icon-btn icon-btn-tight" data-action="shift-day" data-dir="1" aria-label="Next day" ${lookingToday ? "disabled" : ""}>${icon("chevR")}</button>
+            </div>
+          </div>
           ${crystalMeterHtml({
             progress,
             rank,
@@ -130,14 +140,6 @@ export function viewToday(state, ui, now) {
             skin,
             compact: true,
           })}
-          <div class="date-nav date-nav-inline">
-            <button type="button" class="icon-btn" data-action="shift-day" data-dir="-1" aria-label="Previous day">${icon("chevL")}</button>
-            <div class="date-copy">
-              <h1>${lookingToday ? "Today" : esc(weekdayLong(date))}</h1>
-              <p>${esc(formatPretty(date))}</p>
-            </div>
-            <button type="button" class="icon-btn" data-action="shift-day" data-dir="1" aria-label="Next day" ${lookingToday ? "disabled" : ""}>${icon("chevR")}</button>
-          </div>
         </div>
         ${levelBar(progress, xp, ui.barPulse)}
         <p class="streak-line ${streak >= 7 ? "heat-3" : streak >= 3 ? "heat-2" : streak >= 1 ? "heat-1" : ""}">${icon("flame")} ${streak ? `${streak}-day streak` : "No streak yet"}</p>
@@ -643,14 +645,26 @@ export function penaltyHtml(ui) {
   const report = ui.penaltyWindow;
   if (!report) return "";
   const days = (report.dates || []).map((d) => formatPretty(d)).join(", ");
+  const streakLost = Number(report.streakLost) || 0;
+  const headline = streakLost > 0 ? "Streak broken" : "The System has recorded a failure.";
+  const streakLine =
+    streakLost > 0
+      ? `<p class="num">${streakLost}-day streak lost · −${report.streakXpLost || 0} XP from the break</p>`
+      : `<p class="num">Streak reset</p>`;
+  const mustDoParts = [];
+  if (report.missMustDoAdded) mustDoParts.push(`${report.missMustDoAdded} for missed quests`);
+  if (report.streakMustDoAdded) mustDoParts.push(`${report.streakMustDoAdded} for the lost streak`);
+  const mustDoDetail = mustDoParts.length ? ` (${mustDoParts.join(", ")})` : "";
   return `
     <div class="penalty-window" role="dialog" aria-modal="true">
       <div class="penalty-card system-glass">
         <p class="penalty-tag">PENALTY</p>
-        <h2>The System has recorded a failure.</h2>
+        <h2>${headline}</h2>
         <p>Missed: ${esc(days || "recent days")}</p>
-        <p class="num">−${report.xpLost || 0} XP · Streak reset</p>
-        <p>${report.mustDoAdded || 1} must-do quest${(report.mustDoAdded || 1) === 1 ? "" : "s"} added for today.</p>
+        ${streakLine}
+        <p class="num">−${report.xpLost || 0} XP total</p>
+        <p>${report.mustDoAdded || 1} must-do quest${(report.mustDoAdded || 1) === 1 ? "" : "s"} on Today${esc(mustDoDetail)}.</p>
+        <p class="muted">Shard earnings stay frozen until every must-do is cleared.</p>
         <button type="button" class="primary" data-action="dismiss-penalty">Accept</button>
       </div>
     </div>`;
