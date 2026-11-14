@@ -5,7 +5,7 @@ import "@fontsource/outfit/latin-700.css";
 import "@fontsource/fraunces/latin-600.css";
 import "./styles.css";
 
-import { sanitizeImport } from "./backup.js";
+import { formatRestoreSummary, parseBackupText, sanitizeImport, summarizeBackup } from "./backup.js";
 import { GOOGLE_CLIENT_ID } from "./config.js";
 import { downloadBackup, listBackups, pruneBackups, restoreKeepingSecrets, uploadBackup } from "./drive.js";
 import { requestDriveToken } from "./driveAuth.js";
@@ -772,15 +772,7 @@ const actions = {
       return;
     }
     if (confirm.action === "import" && ui.pendingImport) {
-      const prepared = prepare(ui.pendingImport, new Date());
-      state = prepared.state;
-      ensureRivalHistory(state, prepared.today);
-      ui.pendingImport = null;
-      await saveState(state);
-      ui.keepScroll = false;
-      paint();
-      toast("Backup imported.");
-      syncReminderSchedule(state).catch(() => {});
+      await applyRestoredState(ui.pendingImport);
       return;
     }
     if (confirm.action === "remove-gemini") {
@@ -795,17 +787,8 @@ const actions = {
       try {
         const access = await requestDriveToken("");
         const raw = await downloadBackup(access, confirm.id);
-        const imported = restoreKeepingSecrets(sanitizeImport(raw), state);
-        const prepared = prepare(imported, new Date());
-        state = prepared.state;
-        ensureRivalHistory(state, prepared.today);
-        ui.sheet = null;
-        ui.draft = null;
-        await saveState(state);
-        ui.keepScroll = false;
-        paint();
-        toast("Restored from Google Drive.");
-        syncReminderSchedule(state).catch(() => {});
+        const imported = restoreKeepingSecrets(sanitizeImport(raw, state), state);
+        await applyRestoredState(imported);
       } catch (error) {
         toast(error.message || "Couldn't restore that backup.");
       }
@@ -844,7 +827,8 @@ const actions = {
     };
     paint();
   },
-  export() {
+  async export() {
+    await flushSettingsInputs();
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -856,26 +840,8 @@ const actions = {
     URL.revokeObjectURL(url);
   },
   import() {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "application/json";
-    input.addEventListener("change", async () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      try {
-        const raw = JSON.parse(await file.text());
-        ui.pendingImport = sanitizeImport(raw);
-        ui.confirm = {
-          title: "Replace this phone’s data?",
-          body: "Quests, XP, workouts, and the saved key will be overwritten by the file.",
-          label: "Import",
-          action: "import",
-        };
-        paint();
-      } catch (error) {
-        toast(error.message || "Couldn't read that file.");
-      }
-    });
+    const input = ensureBackupInput();
+    input.value = "";
     input.click();
   },
   async "enable-notify"() {
@@ -918,6 +884,106 @@ function readWorkout(draft) {
 async function refreshNotify() {
   ui.notifyState = globalThis.Notification?.permission || "unsupported";
   ui.periodic = await periodicStatus();
+}
+
+function readFileAsText(file) {
+  if (typeof file.text === "function") return file.text();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(new Error("Couldn't read that file."));
+    reader.readAsText(file);
+  });
+}
+
+function ensureBackupInput() {
+  let input = document.getElementById("backup-file");
+  if (!input) {
+    input = document.createElement("input");
+    input.id = "backup-file";
+    input.type = "file";
+    input.accept = ".json,application/json,text/plain";
+    input.className = "sr";
+    input.tabIndex = -1;
+    input.setAttribute("aria-hidden", "true");
+    document.body.appendChild(input);
+  }
+  if (!input._emberBound) {
+    input._emberBound = true;
+    input.addEventListener("change", async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        const text = await readFileAsText(file);
+        const raw = parseBackupText(text);
+        const imported = sanitizeImport(raw, state);
+        const { quests, workouts, level } = summarizeBackup(imported);
+        ui.pendingImport = imported;
+        ui.confirm = {
+          title: "Replace this phone’s data?",
+          body: `Found ${quests} quest${quests === 1 ? "" : "s"}, ${workouts} workout${workouts === 1 ? "" : "s"}, level ${level}. Quests, XP, workouts, crystals, and themes on this phone will be replaced.`,
+          label: "Import",
+          action: "import",
+        };
+        paint();
+      } catch (error) {
+        ui.pendingImport = null;
+        toast(error.message || "Couldn't read that file.");
+      }
+    });
+  }
+  return input;
+}
+
+async function flushSettingsInputs() {
+  const patch = {};
+  let dirty = false;
+  document.querySelectorAll('[data-commit="settings"][data-bind]').forEach((el) => {
+    clearTimeout(el._emberTimer);
+    const key = el.dataset.bind;
+    if (state.settings && state.settings[key] !== el.value) {
+      patch[key] = el.value;
+      dirty = true;
+    }
+  });
+  if (dirty) {
+    state = patchSettings(state, patch);
+    await saveState(state).catch(() => {});
+  }
+}
+
+async function applyRestoredState(imported) {
+  clearTimeout(levelTimer);
+  genToken += 1;
+  const { quests, workouts } = summarizeBackup(imported);
+  const prepared = prepare(imported, new Date());
+  state = prepared.state;
+  ensureRivalHistory(state, prepared.today);
+  ui.pendingImport = null;
+  ui.sheet = null;
+  ui.draft = null;
+  ui.confirm = null;
+  ui.levelUp = null;
+  ui.editingGemini = false;
+  ui.geminiDraft = "";
+  ui.geminiError = "";
+  ui.revealKey = false;
+  ui.lookDate = null;
+  ui.selectedDate = null;
+  ui.selectedWeekday = null;
+  ui.exercise = null;
+  ui.reordering = false;
+  ui.keepScroll = false;
+  try {
+    await saveState(state);
+  } catch (error) {
+    toast(error.message || "Couldn't save the restored backup on this phone.");
+    paint();
+    return;
+  }
+  paint();
+  toast(formatRestoreSummary({ days: imported.days, workouts: state.workouts, xpEvents: state.xpEvents }));
+  syncReminderSchedule(state).catch(() => {});
 }
 
 function bindQuestDrag(app) {
@@ -1054,6 +1120,7 @@ function bindQuestDrag(app) {
 
 function bind() {
   const app = document.getElementById("app");
+  ensureBackupInput();
   bindQuestDrag(app);
   app.addEventListener("click", (event) => {
     const el = event.target.closest("[data-action]");
@@ -1094,7 +1161,15 @@ function bind() {
   });
   app.addEventListener("change", (event) => {
     const el = event.target.closest("[data-bind]");
-    if (!el || !ui.draft || el.dataset.commit === "settings") return;
+    if (!el) return;
+    if (el.dataset.commit === "settings") {
+      clearTimeout(el._emberTimer);
+      const bindName = el.dataset.bind;
+      const value = el.value;
+      commitAction((current) => patchSettings(current, { [bindName]: value }), { quiet: true });
+      return;
+    }
+    if (!ui.draft) return;
     assign(ui.draft, el.dataset.bind, el.type === "checkbox" ? el.checked : el.value);
   });
   window.addEventListener("keydown", (event) => {

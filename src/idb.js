@@ -9,8 +9,13 @@ function openDb() {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
     request.onerror = () => reject(request.error);
+    request.onblocked = () => reject(new Error("IndexedDB is busy."));
   });
 }
 
@@ -19,8 +24,22 @@ export async function kvGet(key) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, "readonly");
     const request = tx.objectStore(STORE).get(key);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    let result;
+    request.onsuccess = () => {
+      result = request.result;
+    };
+    tx.oncomplete = () => {
+      db.close();
+      resolve(result);
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error || request.error);
+    };
+    tx.onabort = () => {
+      db.close();
+      reject(tx.error || new Error("IndexedDB read aborted."));
+    };
   });
 }
 
@@ -29,8 +48,18 @@ export async function kvSet(key, value) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, "readwrite");
     tx.objectStore(STORE).put(value, key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error);
+    };
+    tx.onabort = () => {
+      db.close();
+      reject(tx.error || new Error("IndexedDB write aborted."));
+    };
   });
 }
 
@@ -39,8 +68,18 @@ export async function kvClear() {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, "readwrite");
     tx.objectStore(STORE).clear();
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error);
+    };
+    tx.onabort = () => {
+      db.close();
+      reject(tx.error || new Error("IndexedDB clear aborted."));
+    };
   });
 }
 

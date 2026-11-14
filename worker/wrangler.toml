@@ -2,9 +2,6 @@ name = "ember-reminders"
 main = "index.js"
 compatibility_date = "2025-04-01"
 
-# Create this with: npx wrangler kv namespace create EMBER
-# Then paste the id here. Do not commit a real production id if you prefer;
-# the placeholder deploy will fail until it is replaced.
 [[kv_namespaces]]
 binding = "EMBER"
 id = "e5f0b7180fcd413585ac142056c0d2ca"

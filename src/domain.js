@@ -44,7 +44,11 @@ function taskFrom(partial) {
 
 export function validTime(value) {
   const text = String(value || "").trim();
-  return /^([01]\d|2[0-3]):[0-5]\d$/.test(text) ? text : "";
+  const match = text.match(/^(\d{1,2}):([0-5]\d)(?::[0-5]\d)?$/);
+  if (!match) return "";
+  const hour = Number(match[1]);
+  if (hour < 0 || hour > 23) return "";
+  return `${String(hour).padStart(2, "0")}:${match[2]}`;
 }
 
 function templateFromList(list) {
