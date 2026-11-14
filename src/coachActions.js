@@ -113,7 +113,8 @@ function actionMode(action) {
 }
 
 export function isDestructiveAction(action, state) {
-  const name = action?.name;
+  if (!action || typeof action !== "object") return true;
+  const name = action.name;
   if (!name) return true;
   if (name === "deleteQuest" || name === "deleteEvent" || name === "deleteTemplateQuest") return true;
   if (name === "setQuestDone") return true;
@@ -157,6 +158,13 @@ export function previewCoachAction(action, state) {
     const verb = name === "deleteTemplateQuest" ? "Delete" : "Update";
     return `${verb} template quest “${title}” on ${day}`;
   }
+  if (name === "setQuestDone") {
+    const found = action.taskId ? findDayTask(state, action.taskId) : null;
+    const title = previewTitle(found?.task, action);
+    const date = found?.date || action.date || "?";
+    const mark = action.done === false ? "undone" : "done";
+    return `Mark quest “${title}” ${mark} on ${date}`;
+  }
   if (name === "setGoals") return "Replace your goals text";
   if (name === "applyWeekPlan") return "Replace the weekly template from Gemini's plan";
   if (name === "copyDay" && actionMode(action) === "replace") return "Replace quests on selected days";
@@ -169,7 +177,7 @@ export function previewCoachAction(action, state) {
 function sanitizeList(actions) {
   if (!Array.isArray(actions)) return [];
   return actions.map((raw) => {
-    if (!raw || typeof raw !== "object") return null;
+    if (!raw || typeof raw !== "object") return { invalid: true, name: "" };
     const name = String(raw.name || "").trim();
     if (!ALLOWED.has(name)) return { invalid: true, name };
     const next = { name };
@@ -207,6 +215,7 @@ export function planCoachTurn(state, rawActions, { confirmed = false } = {}) {
 }
 
 function applyOne(state, action, now) {
+  if (!action || typeof action !== "object" || Array.isArray(action)) return state;
   const today = dateKey(now);
   const name = action.name;
 

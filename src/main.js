@@ -884,6 +884,7 @@ const actions = {
       if (plan.ok && plan.actions.length) {
         const applied = applyCoachActions(state, plan.actions, new Date(), { confirmed: true });
         if (applied.ok) await commitAction(() => applied.state, { quiet: true });
+        else toast(applied.error);
       }
       ui.draft.loading = false;
       ui.keepScroll = true;
@@ -1337,8 +1338,10 @@ const actions = {
       const pending = ui.pendingCoach;
       ui.pendingCoach = null;
       const applied = applyCoachActions(state, pending.actions, new Date(), { confirmed: true });
-      if (applied.ok) await commitAction(() => applied.state, { quiet: true });
-      if (pending.reply) toast(pending.reply.slice(0, 120));
+      if (applied.ok) {
+        await commitAction(() => applied.state, { quiet: true });
+        if (pending.reply) toast(pending.reply.slice(0, 120));
+      } else toast(applied.error);
       return;
     }
     if (confirm.action === "import" && ui.pendingImport) {

@@ -9,6 +9,27 @@ import { weekdayIso } from "../src/time.js";
 
 const NOW = new Date("2026-11-13T12:00:00Z");
 
+test("non-object coach actions fail closed", () => {
+  const state = createInitialState(NOW);
+  const payloads = [
+    { reply: "Done.", actions: [null] },
+    { reply: "Done.", actions: ["addQuest"] },
+  ];
+  for (const raw of payloads) {
+    const payload = parseCoachPayload(raw);
+    const plan = planCoachTurn(state, payload.actions);
+    assert.equal(plan.ok, false);
+    assert.equal(plan.needsConfirm, undefined);
+    assert.match(plan.error, /can't run/);
+    const applied = applyCoachActions(state, payload.actions, NOW, { confirmed: true });
+    assert.equal(applied.ok, false);
+    assert.match(applied.error, /can't run/);
+    assert.equal(applied.state, state);
+  }
+  assert.equal(isDestructiveAction(null, state), true);
+  assert.equal(isDestructiveAction("addQuest", state), true);
+});
+
 test("unknown coach actions fail closed", () => {
   const state = createInitialState(NOW);
   const plan = planCoachTurn(state, [{ name: "reset" }]);
@@ -132,6 +153,11 @@ test("setQuestDone waits for confirm before XP changes", () => {
   const plan = planCoachTurn(state, [{ name: "setQuestDone", taskId: task.id, done: true }]);
   assert.equal(plan.needsConfirm, true);
   assert.equal(plan.ok, false);
+  assert.equal(plan.previews[0], `Mark quest “${task.title}” done on ${today}`);
+  assert.equal(
+    previewCoachAction({ name: "setQuestDone", taskId: "missing-id", done: false }, state),
+    "Mark quest “unknown” undone on ?",
+  );
   const blocked = applyCoachActions(state, [{ name: "setQuestDone", taskId: task.id, done: true }], NOW);
   assert.equal(blocked.ok, false);
   assert.equal(blocked.state.xpEvents.length, xp0);
@@ -147,6 +173,7 @@ test("setQuestDone waits for confirm before XP changes", () => {
 
   const undo = applyCoachActions(state, [{ name: "setQuestDone", taskId: task.id, done: false }], NOW);
   assert.equal(undo.needsConfirm, true);
+  assert.equal(undo.previews[0], `Mark quest “${task.title}” undone on ${today}`);
   assert.equal(undo.state.xpEvents.length, xp0 + 1);
   const undone = applyCoachActions(
     state,
