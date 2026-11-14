@@ -26,6 +26,7 @@
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --nav-h: 62px;
   --hud-h: 52px;
+  --board-compact-h: 54px;
   color-scheme: dark;
   font-family: var(--font);
   background: var(--bg);
@@ -734,6 +735,10 @@ button:active:not(:disabled) { transform: scale(0.98); }
 }
 .quest.done .quest-title { color: var(--faint); text-decoration: line-through; text-decoration-thickness: 1px; }
 .quest.is-dragging { opacity: 0.25; }
+.quest.is-hold-pending { opacity: 0.94; }
+.quest.is-drag-armed {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 70%, transparent);
+}
 .quest[data-quest] .quest-body { -webkit-touch-callout: none; user-select: none; }
 .today-tools {
   display: flex;
@@ -1611,51 +1616,46 @@ body.dragging-quest, body.dragging-quest * { cursor: grabbing !important; user-s
   pointer-events: none;
 }
 
-.today-sticky {
-  position: sticky;
-  top: 0;
-  z-index: 4;
+.today-board-expanded {
   margin: -4px -8px 12px;
-  padding: 8px 8px 8px;
-  border-radius: 18px;
-  background: var(--panel-glass);
+  padding: 8px;
+  border-radius: 16px;
+  background: var(--bg-elev);
   border: 1px solid var(--line-strong);
   box-shadow: var(--system-glow);
 }
-.today-sticky.board-morph {
-  --board-scroll: 0;
-  --board-compact-h: 54px;
-  --board-expand-extra: 168px;
-  position: sticky;
-  top: 0;
-  padding: 0;
-  background: var(--bg-elev);
-  border-radius: 16px;
-  overflow: hidden;
-  margin-bottom: calc(12px - var(--board-scroll) * var(--board-expand-extra));
-  contain: layout style;
+.today-board-compact {
+  position: fixed;
+  z-index: 12;
+  left: 50%;
+  top: calc(env(safe-area-inset-top, 0px) + var(--hud-h));
+  width: min(100%, 480px);
+  padding: 0 max(12px, env(safe-area-inset-left, 0px)) 0 max(12px, env(safe-area-inset-right, 0px));
+  transform: translate3d(-50%, calc(-100% - 8px), 0);
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+  transition: transform 180ms var(--ease), opacity 180ms ease;
 }
-.board-morph-viewport {
-  position: relative;
-  height: calc(var(--board-compact-h) + (1 - var(--board-scroll)) * var(--board-expand-extra));
-  overflow: hidden;
-  border-radius: inherit;
-  background: var(--bg-elev);
+body.today-compact-on .today-board-compact {
+  transform: translate3d(-50%, 0, 0);
+  opacity: 1;
+  pointer-events: auto;
 }
-.board-compact-layer {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
+.today-board-compact-inner {
+  height: var(--board-compact-h, 54px);
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
   gap: 4px;
-  padding: 6px 8px 8px;
+  padding: 6px 10px 8px;
+  border-radius: 14px;
   background: var(--bg-elev);
-  opacity: 1;
-  clip-path: inset(0 0 calc((1 - var(--board-scroll)) * 100%) 0);
-  pointer-events: calc(var(--board-scroll) > 0.85 ? auto : none);
-  border-radius: inherit;
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+body.today-compact-on main {
+  scroll-padding-top: calc(var(--hud-h) + var(--board-compact-h, 54px) + 8px);
 }
 .board-compact-row {
   display: flex;
@@ -1700,13 +1700,6 @@ body.dragging-quest, body.dragging-quest * { cursor: grabbing !important; user-s
 .ring-wrap-sm .ring-sm { width: 32px; height: 32px; display: block; }
 .ring-wrap-sm .ring-track,
 .ring-wrap-sm .ring-fg { stroke-width: 4; }
-.board-expanded-layer {
-  position: relative;
-  z-index: 1;
-  padding: 8px;
-  opacity: calc(1 - var(--board-scroll));
-  pointer-events: calc(var(--board-scroll) < 0.45 ? auto : none);
-}
 .sticky-board {
   display: flex;
   flex-direction: column;
@@ -1722,29 +1715,31 @@ body.dragging-quest, body.dragging-quest * { cursor: grabbing !important; user-s
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 2px;
 }
-.date-copy-left {
-  flex: 1;
-  min-width: 0;
-  text-align: left;
+.date-nav-title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
 }
-.date-copy-left h1 {
+.date-nav-title {
   margin: 0;
   font-size: clamp(20px, 5.2vw, 24px);
   line-height: 1.1;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
-.date-copy-left p {
-  margin: 2px 0 0;
+.date-nav-sub {
+  margin: 0;
+  padding-left: 44px;
   font-size: 12px;
   color: var(--faint);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
 }
 .icon-btn-tight {
   width: 36px;

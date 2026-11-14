@@ -172,18 +172,7 @@ export function questRows({
       const check = template || !canToggle
         ? ""
         : `<button type="button" class="check ${justDoneId === task.id ? "just" : ""}" data-action="toggle" ${where} aria-pressed="${task.done ? "true" : "false"}" aria-label="${task.done ? "Mark not done" : "Mark done"}: ${esc(task.title)}"><i></i></button>`;
-      const atVeryTop = slotIdx === 0 && index === 0;
-      const atVeryBottom = slotIdx === SLOTS.length - 1 && index === items.length - 1;
       const allowMove = movable && !locked;
-      const stepper = allowMove
-        ? `<div class="move-btns">
-            <button type="button" class="icon-btn move-step" data-action="step-quest" data-dir="-1" ${where} aria-label="Move up: ${esc(task.title)}" ${atVeryTop ? "disabled" : ""}>${icon("up")}</button>
-            <button type="button" class="icon-btn move-step" data-action="step-quest" data-dir="1" ${where} aria-label="Move down: ${esc(task.title)}" ${atVeryBottom ? "disabled" : ""}>${icon("down")}</button>
-          </div>`
-        : "";
-      const grip = allowMove
-        ? `<button type="button" class="grip" data-grip ${where} aria-label="Drag to move: ${esc(task.title)}">${icon("grip")}</button>`
-        : "";
       const rowAttrs = `data-row-id="${esc(task.id)}" ${allowMove ? `data-quest ${where}` : ""}`;
       const noCheck = template || !canToggle;
       const toggled = justDoneId === task.id ? "just-toggled" : "";
@@ -198,8 +187,6 @@ export function questRows({
             ${meta ? `<span class="quest-meta">${esc(meta)}</span>` : ""}
           </button>`
           }
-          ${stepper}
-          ${grip}
         </div>`;
     })
     .join("");
