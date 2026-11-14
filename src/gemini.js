@@ -1,4 +1,4 @@
-import { GEMINI_MODELS, SLOTS } from "./constants.js";
+import { CHAT_GEMINI_FALLBACK_MODEL, CHAT_GEMINI_MODEL, GEMINI_MODELS, SLOTS } from "./constants.js";
 import { validTime } from "./domain.js";
 
 const PROMPT_HEAD = `You plan one week of self-improvement quests for a teenager in Sweden who is in school.
@@ -140,6 +140,132 @@ function friendly(status, message) {
   if (status === 429) return "Gemini's free tier is rate-limiting right now. Try again in a minute. Your week is unchanged.";
   if (status === 404) return "That Gemini model isn't available on the free tier right now.";
   return message || `Gemini returned ${status}. Your week is unchanged.`;
+}
+
+const KEY_LIKE = /AIza[A-Za-z0-9_-]{20,}/gi;
+
+export function redactSensitive(text, apiKey = "") {
+  let out = String(text || "");
+  const key = String(apiKey || "").trim();
+  if (key.length >= 8) {
+    out = out.split(key).join("[redacted]");
+  }
+  return out.replace(KEY_LIKE, "[redacted]");
+}
+
+function chatFriendly(status, message, apiKey) {
+  const detail = redactSensitive(message, apiKey);
+  if (status === 400 && /api key/i.test(detail)) return "That key was refused. Check it in Google AI Studio.";
+  if (status === 401 || status === 403) return "That key was refused. Check it in Google AI Studio.";
+  if (status === 429) return "Gemini's free tier is rate-limiting right now. Try again in a minute.";
+  if (status === 404) return "That Gemini model isn't available on the free tier right now.";
+  return detail || "Gemini didn't answer.";
+}
+
+async function postChatJson(model, apiKey, prompt, signal, withThinking) {
+  const body = {
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: 0.65,
+      maxOutputTokens: 1200,
+      responseMimeType: "application/json",
+    },
+  };
+  if (withThinking) body.generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
+      body: JSON.stringify(body),
+      signal,
+    },
+  );
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const msg = payload?.error?.message || "";
+    const error = new Error(chatFriendly(response.status, msg, apiKey));
+    error.status = response.status;
+    error.detail = redactSensitive(msg, apiKey);
+    throw error;
+  }
+  return extractJson(readText(payload));
+}
+
+async function chatWithModel(model, apiKey, prompt, signal) {
+  try {
+    return await postChatJson(model, apiKey, prompt, signal, true);
+  } catch (error) {
+    if (error.status === 400 && /thinking/i.test(error.detail || "")) {
+      return postChatJson(model, apiKey, prompt, signal, false);
+    }
+    throw error;
+  }
+}
+
+async function chatWithFallback(apiKey, prompt, signal) {
+  try {
+    return await chatWithModel(CHAT_GEMINI_MODEL, apiKey, prompt, signal);
+  } catch (error) {
+    if (error.status === 429 || /RESOURCE_EXHAUSTED/i.test(error.detail || "")) {
+      return chatWithModel(CHAT_GEMINI_FALLBACK_MODEL, apiKey, prompt, signal);
+    }
+    if (error.status === 404) {
+      return chatWithModel(CHAT_GEMINI_FALLBACK_MODEL, apiKey, prompt, signal);
+    }
+    throw error;
+  }
+}
+
+const COACH_INSTRUCTIONS = `You are Ember's in-app coach for a private self-improvement PWA (quests, templates, calendar events, settings).
+Use the JSON context you receive. Reply in plain, short English (teen-friendly, not preachy).
+Return ONLY JSON: {"reply":"your message to the user","actions":[]}
+actions is optional. Each action is {"name":"...", ...fields}. Never return code, scripts, or unknown action names.
+Allowed action names only: addQuest, addEvent, addTemplateQuest, setQuestDone, updateQuest, updateEvent, updateTemplateQuest, deleteQuest, deleteEvent, deleteTemplateQuest, moveQuest, copyDay, copyTemplate, fillOpenDays, saveDayToTemplate, useTemplateOnDay, applyWeekPlan, setGoals, patchSettings.
+Quest fields: date YYYY-MM-DD, slot morning|afternoon|evening, title, why, time HH:MM, taskId when editing.
+Template weekday is 1=Monday … 7=Sunday. copyDay/copyTemplate use mode append or replace, sourceDate/sourceWeekday, targetDates/targetWeekdays arrays.
+patchSettings may only change sound, haptics, soundVolume, theme, crystalSkin, equippedTitle, checkFx, soundPack (owned items only).
+Never touch API keys, Drive, worker tokens, purchases, workouts, or reset. Max 6 actions per reply.`;
+
+const RIVAL_INSTRUCTIONS = `You are one of Ember's simulated rivals chatting in-app. Stay in character. Use the facts JSON only; do not invent different XP or streak numbers.
+Return ONLY JSON: {"reply":"…"} with no actions field. If asked to change quests, tell them to ask the Coach instead.`;
+
+export function parseCoachPayload(value) {
+  const reply = redactSensitive(String(value?.reply || "").trim()).slice(0, 4000);
+  const actions = Array.isArray(value?.actions) ? value.actions : [];
+  if (!reply && !actions.length) throw new Error("Gemini sent an empty reply.");
+  return { reply: reply || "Done.", actions };
+}
+
+export function parseRivalPayload(value) {
+  const reply = redactSensitive(String(value?.reply || "").trim()).slice(0, 4000);
+  if (!reply) throw new Error("Gemini sent an empty reply.");
+  return { reply };
+}
+
+export async function coachChatTurn(apiKey, context, history, message, signal) {
+  const key = String(apiKey || "").trim();
+  if (!key) throw new Error("Add a Gemini key in Setup first.");
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    throw new Error("You're offline. Connect once to chat.");
+  }
+  const prompt = `${COACH_INSTRUCTIONS}\n\nContext:\n${JSON.stringify(context)}\n\nRecent chat:\n${JSON.stringify((history || []).slice(-10))}\n\nUser message:\n${String(message || "").slice(0, 2000)}`;
+  const payload = await chatWithFallback(key, prompt, signal);
+  return parseCoachPayload(payload);
+}
+
+export async function rivalChatTurn(apiKey, facts, history, message, signal) {
+  const key = String(apiKey || "").trim();
+  if (!key) throw new Error("Add a Gemini key in Setup first.");
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    throw new Error("You're offline. Connect once to chat.");
+  }
+  const prompt = `${RIVAL_INSTRUCTIONS}\n\nCharacter facts:\n${JSON.stringify(facts)}\n\nRecent chat:\n${JSON.stringify((history || []).slice(-10))}\n\nUser message:\n${String(message || "").slice(0, 2000)}`;
+  const payload = await chatWithFallback(key, prompt, signal);
+  return parseRivalPayload(payload);
 }
 
 export async function generateWeek(apiKey, goals, signal) {

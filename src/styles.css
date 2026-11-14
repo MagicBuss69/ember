@@ -2034,6 +2034,45 @@ body.today-compact-on main {
 }
 .quest-body.locked { cursor: default; }
 
+.hud-coach {
+  margin-left: auto;
+  min-width: 44px;
+  min-height: 44px;
+  color: var(--muted);
+}
+.hud-coach:active { color: var(--accent); }
+.chat-sheet .chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: min(42vh, 320px);
+  overflow-y: auto;
+  margin: 0 0 12px;
+  padding: 8px 4px;
+}
+.chat-bubble {
+  max-width: 92%;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--line);
+}
+.chat-bubble.is-user {
+  align-self: flex-end;
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.chat-bubble p { margin: 0; font-size: 15px; line-height: 1.45; }
+.board-row[data-action] { cursor: pointer; }
+.board-row[data-action]:active { opacity: 0.92; }
+.confirm-list {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
 @media (max-width: 390px) {
   .nav button { font-size: 9px; gap: 2px; padding: 0 1px; }
   .nav button svg { width: 20px; height: 20px; }

@@ -11,7 +11,10 @@ import { GOOGLE_CLIENT_ID } from "./config.js";
 import { downloadBackup, listBackups, pruneBackups, restoreKeepingSecrets, uploadBackup } from "./drive.js";
 import { clearDriveToken, requestDriveToken } from "./driveAuth.js";
 import { createAutoBackupController } from "./driveSchedule.js";
-import { checkGeminiKey } from "./gemini.js";
+import { applyCoachActions, planCoachTurn } from "./coachActions.js";
+import { buildCoachContext } from "./coachContext.js";
+import { loadCoachChat, loadRivalChat, saveCoachChat, saveRivalChat } from "./chatLog.js";
+import { checkGeminiKey, coachChatTurn, redactSensitive, rivalChatTurn } from "./gemini.js";
 import { disableClosedReminders, enableClosedReminders } from "./pushClient.js";
 import { THEMES } from "./constants.js";
 import {
@@ -54,7 +57,7 @@ import {
   syncReminderSchedule,
   watchReminders,
 } from "./notify.js";
-import { ensureRivalHistory } from "./rivals.js";
+import { ensureRivalHistory, rivalPromptFacts } from "./rivals.js";
 import { exerciseGroups, isComplete, openTodayCount, totalXp } from "./stats.js";
 import { addCustomReward, buyItem, equipCosmetic, redeemCustomReward, removeCustomReward, SHOP_CATALOG } from "./shop.js";
 import { ensureAudio, playSound } from "./sounds.js";
@@ -111,6 +114,8 @@ const ui = {
   lastCheckAt: 0,
   penaltyWindow: null,
   shopCat: "themes",
+  coachMessages: [],
+  pendingCoach: null,
 };
 let levelTimer = 0;
 let genToken = 0;
@@ -810,6 +815,130 @@ const actions = {
       { goals: state.settings.goals, key: state.settings.geminiApiKey, error: "", loading: false, preview: null },
     );
   },
+  "open-coach"() {
+    openSheet(
+      { type: "coach" },
+      { messages: [...ui.coachMessages], draft: "", error: "", loading: false },
+    );
+  },
+  async "open-rival"(el) {
+    const rivalId = el.dataset.rival;
+    if (!rivalId) return;
+    const messages = await loadRivalChat(rivalId);
+    openSheet(
+      { type: "rival-chat", rivalId },
+      { rivalId, messages, draft: "", error: "", loading: false },
+    );
+  },
+  async "send-coach"() {
+    if (!ui.draft || ui.sheet?.type !== "coach") return;
+    const message = String(ui.draft.draft || "").trim();
+    if (!message || ui.draft.loading) return;
+    const key = state.settings.geminiApiKey || "";
+    if (!key) {
+      ui.draft.error = "Add a Gemini key in Setup first.";
+      ui.keepScroll = true;
+      paint();
+      return;
+    }
+    ui.draft.loading = true;
+    ui.draft.error = "";
+    const nowIso = new Date().toISOString();
+    ui.draft.messages = [...(ui.draft.messages || []), { role: "user", text: message, at: nowIso }];
+    ui.draft.draft = "";
+    ui.keepScroll = true;
+    paint();
+    try {
+      const context = buildCoachContext(state, new Date());
+      const { reply, actions } = await coachChatTurn(
+        key,
+        context,
+        ui.draft.messages,
+        message,
+        AbortSignal.timeout(45000),
+      );
+      const plan = planCoachTurn(state, actions);
+      ui.draft.messages = [
+        ...ui.draft.messages,
+        { role: "assistant", text: reply, at: new Date().toISOString() },
+      ];
+      ui.coachMessages = ui.draft.messages;
+      await saveCoachChat(ui.coachMessages);
+      if (plan.needsConfirm) {
+        ui.pendingCoach = { actions: plan.actions, reply };
+        ui.confirm = {
+          title: "Apply coach changes?",
+          body: "These steps change or remove existing quests:",
+          list: plan.previews,
+          label: "Apply",
+          action: "confirm-coach",
+        };
+        ui.draft.loading = false;
+        ui.keepScroll = true;
+        paint();
+        return;
+      }
+      if (!plan.ok && plan.error) {
+        throw new Error(plan.error);
+      }
+      if (plan.ok && plan.actions.length) {
+        const applied = applyCoachActions(state, plan.actions, new Date(), { confirmed: true });
+        if (applied.ok) await commitAction(() => applied.state, { quiet: true });
+      }
+      ui.draft.loading = false;
+      ui.keepScroll = true;
+      paint();
+    } catch (error) {
+      ui.draft.loading = false;
+      ui.draft.error = redactSensitive(error.message || "Gemini didn't answer.", key);
+      ui.keepScroll = true;
+      paint();
+    }
+  },
+  async "send-rival"() {
+    if (!ui.draft || ui.sheet?.type !== "rival-chat") return;
+    const message = String(ui.draft.draft || "").trim();
+    if (!message || ui.draft.loading) return;
+    const key = state.settings.geminiApiKey || "";
+    if (!key) {
+      ui.draft.error = "Add a Gemini key in Setup first.";
+      ui.keepScroll = true;
+      paint();
+      return;
+    }
+    const rivalId = ui.sheet.rivalId;
+    ui.draft.loading = true;
+    ui.draft.error = "";
+    const nowIso = new Date().toISOString();
+    ui.draft.messages = [...(ui.draft.messages || []), { role: "user", text: message, at: nowIso }];
+    ui.draft.draft = "";
+    ui.keepScroll = true;
+    paint();
+    try {
+      const facts = rivalPromptFacts(state, rivalId, new Date());
+      if (!facts) throw new Error("That rival isn't here.");
+      const { reply } = await rivalChatTurn(
+        key,
+        facts,
+        ui.draft.messages,
+        message,
+        AbortSignal.timeout(45000),
+      );
+      ui.draft.messages = [
+        ...ui.draft.messages,
+        { role: "assistant", text: reply, at: new Date().toISOString() },
+      ];
+      await saveRivalChat(rivalId, ui.draft.messages);
+      ui.draft.loading = false;
+      ui.keepScroll = true;
+      paint();
+    } catch (error) {
+      ui.draft.loading = false;
+      ui.draft.error = redactSensitive(error.message || "Gemini didn't answer.", key);
+      ui.keepScroll = true;
+      paint();
+    }
+  },
   async "run-generate"() {
     const token = ++genToken;
     ui.draft.loading = true;
@@ -1159,6 +1288,7 @@ const actions = {
   "confirm-no"() {
     ui.confirm = null;
     ui.pendingImport = null;
+    ui.pendingCoach = null;
     ui.keepScroll = true;
     paint();
   },
@@ -1201,6 +1331,14 @@ const actions = {
     }
     if (confirm.action === "confirm-copy-day") {
       await runCopyDay();
+      return;
+    }
+    if (confirm.action === "confirm-coach" && ui.pendingCoach) {
+      const pending = ui.pendingCoach;
+      ui.pendingCoach = null;
+      const applied = applyCoachActions(state, pending.actions, new Date(), { confirmed: true });
+      if (applied.ok) await commitAction(() => applied.state, { quiet: true });
+      if (pending.reply) toast(pending.reply.slice(0, 120));
       return;
     }
     if (confirm.action === "import" && ui.pendingImport) {
@@ -1893,6 +2031,11 @@ function bind() {
 async function boot() {
   ui.tab = tabFromHash();
   ui.notifyState = globalThis.Notification?.permission || "unsupported";
+  try {
+    ui.coachMessages = await loadCoachChat();
+  } catch {
+    ui.coachMessages = [];
+  }
   let loaded = null;
   try {
     loaded = await loadState();

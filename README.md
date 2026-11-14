@@ -44,6 +44,7 @@ Ember works without a key.
 2. Open **You → Gemini**, paste the key, and tap **Save** (use **Show** / **Hide** to check what you pasted).
 3. On save, Ember runs a tiny `models?pageSize=1` check against Gemini. When it passes, the card switches to `Saved ✓ · Key works · ending …abcd` with **Replace** and **Remove** buttons (**Remove** asks to confirm). If the key is rejected, Ember shows a friendly message and leaves your previous state untouched; if you’re offline, it still lets you save and marks it unchecked. The key is never logged.
 4. Tap **Generate this week** on the Week tab to preview a 7-day plan from your goals. Nothing changes until you tap **Use this plan**, and days you already started stay untouched.
+5. Tap the **Coach** icon in the top bar to chat: it can add or edit quests through a fixed action list (destructive edits ask to confirm). On **Rivals**, tap a partner row to chat in character. Both use Gemini from the browser with your key only on this phone; free-tier text may be used to improve Google's models ([pricing](https://ai.google.dev/gemini-api/docs/pricing)).
 
 ## Auto-backup to your own Google Drive ($0, no server)
 
@@ -127,7 +128,7 @@ export const VAPID_PUBLIC_KEY = "<public key from step 2>";
 - **Today** — Morning, Afternoon, and Evening quest checklist. Ticking a quest pops `+25 XP`, fills the level bar, and plays a level-up from 1 to 10. Drag any quest by its right-hand grip—or tap **Reorder** to use up/down arrows—to reorder quests or move them between Morning, Afternoon, and Evening.
 - **Week** — Edit this week or the repeating template, or generate a week with Gemini.
 - **Train** — Log lifts (sets, reps, kg) or runs (minutes, km) for `+40 XP`, per-exercise history, and weekly volume stats.
-- **Rivals** — Compete against your past self first (same weekday last week, last week’s pace, best week), plus four on-device simulated partners with realistic streaks and uneven weeks.
+- **Rivals** — Compete against your past self first (same weekday last week, last week’s pace, best week), plus four on-device simulated partners with realistic streaks and uneven weeks. Tap a partner to chat (read-only; progress matches the board).
 - **You** — Level medallion, crystal shop (streak freezes + Pine, Frost, Ink themes), goals, Gemini key card, Reminders, JSON export/import, Google Drive auto-backup, and Install.
 
 ## Project map
