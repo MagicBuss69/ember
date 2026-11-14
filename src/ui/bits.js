@@ -173,6 +173,9 @@ export function questRows({
         ? ""
         : `<button type="button" class="check ${justDoneId === task.id ? "just" : ""}" data-action="toggle" ${where} aria-pressed="${task.done ? "true" : "false"}" aria-label="${task.done ? "Mark not done" : "Mark done"}: ${esc(task.title)}"><i></i></button>`;
       const allowMove = movable && !locked;
+      const grip = allowMove
+        ? `<button type="button" class="grip" data-grip ${where} aria-label="Drag to move: ${esc(task.title)}">${icon("grip")}</button>`
+        : "";
       const rowAttrs = `data-row-id="${esc(task.id)}" ${allowMove ? `data-quest ${where}` : ""}`;
       const noCheck = template || !canToggle;
       const toggled = justDoneId === task.id ? "just-toggled" : "";
@@ -187,6 +190,7 @@ export function questRows({
             ${meta ? `<span class="quest-meta">${esc(meta)}</span>` : ""}
           </button>`
           }
+          ${grip}
         </div>`;
     })
     .join("");

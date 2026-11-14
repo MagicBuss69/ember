@@ -103,7 +103,7 @@ export function viewToday(state, ui, now) {
     }
   }
   const hint = lookingToday && !state.settings.dismissedHint
-    ? `<div class="hint"><p>Starter week, picked for a school day in Sweden. Change or drag any quest. Long-press a quest to move it. It only lives on this phone.</p><button type="button" data-action="dismiss-hint">Got it</button></div>`
+    ? `<div class="hint"><p>Starter week, picked for a school day in Sweden. Change or drag any quest. It only lives on this phone.</p><button type="button" data-action="dismiss-hint">Got it</button></div>`
     : "";
   return `
     <section class="today">

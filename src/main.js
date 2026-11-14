@@ -1590,28 +1590,17 @@ async function runCopyDay() {
 }
 
 function bindQuestDrag(app) {
-  const LONG_PRESS_MS = 1000;
-  const SCROLL_SLOP_PX = 8;
   let drag = null;
-  let pendingHold = null;
-  let suppressClickOnRow = null;
+  let suppressClick = false;
   let suppressTimer = 0;
   let dragListeners = false;
 
-  function armClickSuppression(row) {
+  function armClickSuppression() {
     clearTimeout(suppressTimer);
-    suppressClickOnRow = row;
+    suppressClick = true;
     suppressTimer = setTimeout(() => {
-      suppressClickOnRow = null;
+      suppressClick = false;
     }, 120);
-  }
-
-  function cancelHold() {
-    if (!pendingHold) return;
-    clearTimeout(pendingHold.timer);
-    pendingHold.row?.classList.remove("is-hold-pending", "is-drag-armed");
-    pendingHold = null;
-    if (!drag) detachActiveDragListeners();
   }
 
   function matchingDropCards() {
@@ -1736,7 +1725,7 @@ function bindQuestDrag(app) {
     window.removeEventListener("touchmove", onActiveTouchMove);
   }
 
-  function startDrag({ row, pointerId, clientY, captureEl, fromHold = false }) {
+  function startDrag({ row, pointerId, clientY, captureEl }) {
     const rect = row.getBoundingClientRect();
     const parentCard = row.closest("[data-slot-drop]");
     const siblings = parentCard ? [...parentCard.querySelectorAll("[data-quest]")] : [];
@@ -1749,7 +1738,6 @@ function bindQuestDrag(app) {
     document.getElementById("fx").appendChild(ghost);
     const marker = document.createElement("div");
     marker.className = "quest-drop-line";
-    row.classList.remove("is-drag-armed");
     row.classList.add("is-dragging");
     document.body.classList.add("dragging-quest");
     if (captureEl?.setPointerCapture && pointerId != null) {
@@ -1759,8 +1747,7 @@ function bindQuestDrag(app) {
         /* synthetic or touch-held pointers may not capture */
       }
     }
-    if (fromHold) haptic("warn");
-    else haptic("tick");
+    haptic("tick");
     const isTemplate = row.dataset.template === "true" || Boolean(row.dataset.weekday);
     drag = {
       pointerId,
@@ -1770,7 +1757,6 @@ function bindQuestDrag(app) {
       startY: clientY,
       offsetY: Math.min(Math.max(12, clientY - rect.top), Math.max(12, rect.height - 12)),
       moved: false,
-      fromHold,
       isTemplate,
       date: row.dataset.date || "",
       weekday: row.dataset.weekday || "",
@@ -1785,7 +1771,6 @@ function bindQuestDrag(app) {
   }
 
   function finish(commitMove) {
-    cancelHold();
     if (!drag) return;
     flushGhostMove();
     detachActiveDragListeners();
@@ -1796,7 +1781,7 @@ function bindQuestDrag(app) {
     current.row.classList.remove("is-dragging");
     app.querySelectorAll("[data-slot-drop].drop-over").forEach((el) => el.classList.remove("drop-over"));
     document.body.classList.remove("dragging-quest");
-    if (current.fromHold) armClickSuppression(current.row);
+    if (current.moved) armClickSuppression();
     const sameSpot = current.fromSlot === current.toSlot && current.toIndex === current.fromIndex;
     if (!commitMove || !current.moved || sameSpot) return;
     haptic("tick");
@@ -1813,97 +1798,49 @@ function bindQuestDrag(app) {
   app.addEventListener("pointerdown", (event) => {
     if (drag) return;
     if (event.pointerType === "mouse" && event.button !== 0) return;
-
-    if (event.target.closest(".check")) return;
-    const row = event.target.closest("[data-quest]");
+    const grip = event.target.closest("[data-grip]");
+    if (!grip) return;
+    const row = grip.closest("[data-quest]");
     if (!row) return;
-    cancelHold();
-    const hold = {
-      pointerId: event.pointerId,
+    event.preventDefault();
+    startDrag({
       row,
-      startX: event.clientX,
-      startY: event.clientY,
-      lastY: event.clientY,
-      timer: 0,
-    };
-    hold.row.classList.add("is-hold-pending");
-    hold.timer = setTimeout(() => {
-      if (pendingHold !== hold || drag) return;
-      pendingHold = null;
-      hold.row.classList.remove("is-hold-pending");
-      hold.row.classList.add("is-drag-armed");
-      startDrag({
-        row: hold.row,
-        pointerId: hold.pointerId,
-        clientY: hold.lastY,
-        captureEl: hold.row,
-        fromHold: true,
-      });
-    }, LONG_PRESS_MS);
-    pendingHold = hold;
-    // Present before the first touchmove, so a later preventDefault can still
-    // stop the scroll. A listener added only after the 1s timer is too late.
-    attachActiveDragListeners();
+      pointerId: event.pointerId,
+      clientY: event.clientY,
+      captureEl: grip,
+    });
   });
-
-  app.addEventListener("scroll", () => {
-    if (pendingHold && !drag) cancelHold();
-  }, true);
 
   app.addEventListener("contextmenu", (event) => {
-    if (drag || pendingHold) {
-      event.preventDefault();
-    }
+    if (drag || event.target.closest("[data-grip]")) event.preventDefault();
   });
 
-  window.addEventListener("pointermove", (event) => {
-    if (!pendingHold || event.pointerId !== pendingHold.pointerId) return;
-    pendingHold.lastY = event.clientY;
-    const dist = Math.hypot(event.clientX - pendingHold.startX, event.clientY - pendingHold.startY);
-    if (dist > SCROLL_SLOP_PX) cancelHold();
-  }, { passive: true });
-
-  window.addEventListener("touchmove", (event) => {
-    if (!pendingHold) return;
-    const touch = event.touches?.[0];
-    if (!touch) return;
-    pendingHold.lastY = touch.clientY;
-    const dist = Math.hypot(touch.clientX - pendingHold.startX, touch.clientY - pendingHold.startY);
-    if (dist > SCROLL_SLOP_PX) cancelHold();
-  }, { passive: true });
-
   window.addEventListener("pointerup", (event) => {
-    if (pendingHold && event.pointerId === pendingHold.pointerId) cancelHold();
     if (!drag || event.pointerId !== drag.pointerId) return;
     finish(true);
   }, { passive: true });
 
   window.addEventListener("pointercancel", (event) => {
-    // Android fires pointercancel for long-press and when it considers a
-    // scroll, but touchmove/touchend usually still arrive. Aborting here
-    // cancels the hold or drops the drag. touchcancel still ends a real steal.
+    // Android can pointercancel a touch drag while touchmove/touchend still
+    // arrive. Aborting here drops the reorder. touchcancel still ends a real steal.
     if (event.pointerType === "touch") return;
-    if (pendingHold && event.pointerId === pendingHold.pointerId) cancelHold();
     if (!drag || event.pointerId !== drag.pointerId) return;
     finish(false);
   }, { passive: true });
 
   window.addEventListener("touchend", () => {
-    if (pendingHold) cancelHold();
     if (drag) finish(true);
   }, { passive: true });
 
   window.addEventListener("touchcancel", () => {
-    if (pendingHold) cancelHold();
     if (drag) finish(false);
   }, { passive: true });
 
-  return (target) => {
-    if (!suppressClickOnRow) return false;
-    const hit = target?.closest?.("[data-quest]") === suppressClickOnRow || !suppressClickOnRow.isConnected;
+  return () => {
+    if (!suppressClick) return false;
     clearTimeout(suppressTimer);
-    suppressClickOnRow = null;
-    return hit;
+    suppressClick = false;
+    return true;
   };
 }
 
