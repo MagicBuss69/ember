@@ -1,7 +1,6 @@
 import { buildMonthGrid, daySummary, monthKey } from "../calendar.js";
 import { GOOGLE_CLIENT_ID, VAPID_PUBLIC_KEY, WORKER_URL } from "../config.js";
 import { SLOTS, SLOT_LABEL, SUGGESTED_EXERCISES, THEMES } from "../constants.js";
-import { todayUrgency } from "../penalty.js";
 import { rankForXp, rankMeta } from "../rank.js";
 import { SHOP_CATEGORIES, catalogForCategory, isOwned } from "../shop.js";
 import { templateTaskCount } from "../domain.js";
@@ -11,9 +10,9 @@ import { levelProgress } from "../economy.js";
 import { esc, formatMaybe, formatNum, reasonLabel } from "../format.js";
 import { avatar, gemIcon, icon } from "../icons.js";
 import { buildBoard } from "../rivals.js";
-import { exerciseGroups, rawGap, ringNumbers, streakCount, summarizeWeek, taskCount, totalXp } from "../stats.js";
+import { exerciseGroups, rawGap, ringNumbers, streakCount, summarizeWeek, taskCount, totalXp, weekCompare } from "../stats.js";
 import { addDays, currentSlot, dateKey, formatPretty, formatWeekSpan, weekdayIso, weekdayLong, weekStart } from "../time.js";
-import { crystalMeterHtml, emptyState, levelBar, reorderBarHtml, ringHtml, slotSection } from "./bits.js";
+import { crystalMeterHtml, emptyState, levelBar, ringHtml, slotSection, weekChartHtml } from "./bits.js";
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const DOW = ["M", "T", "W", "T", "F", "S", "S"];
@@ -44,9 +43,7 @@ export function viewToday(state, ui, now) {
   const xp = totalXp(state);
   const progress = levelProgress(xp);
   const rank = rankForXp(xp);
-  const urgency = lookingToday ? todayUrgency(state, date, now) : null;
   const skin = state.settings?.crystalSkin || "default";
-  const compact = Boolean(ui.todayCompact);
   let body = "";
   if (!day) {
     body = emptyState({
@@ -77,26 +74,21 @@ export function viewToday(state, ui, now) {
             template: false,
             justDoneId: ui.justDoneId,
             movable: true,
-            reordering: Boolean(ui.reordering),
+            reordering: true,
           }),
         ),
       ).join("");
     }
   }
-  const hasAny = Boolean(day && SLOTS.some((slot) => (day.slots[slot]?.length || 0) > 0));
-  const reorderBar = reorderBarHtml(hasAny, Boolean(ui.reordering));
   const hint = lookingToday && !state.settings.dismissedHint
     ? `<div class="hint"><p>Starter week, picked for a school day in Sweden. Change or drag any quest. It only lives on this phone.</p><button type="button" data-action="dismiss-hint">Got it</button></div>`
     : "";
-  const systemPanel = urgency
-    ? `<div class="system-panel">
-        <p class="system-kicker">Daily Quest</p>
-        <p class="system-urgency num">${urgency.full ? "All quests cleared" : `${urgency.left} quest${urgency.left === 1 ? "" : "s"} left`} · ${esc(urgency.timeLeft)} today</p>
-      </div>`
+  const systemPanel = lookingToday
+    ? `<div class="system-panel"><p class="system-kicker">Daily quest</p></div>`
     : "";
   return `
     <section class="today">
-      <div class="today-sticky ${compact ? "is-compact" : ""}" id="today-sticky">
+      <div class="today-sticky" id="today-sticky">
         <div class="sticky-row">
           ${ringHtml(ring.done, ring.total, ui.ringPulse)}
           ${crystalMeterHtml({
@@ -105,11 +97,9 @@ export function viewToday(state, ui, now) {
             stress: state.crystalStress,
             pulse: ui.barPulse,
             skin,
-            compact,
+            compact: true,
           })}
-        </div>
-        <div class="sticky-expand">
-          <div class="date-nav">
+          <div class="date-nav date-nav-inline">
             <button type="button" class="icon-btn" data-action="shift-day" data-dir="-1" aria-label="Previous day">${icon("chevL")}</button>
             <div class="date-copy">
               <h1>${lookingToday ? "Today" : esc(weekdayLong(date))}</h1>
@@ -117,16 +107,14 @@ export function viewToday(state, ui, now) {
             </div>
             <button type="button" class="icon-btn" data-action="shift-day" data-dir="1" aria-label="Next day" ${lookingToday ? "disabled" : ""}>${icon("chevR")}</button>
           </div>
-          ${levelBar(progress, xp, ui.barPulse)}
-          <p class="streak-line ${streak >= 7 ? "heat-3" : streak >= 3 ? "heat-2" : streak >= 1 ? "heat-1" : ""}">${icon("flame")} ${streak ? `${streak}-day streak` : "No streak yet"}</p>
-          ${systemPanel}
         </div>
-        ${compact && urgency ? `<p class="system-urgency compact-line num">${urgency.left} left · ${esc(urgency.timeLeft)}</p>` : ""}
+        ${levelBar(progress, xp, ui.barPulse)}
+        <p class="streak-line ${streak >= 7 ? "heat-3" : streak >= 3 ? "heat-2" : streak >= 1 ? "heat-1" : ""}">${icon("flame")} ${streak ? `${streak}-day streak` : "No streak yet"}</p>
+        ${systemPanel}
       </div>
       ${!lookingToday ? `<button type="button" class="ghost slim" data-action="jump-today">Back to today</button>` : ""}
       ${gapNote(gap)}
       ${hint}
-      ${reorderBar}
       ${body}
     </section>`;
 }
@@ -176,10 +164,6 @@ export function viewWeek(state, ui, now) {
           <span class="dow">${name.slice(0, 3)}</span><span class="dom num">${id}</span>
         </button>`;
       }).join("");
-  const hasAny = mode === "week"
-    ? taskCount(state, selected) > 0
-    : templateTaskCount(state, weekday) > 0;
-  const reorderBar = reorderBarHtml(hasAny, Boolean(ui.reordering));
   const sections = mode === "week"
     ? SLOTS.map((slot) =>
         slotSection(
@@ -191,7 +175,7 @@ export function viewWeek(state, ui, now) {
             template: false,
             justDoneId: ui.justDoneId,
             movable: true,
-            reordering: Boolean(ui.reordering),
+            reordering: true,
             canToggle: selected <= today,
           }),
         ),
@@ -206,7 +190,7 @@ export function viewWeek(state, ui, now) {
             template: true,
             justDoneId: null,
             movable: true,
-            reordering: Boolean(ui.reordering),
+            reordering: true,
           }),
         ),
       ).join("");
@@ -227,7 +211,6 @@ export function viewWeek(state, ui, now) {
       ${tabs}
       <p class="lede">${mode === "week" ? esc(formatWeekSpan(start)) : "Monday to Sunday"}</p>
       <div class="day-strip">${chips}</div>
-      ${reorderBar}
       ${sections}
       ${actions}
     </section>`;
@@ -289,7 +272,6 @@ function calendarBody(state, ui, now, today) {
     const prefillBtn = canPrefill
       ? `<button type="button" class="ghost" data-action="use-template-day" data-date="${calDate}">Use ${esc(weekdayLong(calDate))} template</button>`
       : "";
-    const reorderBar = reorderBarHtml(summary.totalCount > 0, Boolean(ui.reordering));
     const slotsHtml = SLOTS.map((slot) =>
       slotSection(
         slotOpts(state, ui, {
@@ -300,7 +282,7 @@ function calendarBody(state, ui, now, today) {
           template: false,
           justDoneId: ui.justDoneId,
           movable: true,
-          reordering: Boolean(ui.reordering),
+          reordering: true,
           canToggle: isToday,
         }),
       ),
@@ -310,7 +292,6 @@ function calendarBody(state, ui, now, today) {
         <button type="button" class="primary" data-action="add-event" data-date="${calDate}" data-slot="${isToday ? nowSlot : "morning"}">${icon("plus")} Add an event</button>
         ${prefillBtn}
       </div>
-      ${reorderBar}
       ${slotsHtml}`;
   }
 
@@ -404,7 +385,10 @@ export function viewTrain(state, ui, now) {
 }
 
 export function viewRivals(state, ui, now) {
+  const today = dateKey(now);
   const board = buildBoard(state, now);
+  const compare = weekCompare(state, today);
+  const streak = streakCount(state, today);
   const delta = board.same.delta;
   const deltaText = delta > 0 ? `+${formatNum(delta)}` : delta < 0 ? `−${formatNum(-delta)}` : "0";
   const rows = board.board
@@ -424,32 +408,39 @@ export function viewRivals(state, ui, now) {
     <section class="rivals">
       <h1 class="page-title">Rivals</h1>
       <p class="lede">The one to beat is you, a week ago.</p>
-      <article class="hero-card tone-${board.same.tone}">
-        <p class="kicker">${esc(board.same.kicker)}</p>
-        ${board.same.mode === "score" ? `<p class="delta">${deltaText}<small> XP</small></p>` : ""}
-        <h2>${esc(board.same.headline)}</h2>
-        <p class="detail">${esc(board.same.detail)}</p>
-        <div class="race">
-          <div class="race-row"><span>You today</span><span class="num">${formatNum(board.same.todayXp)}</span></div>
-          <div class="track race-live" style="--you-pct:${Math.max(0, Math.min(1, board.same.youPct)).toFixed(4)}">
-            <span style="transform:scaleX(${Math.max(0, Math.min(1, board.same.youPct)).toFixed(4)})"></span>
-            <i class="race-pin you" style="left:calc(${Math.max(0, Math.min(1, board.same.youPct)).toFixed(4)} * 100%)" aria-hidden="true"></i>
+      <div class="rivals-grid">
+        <article class="hero-card tone-${board.same.tone}">
+          <p class="kicker">${esc(board.same.kicker)}</p>
+          ${board.same.mode === "score" ? `<p class="delta">${deltaText}<small> XP</small></p>` : ""}
+          <h2>${esc(board.same.headline)}</h2>
+          <p class="detail">${esc(board.same.detail)}</p>
+          <div class="race">
+            <div class="race-row"><span>You today</span><span class="num">${formatNum(board.same.todayXp)}</span></div>
+            <div class="track race-live" style="--you-pct:${Math.max(0, Math.min(1, board.same.youPct)).toFixed(4)}">
+              <span style="transform:scaleX(${Math.max(0, Math.min(1, board.same.youPct)).toFixed(4)})"></span>
+              <i class="race-pin you" style="left:calc(${Math.max(0, Math.min(1, board.same.youPct)).toFixed(4)} * 100%)" aria-hidden="true"></i>
+            </div>
+            <div class="race-row"><span>Last ${esc(board.same.weekdayName)}</span><span class="num">${formatNum(board.same.thenXp)}</span></div>
+            <div class="track ghost race-ghost" style="--ghost-pct:${Math.max(0, Math.min(1, board.same.ghostPct)).toFixed(4)}">
+              <span style="transform:scaleX(${Math.max(0, Math.min(1, board.same.ghostPct)).toFixed(4)})"></span>
+              <i class="race-pin ghost" style="left:calc(${Math.max(0, Math.min(1, board.same.ghostPct)).toFixed(4)} * 100%)" aria-hidden="true"></i>
+            </div>
           </div>
-          <div class="race-row"><span>Last ${esc(board.same.weekdayName)}</span><span class="num">${formatNum(board.same.thenXp)}</span></div>
-          <div class="track ghost race-ghost" style="--ghost-pct:${Math.max(0, Math.min(1, board.same.ghostPct)).toFixed(4)}">
-            <span style="transform:scaleX(${Math.max(0, Math.min(1, board.same.ghostPct)).toFixed(4)})"></span>
-            <i class="race-pin ghost" style="left:calc(${Math.max(0, Math.min(1, board.same.ghostPct)).toFixed(4)} * 100%)" aria-hidden="true"></i>
-          </div>
-        </div>
-      </article>
-      <article class="card tone-${board.pace.tone}">
-        <h2>${esc(board.pace.headline)}</h2>
-        <p>${esc(board.pace.detail)}</p>
-      </article>
-      <article class="card tone-${board.best.tone}">
-        <h2>${esc(board.best.headline)}</h2>
-        <p>${esc(board.best.detail)}</p>
-      </article>
+        </article>
+        <article class="card tone-${board.pace.tone}">
+          <h2>${esc(board.pace.headline)}</h2>
+          <p>${esc(board.pace.detail)}</p>
+        </article>
+        <article class="card tone-${board.best.tone}">
+          <h2>${esc(board.best.headline)}</h2>
+          <p>${esc(board.best.detail)}</p>
+        </article>
+        <article class="card tone-${streak >= 3 ? "ahead" : "open"}">
+          <h2>${streak ? `${streak}-day streak` : "Start a streak"}</h2>
+          <p>Finish at least one quest every day. Miss a day and the System assigns a penalty.</p>
+        </article>
+      </div>
+      ${weekChartHtml(compare)}
       <h2 class="section-title">This week</h2>
       <div class="board">${rows}</div>
       <h2 class="section-title">Activity</h2>
@@ -958,7 +949,7 @@ export function navHtml(tab) {
     ["train", "Train", "dumbbell"],
     ["rivals", "Rivals", "people"],
     ["you", "You", "user"],
-    ["settings", "Settings", "gear"],
+    ["settings", "Setup", "gear"],
   ];
   return `<nav class="nav">${items
     .map(([id, label, glyph]) => `<button type="button" data-action="tab" data-tab="${id}" aria-current="${tab === id ? "page" : "false"}">${icon(glyph)}<span>${label}</span></button>`)

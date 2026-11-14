@@ -6,6 +6,7 @@
   "start_url": "/ember/",
   "scope": "/ember/",
   "display": "standalone",
+  "orientation": "any",
   "display_override": ["standalone"],
   "background_color": "#100e0c",
   "theme_color": "#100e0c",

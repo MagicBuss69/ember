@@ -19,8 +19,8 @@ export function render(state, ui, now) {
       <header class="hud">
         <div class="brand"><i class="brand-dot"></i>Ember</div>
         <button type="button" class="crystal-btn" data-action="goto-shop" aria-label="${formatNum(state.crystals)} crystals">
-          <span class="gem ${ui.gemShine ? "shine" : ""}">${gemIcon()}</span>
-          <span class="num" data-crystals>${formatNum(state.crystals)}</span>
+          <span class="gem ${ui.gemShine ? "shine" : ""}">${gemIcon({ size: 20 })}</span>
+          <span class="hud-crystals num" data-crystals>${formatNum(state.crystals)}</span>
         </button>
       </header>
       <main class="${ui.enter ? "enter" : ""}" id="main">${view(state, ui, now)}</main>

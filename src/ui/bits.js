@@ -1,6 +1,6 @@
 import { SLOTS, SLOT_LABEL } from "../constants.js";
 import { formatNum, esc } from "../format.js";
-import { icon } from "../icons.js";
+import { crystalGemSvg, icon } from "../icons.js";
 import { rankForLevel } from "../rank.js";
 
 const RADIUS = 36;
@@ -40,21 +40,55 @@ export function levelBar(progress, total, pulse) {
 }
 
 export function crystalMeterHtml({ progress, rank, stress = 0, pulse = false, skin = "default", compact = false }) {
-  const fill = Math.max(0, Math.min(1, Number(progress.pct) || 0)).toFixed(4);
+  const fill = Math.max(0, Math.min(1, Number(progress.pct) || 0));
   const stressCl = stress > 0.55 ? "is-cracked" : stress > 0.25 ? "is-dim" : "";
   const rankLetter = rank || rankForLevel(progress.level);
+  const gemSize = compact ? 44 : 52;
   return `
     <div class="crystal-meter ${compact ? "is-compact" : ""} ${stressCl} skin-${esc(skin)}" data-crystal-meter>
       <div class="rank-chip" aria-label="Rank ${rankLetter}"><span class="display">${esc(rankLetter)}</span></div>
-      <div class="crystal-gem ${pulse ? "pulse" : ""}" aria-hidden="true">
-        <i class="crystal-fill" style="transform:scaleY(${fill})"></i>
-        <i class="crystal-sheen"></i>
+      <div class="crystal-gem-wrap ${pulse ? "pulse" : ""}" aria-hidden="true">
+        ${crystalGemSvg({ size: gemSize, fillPct: fill, className: "crystal-svg hero-gem" })}
       </div>
       <div class="crystal-copy">
         <strong class="display">Lv ${progress.level}</strong>
         <span class="num crystal-xp">${progress.maxed ? "MAX" : `${Math.round(progress.pct * 100)}%`}</span>
       </div>
     </div>`;
+}
+
+export function weekChartHtml(compare) {
+  const labels = ["M", "T", "W", "T", "F", "S", "S"];
+  const peak = Math.max(1, ...compare.thisBars, ...compare.lastBars);
+  const bars = labels
+    .map((label, i) => {
+      const thisXp = compare.thisBars[i] || 0;
+      const lastXp = compare.lastBars[i] || 0;
+      const thisH = Math.max(4, Math.round((thisXp / peak) * 100));
+      const lastH = Math.max(4, Math.round((lastXp / peak) * 100));
+      const future = i > compare.dayIndex;
+      return `<div class="wc-day ${future ? "is-future" : ""}">
+        <div class="wc-bars">
+          <i class="wc-last" style="transform:scaleY(${(lastH / 100).toFixed(3)})" title="${lastXp} XP"></i>
+          <i class="wc-this" style="transform:scaleY(${(thisH / 100).toFixed(3)})" title="${thisXp} XP"></i>
+        </div>
+        <span class="wc-label">${label}</span>
+      </div>`;
+    })
+    .join("");
+  const weekTone = compare.weekDelta >= 0 ? "ahead" : "behind";
+  const dayTone = compare.sameDayDelta >= 0 ? "ahead" : "behind";
+  const daySign = compare.sameDayDelta >= 0 ? "+" : "−";
+  return `
+    <article class="card week-chart tone-${weekTone}">
+      <h2>This week vs last</h2>
+      <p class="chart-legend"><span class="dot this">This week</span><span class="dot last">Last week</span></p>
+      <div class="wc-grid">${bars}</div>
+      <p class="chart-summary num">
+        Week: <strong class="${weekTone}">${compare.weekDelta >= 0 ? "+" : "−"}${Math.abs(compare.weekDelta)} XP</strong>
+        · Today vs last ${labels[compare.dayIndex]}: <strong class="${dayTone}">${daySign}${Math.abs(compare.sameDayDelta)} XP</strong>
+      </p>
+    </article>`;
 }
 
 export function emptyState({ title, body, actions = "" }) {
@@ -64,14 +98,6 @@ export function emptyState({ title, body, actions = "" }) {
       <p>${esc(body)}</p>
       ${actions}
     </div>`;
-}
-
-export function reorderBarHtml(hasAny, reordering) {
-  if (!hasAny) return "";
-  return `<div class="today-tools">
-    ${reordering ? `<span class="reorder-hint">Drag a grip, hold a quest, or tap arrows to move across slots.</span>` : `<span></span>`}
-    <button type="button" class="ghost slim ${reordering ? "is-on" : ""}" data-action="toggle-reorder" aria-pressed="${reordering ? "true" : "false"}">${reordering ? "Done" : "Reorder"}</button>
-  </div>`;
 }
 
 function doneSlotKey({ date, weekday, slot, template }) {
@@ -134,7 +160,7 @@ export function questRows({
         : `<button type="button" class="check ${justDoneId === task.id ? "just" : ""}" data-action="toggle" ${where} aria-pressed="${task.done ? "true" : "false"}" aria-label="${task.done ? "Mark not done" : "Mark done"}: ${esc(task.title)}"><i></i></button>`;
       const atVeryTop = slotIdx === 0 && index === 0;
       const atVeryBottom = slotIdx === SLOTS.length - 1 && index === items.length - 1;
-      const stepper = movable && reordering
+      const stepper = movable
         ? `<div class="move-btns">
             <button type="button" class="icon-btn move-step" data-action="step-quest" data-dir="-1" ${where} aria-label="Move up: ${esc(task.title)}" ${atVeryTop ? "disabled" : ""}>${icon("up")}</button>
             <button type="button" class="icon-btn move-step" data-action="step-quest" data-dir="1" ${where} aria-label="Move down: ${esc(task.title)}" ${atVeryBottom ? "disabled" : ""}>${icon("down")}</button>
@@ -147,7 +173,7 @@ export function questRows({
       const noCheck = template || !canToggle;
       const toggled = justDoneId === task.id ? "just-toggled" : "";
       return `
-        <div class="quest ${task.done ? "done" : ""} ${task.isEvent ? "is-event" : ""} ${task.penaltyTag ? "is-penalty" : ""} ${noCheck ? "no-check" : ""} ${reordering ? "reordering" : ""} ${toggled} ${collapsing}" ${rowAttrs}>
+        <div class="quest ${task.done ? "done" : ""} ${task.isEvent ? "is-event" : ""} ${task.penaltyTag ? "is-penalty" : ""} ${noCheck ? "no-check" : ""} ${movable ? "reordering" : ""} ${toggled} ${collapsing}" ${rowAttrs}>
           ${check}
           <button type="button" class="quest-body" data-action="${template ? "edit-template" : "edit-task"}" ${where}>
             ${titleHtml}
@@ -188,7 +214,7 @@ export function slotSection({
     : `data-date="${date}"`;
   const dropAttrs = movable ? `data-slot-drop="${slot}" ${dropTarget}` : "";
   const countText = template || !canToggle ? String(items.length) : `${done}/${items.length}`;
-  const hideDone = !template && !reordering;
+  const hideDone = !template;
   const doneKey = hideDone ? doneSlotKey({ date, weekday, slot, template }) : "";
   const doneExpanded = hideDone && Boolean(doneSlotsOpen[doneKey]);
   const doneItems = hideDone ? items.filter((task) => task.done && task.id !== collapsingId) : [];

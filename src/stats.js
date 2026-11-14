@@ -173,12 +173,49 @@ export function summarizeWeek(state, today) {
   return { start, end, sets, volume, km, minutes, sessions, bars };
 }
 
-function daysBetween(start, end) {
+export function daysBetween(start, end) {
   const [ys, ms, ds] = start.split("-").map(Number);
   const [ye, me, de] = end.split("-").map(Number);
   const a = Date.UTC(ys, ms - 1, ds);
   const b = Date.UTC(ye, me - 1, de);
   return Math.round((b - a) / 86400000);
+}
+
+/** Daily XP totals Mon–Sun for a date range (inclusive). */
+export function weekDailyXp(state, startDate, endDate) {
+  const bars = [0, 0, 0, 0, 0, 0, 0];
+  for (const event of state.xpEvents || []) {
+    const date = event.date;
+    if (!date || date < startDate || date > endDate) continue;
+    const idx = daysBetween(startDate, date);
+    if (idx < 0 || idx > 6) continue;
+    bars[idx] += Number(event.amount) || 0;
+  }
+  return bars;
+}
+
+/** This week (to today) vs the prior week, plus same weekday delta. */
+export function weekCompare(state, today) {
+  const thisStart = weekStart(today);
+  const thisBars = weekDailyXp(state, thisStart, today);
+  const lastStart = addDays(thisStart, -7);
+  const lastEnd = addDays(lastStart, 6);
+  const lastBars = weekDailyXp(state, lastStart, lastEnd);
+  const idx = Math.min(6, Math.max(0, daysBetween(thisStart, today)));
+  const totalThis = thisBars.reduce((sum, n) => sum + n, 0);
+  const totalLast = lastBars.reduce((sum, n) => sum + n, 0);
+  const sameDayDelta = (thisBars[idx] || 0) - (lastBars[idx] || 0);
+  return {
+    thisStart,
+    lastStart,
+    thisBars,
+    lastBars,
+    dayIndex: idx,
+    totalThis,
+    totalLast,
+    sameDayDelta,
+    weekDelta: totalThis - totalLast,
+  };
 }
 
 export function exerciseGroups(state) {
