@@ -8,10 +8,10 @@ import {
   THEMES,
   WEEKDAY_QUESTS,
   WEEKEND_QUESTS,
-  XP_TASK,
   XP_WORKOUT,
 } from "./constants.js";
-import { levelFor } from "./economy.js";
+import { levelFor, questXpForLevel } from "./economy.js";
+import { currencyBlocked } from "./penalty.js";
 import { uid } from "./format.js";
 import { migrateStateV2 } from "./migrate.js";
 import { clearPenaltyReport, processPenalties } from "./penalty.js";
@@ -143,7 +143,12 @@ function ensureWeek(state, today) {
   }
 }
 
-function addCrystals(state, delta, reason, now) {
+function isLockedPenalty(task) {
+  return Boolean(task?.penaltyTag);
+}
+
+function addCrystals(state, delta, reason, now, today) {
+  if (delta > 0 && today && currencyBlocked(state, today)) return;
   state.crystals = Math.max(0, (state.crystals || 0) + delta);
   state.crystalLog.unshift({ at: now.toISOString(), delta, reason });
   state.crystalLog = state.crystalLog.slice(0, 80);
@@ -157,17 +162,17 @@ function applyDayGrants(state, date, now, today) {
   const fullKey = `full:${date}`;
   if (complete && !state.grants[streakKey]) {
     state.grants[streakKey] = true;
-    addCrystals(state, CRYSTAL_STREAK_DAY, "streak", now);
+    addCrystals(state, CRYSTAL_STREAK_DAY, "streak", now, today);
   } else if (!complete && state.grants[streakKey]) {
     delete state.grants[streakKey];
-    addCrystals(state, -CRYSTAL_STREAK_DAY, "streak", now);
+    addCrystals(state, -CRYSTAL_STREAK_DAY, "streak", now, today);
   }
   if (full && !state.grants[fullKey]) {
     state.grants[fullKey] = true;
-    addCrystals(state, CRYSTAL_FULL, "full-day", now);
+    addCrystals(state, CRYSTAL_FULL, "full-day", now, today);
   } else if (!full && state.grants[fullKey]) {
     delete state.grants[fullKey];
-    addCrystals(state, -CRYSTAL_FULL, "full-day", now);
+    addCrystals(state, -CRYSTAL_FULL, "full-day", now, today);
   }
 }
 
@@ -178,20 +183,20 @@ function applyMilestones(state, today, now) {
     const key = `mile:${value}`;
     if (streak >= value && !state.grants[key]) {
       state.grants[key] = today;
-      addCrystals(state, amount, `streak-${value}`, now);
+      addCrystals(state, amount, `streak-${value}`, now, today);
     } else if (streak < value && state.grants[key]) {
       delete state.grants[key];
     }
   }
 }
 
-function applyLevelGrants(state, now) {
+function applyLevelGrants(state, now, today) {
   const level = levelFor(totalXp(state));
   for (let step = 2; step <= level; step += 1) {
     const key = `level:${step}`;
     if (!state.grants[key]) {
       state.grants[key] = true;
-      addCrystals(state, CRYSTAL_LEVEL, "level", now);
+      addCrystals(state, CRYSTAL_LEVEL, "level", now, today);
     }
   }
 }
@@ -199,7 +204,7 @@ function applyLevelGrants(state, now) {
 export function settle(state, { today, touchDate, touchDates, now }) {
   ensureWeek(state, today);
   state.longest = Math.max(state.longest || 0, streakCount(state, today));
-  applyLevelGrants(state, now);
+  applyLevelGrants(state, now, today);
   const dates = new Set([today]);
   if (touchDate) dates.add(touchDate);
   if (Array.isArray(touchDates)) {
@@ -256,7 +261,8 @@ export function setTaskDone(state, date, slot, taskId, done, now = new Date()) {
   if (done && !task.done) {
     task.done = true;
     task.doneAt = now.toISOString();
-    pushXp(next, { date, amount: XP_TASK, source: "task", ref: task.id, now });
+    const reward = questXpForLevel(levelFor(totalXp(next)));
+    pushXp(next, { date, amount: reward, source: "task", ref: task.id, now });
   } else if (!done && task.done) {
     task.done = false;
     task.doneAt = null;
@@ -286,6 +292,7 @@ export function updateTask(state, date, slot, taskId, fields, now = new Date()) 
   const index = list?.findIndex((item) => item.id === taskId) ?? -1;
   if (index < 0) return next;
   const task = list[index];
+  if (isLockedPenalty(task)) return next;
   const title = String(fields.title || "").trim().slice(0, 80);
   if (!title) return next;
   task.title = title;
@@ -305,6 +312,8 @@ export function deleteTask(state, date, slot, taskId, now = new Date()) {
   const next = clone(state);
   const list = next.days[date]?.slots?.[slot];
   if (!list) return next;
+  const victim = list.find((item) => item.id === taskId);
+  if (isLockedPenalty(victim)) return next;
   next.days[date].slots[slot] = list.filter((item) => item.id !== taskId);
   dropXp(next, taskId, "task");
   settle(next, { today: dateKey(now), touchDate: date, now });
@@ -323,6 +332,7 @@ export function moveTask(state, date, fromSlot, taskId, toSlot, toIndex, now = n
   const fromList = slots[fromSlot];
   const fromIndex = fromList?.findIndex((item) => item.id === taskId) ?? -1;
   if (fromIndex < 0) return next;
+  if (isLockedPenalty(fromList[fromIndex])) return next;
   const [task] = fromList.splice(fromIndex, 1);
   const dest = slots[toSlot];
   const clamped = Math.max(0, Math.min(dest.length, Number.isFinite(toIndex) ? Math.trunc(toIndex) : dest.length));
@@ -338,6 +348,7 @@ export function stepTask(state, date, slot, taskId, dir, now = new Date()) {
   const list = slots[slot] || [];
   const index = list.findIndex((item) => item.id === taskId);
   if (index < 0) return clone(state);
+  if (isLockedPenalty(list[index])) return clone(state);
   const step = dir < 0 ? -1 : 1;
   if (step < 0) {
     if (index > 0) return moveTask(state, date, slot, taskId, slot, index - 1, now);

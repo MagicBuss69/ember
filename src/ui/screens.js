@@ -6,7 +6,8 @@ import { SHOP_CATEGORIES, catalogForCategory, isOwned } from "../shop.js";
 import { templateTaskCount } from "../domain.js";
 import { formatLastBackupTime } from "../driveSchedule.js";
 import { geminiKeyEnding } from "../gemini.js";
-import { levelProgress } from "../economy.js";
+import { levelProgress, questXpForLevel } from "../economy.js";
+import { currencyBlocked, openPenaltyQuests } from "../penalty.js";
 import { esc, formatMaybe, formatNum, reasonLabel } from "../format.js";
 import { avatar, gemIcon, icon } from "../icons.js";
 import { buildBoard } from "../rivals.js";
@@ -28,7 +29,35 @@ function slotOpts(state, ui, extra) {
 function gapNote(gap) {
   if (!gap.length) return "";
   const when = gap.length === 1 ? formatPretty(gap[0]) : `${gap.length} days`;
-  return `<p class="note warn">${esc(when)} missed — streak broken. Clear your penalty quest today.</p>`;
+  return `<p class="note warn">${esc(when)} missed — streak broken. Finish every must-do quest on Today.</p>`;
+}
+
+function sortSlotItems(items) {
+  const penalties = items.filter((task) => task.penaltyTag);
+  const rest = items.filter((task) => !task.penaltyTag);
+  return [...penalties, ...rest];
+}
+
+function mustDoBanner(state, today) {
+  if (!currencyBlocked(state, today)) return "";
+  const open = openPenaltyQuests(state, today);
+  const list = open.map(({ task }) => `<li>${esc(task.title)}</li>`).join("");
+  return `<div class="must-do-banner" role="status">
+    <p class="must-do-kicker">Currency frozen</p>
+    <p>Clear every must-do penalty before you earn shards from quests again.</p>
+    <ul class="must-do-list">${list}</ul>
+  </div>`;
+}
+
+function todayCompactBar(state, progress, ring, xp) {
+  return `<div id="today-compact" class="today-compact" aria-hidden="true">
+    <div class="today-compact-inner">
+      <span class="compact-ring num">${ring.done}/${ring.total}</span>
+      <div class="compact-track">${levelBar(progress, xp, false)}</div>
+      <span class="compact-lv num">Lv ${progress.level}</span>
+      <span class="compact-shards num">${formatNum(state.crystals)} ${gemIcon({ size: 14 })}</span>
+    </div>
+  </div>`;
 }
 
 export function viewToday(state, ui, now) {
@@ -44,6 +73,7 @@ export function viewToday(state, ui, now) {
   const progress = levelProgress(xp);
   const rank = rankForXp(xp);
   const skin = state.settings?.crystalSkin || "default";
+  const questXp = questXpForLevel(progress.level);
   let body = "";
   if (!day) {
     body = emptyState({
@@ -68,13 +98,14 @@ export function viewToday(state, ui, now) {
         slotSection(
           slotOpts(state, ui, {
             slot,
-            items: day.slots[slot] || [],
+            items: sortSlotItems(day.slots[slot] || []),
             nowSlot: lookingToday ? nowSlot : null,
             date,
             template: false,
             justDoneId: ui.justDoneId,
             movable: true,
             reordering: true,
+            questXp,
           }),
         ),
       ).join("");
@@ -83,11 +114,10 @@ export function viewToday(state, ui, now) {
   const hint = lookingToday && !state.settings.dismissedHint
     ? `<div class="hint"><p>Starter week, picked for a school day in Sweden. Change or drag any quest. It only lives on this phone.</p><button type="button" data-action="dismiss-hint">Got it</button></div>`
     : "";
-  const systemPanel = lookingToday
-    ? `<div class="system-panel"><p class="system-kicker">Daily quest</p></div>`
-    : "";
   return `
     <section class="today">
+      ${lookingToday ? mustDoBanner(state, today) : ""}
+      ${lookingToday ? todayCompactBar(state, progress, ring, xp) : ""}
       <div class="today-sticky" id="today-sticky">
         <div class="sticky-row">
           ${ringHtml(ring.done, ring.total, ui.ringPulse)}
@@ -110,8 +140,8 @@ export function viewToday(state, ui, now) {
         </div>
         ${levelBar(progress, xp, ui.barPulse)}
         <p class="streak-line ${streak >= 7 ? "heat-3" : streak >= 3 ? "heat-2" : streak >= 1 ? "heat-1" : ""}">${icon("flame")} ${streak ? `${streak}-day streak` : "No streak yet"}</p>
-        ${systemPanel}
       </div>
+      <div id="today-sentinel" class="today-sentinel" aria-hidden="true"></div>
       ${!lookingToday ? `<button type="button" class="ghost slim" data-action="jump-today">Back to today</button>` : ""}
       ${gapNote(gap)}
       ${hint}
@@ -477,7 +507,7 @@ function shopSection(state, ui) {
     .join("");
   return `
     <h2 class="section-title" id="shop">Shop</h2>
-    <p class="lede">Spend crystals on cosmetics, FX, sounds, and things you actually want IRL.</p>
+    <p class="lede">Spend shards on cosmetics, FX, sounds, and things you actually want IRL.</p>
     <div class="shop-tabs">${tabs}</div>
   ${activeCat === "life" ? life || `<p class="slot-empty">Add a reward in Settings → Life rewards.</p>` : items || `<p class="slot-empty">Nothing here yet.</p>`}
     <button type="button" class="ghost slim" data-action="add-life-reward">+ Add life reward token</button>`;
@@ -512,14 +542,13 @@ export function viewYou(state, ui) {
   const progress = levelProgress(xp);
   const meta = rankMeta(progress.level);
   const streak = streakCount(state, dateKey(new Date()));
-  const gap = rawGap(state, dateKey(new Date()));
   const title = state.settings.equippedTitle ? ` · ${state.settings.equippedTitle}` : "";
   const log = state.crystalLog.length
     ? `<ul class="log">${state.crystalLog
         .slice(0, 8)
         .map((entry) => `<li><span>${esc(reasonLabel(entry.reason))}</span><span class="num ${entry.delta < 0 ? "neg" : ""}">${entry.delta > 0 ? "+" : ""}${entry.delta}</span></li>`)
         .join("")}</ul>`
-    : `<p class="slot-empty">Crystals you earn and spend show up here.</p>`;
+    : `<p class="slot-empty">Shards you earn and spend show up here.</p>`;
   const badges = (state.ownedBadges || []).map((id) => `<span class="badge-pill">${esc(id)}</span>`).join("");
   return `
     <section class="you-page">
@@ -539,13 +568,12 @@ export function viewYou(state, ui) {
       <div class="stat-grid">
         <div class="stat"><strong class="num">${streak}</strong><span>day streak</span></div>
         <div class="stat"><strong class="num">${state.longest || 0}</strong><span>longest</span></div>
-        <div class="stat"><strong class="num">${formatNum(state.crystals)}</strong><span>crystals</span></div>
+        <div class="stat"><strong class="num">${formatNum(state.crystals)}</strong><span>shards</span></div>
         <div class="stat"><strong class="display">${meta.rank}</strong><span>rank</span></div>
       </div>
       ${badges ? `<div class="badge-row">${badges}</div>` : ""}
-      ${gapNote(gap)}
       ${shopSection(state, ui)}
-      <h2 class="section-title">Crystal log</h2>
+      <h2 class="section-title">Shard log</h2>
       ${log}
       <h2 class="section-title">Goals</h2>
       <label class="field">
@@ -565,7 +593,7 @@ export function viewSettings(state, ui) {
     : ui.periodic === "unsupported"
       ? "This browser has no background check."
       : "Background check starts after you install Ember and allow notifications.";
-  const vol = Math.round((Number(state.settings.soundVolume) || 0.72) * 100);
+  const vol = Math.round((Number(state.settings.soundVolume) || 0.8) * 100);
   const themePick = THEMES.filter((t) => state.ownedThemes.includes(t.id))
     .map((theme) => {
       const active = state.settings.theme === theme.id;
@@ -615,7 +643,7 @@ export function penaltyHtml(ui) {
         <h2>The System has recorded a failure.</h2>
         <p>Missed: ${esc(days || "recent days")}</p>
         <p class="num">−${report.xpLost || 0} XP · Streak reset</p>
-        <p>A penalty quest was added for today. Clear it.</p>
+        <p>${report.mustDoAdded || 1} must-do quest${(report.mustDoAdded || 1) === 1 ? "" : "s"} added for today.</p>
         <button type="button" class="primary" data-action="dismiss-penalty">Accept</button>
       </div>
     </div>`;
@@ -705,10 +733,29 @@ function field(label, inner) {
   return `<label class="field"><span>${label}</span>${inner}</label>`;
 }
 
+function lifeRewardSheet(draft) {
+  const error = draft.error ? `<p class="form-error">${esc(draft.error)}</p>` : "";
+  return `
+    <div class="scrim" data-action="close-sheet"></div>
+    <form class="sheet" data-form="save-life-reward">
+      <div class="handle"></div>
+      <div class="sheet-head">
+        <h2>Add life reward</h2>
+        <button type="button" class="icon-btn" data-action="close-sheet" aria-label="Close">${icon("close")}</button>
+      </div>
+      <p class="lede">Something you want in real life, bought with shards when you redeem it.</p>
+      ${error}
+      ${field("Reward", `<input type="text" data-bind="title" maxlength="80" placeholder="30 min gaming" value="${esc(draft.title || "")}" required />`)}
+      ${field("Shard price", `<input type="number" inputmode="numeric" min="1" max="9999" data-bind="price" value="${esc(String(draft.price ?? 20))}" />`)}
+      <button type="submit" class="primary">Save reward</button>
+    </form>`;
+}
+
 export function sheetHtml(state, ui, now = new Date()) {
   if (!ui.sheet) return "";
   const sheet = ui.sheet;
   const draft = ui.draft || {};
+  if (sheet.type === "life-reward") return lifeRewardSheet(draft);
   if (sheet.type === "task" || sheet.type === "template") return taskSheet(sheet, draft);
   if (sheet.type === "workout") return workoutSheet(state, draft);
   if (sheet.type === "generate") return generateSheet(draft);

@@ -53,7 +53,7 @@ export function reasonLabel(reason) {
         return `${reason.slice(7)}-day streak`;
       }
       if (typeof reason === "string" && reason.startsWith("theme-")) return "Theme";
-      return "Crystals";
+      return "Shards";
   }
 }
 

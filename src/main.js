@@ -42,7 +42,7 @@ import {
   updateTask,
   updateTemplateTask,
 } from "./domain.js";
-import { levelFor } from "./economy.js";
+import { levelFor, questXpForLevel } from "./economy.js";
 import { rankForLevel } from "./rank.js";
 import { parseNum, reasonLabel } from "./format.js";
 import { generateWeek } from "./gemini.js";
@@ -110,6 +110,7 @@ const ui = {
 let levelTimer = 0;
 let genToken = 0;
 let audioPrimed = false;
+let todayBoardObserver = null;
 
 function tabFromHash() {
   const tab = location.hash.replace("#", "");
@@ -329,11 +330,34 @@ function paint() {
   }
   ui.enter = false;
   updateBadge();
+  if (ui.tab === "today") watchTodayBoard();
+  else {
+    todayBoardObserver?.disconnect();
+    todayBoardObserver = null;
+    document.body.classList.remove("today-slim");
+  }
+}
+
+function watchTodayBoard() {
+  const root = document.getElementById("main");
+  const sentinel = document.getElementById("today-sentinel");
+  const compact = document.getElementById("today-compact");
+  if (!root || !sentinel || !compact) return;
+  todayBoardObserver?.disconnect();
+  todayBoardObserver = new IntersectionObserver(
+    ([entry]) => {
+      const slim = !entry.isIntersecting;
+      document.body.classList.toggle("today-slim", slim);
+      compact.setAttribute("aria-hidden", slim ? "false" : "true");
+    },
+    { root, threshold: 0, rootMargin: "0px 0px -12px 0px" },
+  );
+  todayBoardObserver.observe(sentinel);
 }
 
 function soundOpts() {
   return {
-    volume: state.settings?.soundVolume ?? 0.72,
+    volume: state.settings?.soundVolume ?? 0.8,
     pack: state.settings?.soundPack || "system",
   };
 }
@@ -537,15 +561,16 @@ const actions = {
     } else {
       ui.comboCount = 0;
     }
+    const questXp = questXpForLevel(levelFor(totalXp(state)));
     await commitAction(
       (current) => setTaskDone(current, el.dataset.date, el.dataset.slot, taskId, done, new Date()),
       {
         pop: {
           text: done
             ? ui.comboCount >= 2
-              ? `+25 XP · ×${ui.comboCount}`
-              : "+25 XP"
-            : "−25 XP",
+              ? `+${questXp} XP · ×${ui.comboCount}`
+              : `+${questXp} XP`
+            : `−${questXp} XP`,
           ...at,
           kind: done ? "xp" : "down",
         },
@@ -620,7 +645,7 @@ const actions = {
   },
   "edit-task"(el) {
     const task = state.days[el.dataset.date]?.slots?.[el.dataset.slot]?.find((item) => item.id === el.dataset.id);
-    if (!task) return;
+    if (!task || task.penaltyTag) return;
     openSheet(
       { type: "task", date: el.dataset.date, slot: el.dataset.slot, taskId: task.id },
       { title: task.title, why: task.why, time: task.time, slot: el.dataset.slot, isEvent: Boolean(task.isEvent), error: "" },
@@ -958,17 +983,25 @@ const actions = {
     commitAction((current) => patchSettings(current, { soundVolume: vol }), { quiet: true });
     sfx("tick");
   },
-  async "add-life-reward"() {
-    const title = window.prompt("Life reward (e.g. 30 min gaming)");
-    if (!title?.trim()) return;
-    const priceRaw = window.prompt("Crystal price", "20");
-    const price = Number(priceRaw) || 20;
+  "add-life-reward"() {
+    openSheet({ type: "life-reward" }, { title: "", price: "20", error: "" });
+    ui.focusSheet = true;
+  },
+  async "save-life-reward"() {
+    const title = String(ui.draft?.title || "").trim();
+    const price = Math.max(1, Math.min(9999, Math.round(Number(ui.draft?.price) || 0)));
+    if (!title) {
+      ui.draft = { ...ui.draft, error: "Name the reward." };
+      ui.keepScroll = true;
+      paint();
+      return;
+    }
     await commitAction(
       (current) => {
-        const result = addCustomReward(current, { title: title.trim(), price }, new Date());
+        const result = addCustomReward(current, { title, price }, new Date());
         return result.ok ? result.state : current;
       },
-      { quiet: true },
+      { close: true, quiet: true },
     );
     ui.shopCat = "life";
     ui.keepScroll = true;

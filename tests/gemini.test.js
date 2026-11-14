@@ -36,7 +36,7 @@ test("backup round-trip keeps quests and drops a bad theme", () => {
     id: "e1",
     at: "2026-11-13T07:00:00.000Z",
     date: "2026-11-13",
-    amount: 50,
+    amount: 55,
     source: "task",
     ref: "missing",
   });

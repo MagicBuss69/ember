@@ -133,13 +133,16 @@ export function questRows({
   canToggle = true,
   collapsingId = null,
   showAdd = true,
+  questXp = 0,
 }) {
   const slotIdx = SLOTS.indexOf(slot);
   const rows = items
     .map((task, index) => {
       const meta = [task.time, !task.done && task.why ? task.why : ""].filter(Boolean).join("  ·  ");
       const eventBadge = task.isEvent ? `<span class="event-pill">Event</span>` : "";
-      const penaltyBadge = task.penaltyTag ? `<span class="event-pill penalty-pill">Penalty</span>` : "";
+      const locked = Boolean(task.penaltyTag);
+      const penaltyBadge = locked ? `<span class="event-pill penalty-pill">Must-do</span>` : "";
+      const xpBadge = !task.done && questXp && !locked ? `<span class="xp-pill num">+${questXp} XP</span>` : "";
       const titleHtml = `<span class="quest-head"><span class="quest-title">${esc(task.title)}</span>${penaltyBadge}${eventBadge}</span>`;
       const collapsing = collapsingId === task.id ? "is-collapsing" : "";
       if (readOnly) {
@@ -160,25 +163,30 @@ export function questRows({
         : `<button type="button" class="check ${justDoneId === task.id ? "just" : ""}" data-action="toggle" ${where} aria-pressed="${task.done ? "true" : "false"}" aria-label="${task.done ? "Mark not done" : "Mark done"}: ${esc(task.title)}"><i></i></button>`;
       const atVeryTop = slotIdx === 0 && index === 0;
       const atVeryBottom = slotIdx === SLOTS.length - 1 && index === items.length - 1;
-      const stepper = movable
+      const allowMove = movable && !locked;
+      const stepper = allowMove
         ? `<div class="move-btns">
             <button type="button" class="icon-btn move-step" data-action="step-quest" data-dir="-1" ${where} aria-label="Move up: ${esc(task.title)}" ${atVeryTop ? "disabled" : ""}>${icon("up")}</button>
             <button type="button" class="icon-btn move-step" data-action="step-quest" data-dir="1" ${where} aria-label="Move down: ${esc(task.title)}" ${atVeryBottom ? "disabled" : ""}>${icon("down")}</button>
           </div>`
         : "";
-      const grip = movable
+      const grip = allowMove
         ? `<button type="button" class="grip" data-grip ${where} aria-label="Drag to move: ${esc(task.title)}">${icon("grip")}</button>`
         : "";
-      const rowAttrs = `data-row-id="${esc(task.id)}" ${movable ? `data-quest ${where}` : ""}`;
+      const rowAttrs = `data-row-id="${esc(task.id)}" ${allowMove ? `data-quest ${where}` : ""}`;
       const noCheck = template || !canToggle;
       const toggled = justDoneId === task.id ? "just-toggled" : "";
       return `
         <div class="quest ${task.done ? "done" : ""} ${task.isEvent ? "is-event" : ""} ${task.penaltyTag ? "is-penalty" : ""} ${noCheck ? "no-check" : ""} ${movable ? "reordering" : ""} ${toggled} ${collapsing}" ${rowAttrs}>
           ${check}
-          <button type="button" class="quest-body" data-action="${template ? "edit-template" : "edit-task"}" ${where}>
-            ${titleHtml}
+          ${
+            locked
+              ? `<div class="quest-body static locked">${titleHtml}${meta ? `<span class="quest-meta">${esc(meta)}</span>` : ""}${xpBadge}</div>`
+              : `<button type="button" class="quest-body" data-action="${template ? "edit-template" : "edit-task"}" ${where}>
+            ${titleHtml}${xpBadge}
             ${meta ? `<span class="quest-meta">${esc(meta)}</span>` : ""}
-          </button>
+          </button>`
+          }
           ${stepper}
           ${grip}
         </div>`;
@@ -207,6 +215,7 @@ export function slotSection({
   canToggle = true,
   doneSlotsOpen = {},
   collapsingId = null,
+  questXp = 0,
 }) {
   const done = items.filter((task) => task.done).length;
   const dropTarget = template
@@ -243,6 +252,7 @@ export function slotSection({
     readOnly,
     canToggle,
     collapsingId,
+    questXp,
   });
     if (doneExpanded && doneItems.length) {
       cardInner += `<div class="done-list">`;
@@ -259,6 +269,7 @@ export function slotSection({
         canToggle,
         collapsingId,
         showAdd: false,
+        questXp,
       });
       cardInner += `</div>`;
     }

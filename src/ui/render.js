@@ -18,9 +18,9 @@ export function render(state, ui, now) {
     <div class="app">
       <header class="hud">
         <div class="brand"><i class="brand-dot"></i>Ember</div>
-        <button type="button" class="crystal-btn" data-action="goto-shop" aria-label="${formatNum(state.crystals)} crystals">
-          <span class="gem ${ui.gemShine ? "shine" : ""}">${gemIcon({ size: 20 })}</span>
-          <span class="hud-crystals num" data-crystals>${formatNum(state.crystals)}</span>
+        <button type="button" class="shard-btn hud-wallet" data-action="goto-shop" data-shard-hud aria-label="${formatNum(state.crystals)} shards in wallet">
+          <span class="shard-mark ${ui.gemShine ? "shine" : ""}">${gemIcon({ size: 22 })}</span>
+          <span class="shard-count num" data-crystals>${formatNum(state.crystals)}</span>
         </button>
       </header>
       <main class="${ui.enter ? "enter" : ""}" id="main">${view(state, ui, now)}</main>
