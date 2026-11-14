@@ -38,39 +38,30 @@ export function isFullDay(state, date) {
   return tasks.length > 0 && tasks.every((task) => task.done);
 }
 
-export function isFrozen(state, date) {
-  return (state.freezeLog || []).some((entry) => entry.date === date);
-}
-
 /**
  * Consecutive completed days ending today, or yesterday if today has none yet.
- * A frozen day keeps the chain and does not add to the number.
  */
 export function streakCount(state, today) {
   let cursor = isComplete(state, today) ? today : addDays(today, -1);
   let count = 0;
   for (let i = 0; i < 500; i += 1) {
     if (isComplete(state, cursor)) count += 1;
-    else if (!isFrozen(state, cursor)) break;
+    else break;
     cursor = addDays(cursor, -1);
   }
   return count;
 }
 
-/**
- * Missed dates immediately before today that a freeze could still cover.
- * Empty when there is no completed day anchoring the chain within three weeks,
- * or when a freeze already covers the boundary.
- */
+/** Missed dates immediately before today (incomplete days with quests). */
 export function rawGap(state, today) {
   const dates = [];
   let cursor = addDays(today, -1);
   for (let i = 0; i < 21; i += 1) {
-    if (isComplete(state, cursor) || isFrozen(state, cursor)) return dates.reverse();
-    dates.push(cursor);
+    if (isComplete(state, cursor)) return dates.reverse();
+    if (taskCount(state, cursor) > 0) dates.push(cursor);
     cursor = addDays(cursor, -1);
   }
-  return [];
+  return dates.reverse();
 }
 
 export function dayFraction(done, total) {

@@ -1,6 +1,9 @@
 import { buildMonthGrid, daySummary, monthKey } from "../calendar.js";
 import { GOOGLE_CLIENT_ID, VAPID_PUBLIC_KEY, WORKER_URL } from "../config.js";
-import { FREEZE_PRICE, SLOTS, SLOT_LABEL, SUGGESTED_EXERCISES, THEMES } from "../constants.js";
+import { SLOTS, SLOT_LABEL, SUGGESTED_EXERCISES, THEMES } from "../constants.js";
+import { todayUrgency } from "../penalty.js";
+import { rankForXp, rankMeta } from "../rank.js";
+import { SHOP_CATEGORIES, catalogForCategory, isOwned } from "../shop.js";
 import { templateTaskCount } from "../domain.js";
 import { formatLastBackupTime } from "../driveSchedule.js";
 import { geminiKeyEnding } from "../gemini.js";
@@ -10,7 +13,7 @@ import { avatar, gemIcon, icon } from "../icons.js";
 import { buildBoard } from "../rivals.js";
 import { exerciseGroups, rawGap, ringNumbers, streakCount, summarizeWeek, taskCount, totalXp } from "../stats.js";
 import { addDays, currentSlot, dateKey, formatPretty, formatWeekSpan, weekdayIso, weekdayLong, weekStart } from "../time.js";
-import { emptyState, levelBar, reorderBarHtml, ringHtml, slotSection } from "./bits.js";
+import { crystalMeterHtml, emptyState, levelBar, reorderBarHtml, ringHtml, slotSection } from "./bits.js";
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const DOW = ["M", "T", "W", "T", "F", "S", "S"];
@@ -23,14 +26,10 @@ function slotOpts(state, ui, extra) {
   };
 }
 
-function gapNote(gap, freezes) {
+function gapNote(gap) {
   if (!gap.length) return "";
   const when = gap.length === 1 ? formatPretty(gap[0]) : `${gap.length} days`;
-  const have = freezes ? ` You have ${freezes}.` : "";
-  const need = gap.length === 1
-    ? `One streak freeze repairs it.${have}`
-    : `${gap.length} streak freezes would repair it.${have}`;
-  return `<p class="note">${gap.length === 1 ? `${esc(when)} is missing from the streak.` : `${esc(when)} are missing from the streak.`} ${esc(need)}</p>`;
+  return `<p class="note warn">${esc(when)} missed — streak broken. Clear your penalty quest today.</p>`;
 }
 
 export function viewToday(state, ui, now) {
@@ -39,10 +38,15 @@ export function viewToday(state, ui, now) {
   const lookingToday = date === today;
   const day = state.days[date];
   const ring = ringNumbers(state, date);
-  const progress = levelProgress(totalXp(state));
   const streak = streakCount(state, today);
   const gap = lookingToday ? rawGap(state, today) : [];
   const nowSlot = currentSlot(now);
+  const xp = totalXp(state);
+  const progress = levelProgress(xp);
+  const rank = rankForXp(xp);
+  const urgency = lookingToday ? todayUrgency(state, date, now) : null;
+  const skin = state.settings?.crystalSkin || "default";
+  const compact = Boolean(ui.todayCompact);
   let body = "";
   if (!day) {
     body = emptyState({
@@ -84,11 +88,27 @@ export function viewToday(state, ui, now) {
   const hint = lookingToday && !state.settings.dismissedHint
     ? `<div class="hint"><p>Starter week, picked for a school day in Sweden. Change or drag any quest. It only lives on this phone.</p><button type="button" data-action="dismiss-hint">Got it</button></div>`
     : "";
+  const systemPanel = urgency
+    ? `<div class="system-panel">
+        <p class="system-kicker">Daily Quest</p>
+        <p class="system-urgency num">${urgency.full ? "All quests cleared" : `${urgency.left} quest${urgency.left === 1 ? "" : "s"} left`} · ${esc(urgency.timeLeft)} today</p>
+      </div>`
+    : "";
   return `
     <section class="today">
-      <div class="hero-today">
-        ${ringHtml(ring.done, ring.total, ui.ringPulse)}
-        <div class="hero-copy">
+      <div class="today-sticky ${compact ? "is-compact" : ""}" id="today-sticky">
+        <div class="sticky-row">
+          ${ringHtml(ring.done, ring.total, ui.ringPulse)}
+          ${crystalMeterHtml({
+            progress,
+            rank,
+            stress: state.crystalStress,
+            pulse: ui.barPulse,
+            skin,
+            compact,
+          })}
+        </div>
+        <div class="sticky-expand">
           <div class="date-nav">
             <button type="button" class="icon-btn" data-action="shift-day" data-dir="-1" aria-label="Previous day">${icon("chevL")}</button>
             <div class="date-copy">
@@ -97,12 +117,14 @@ export function viewToday(state, ui, now) {
             </div>
             <button type="button" class="icon-btn" data-action="shift-day" data-dir="1" aria-label="Next day" ${lookingToday ? "disabled" : ""}>${icon("chevR")}</button>
           </div>
-          ${levelBar(progress, totalXp(state), ui.barPulse)}
+          ${levelBar(progress, xp, ui.barPulse)}
           <p class="streak-line ${streak >= 7 ? "heat-3" : streak >= 3 ? "heat-2" : streak >= 1 ? "heat-1" : ""}">${icon("flame")} ${streak ? `${streak}-day streak` : "No streak yet"}</p>
+          ${systemPanel}
         </div>
+        ${compact && urgency ? `<p class="system-urgency compact-line num">${urgency.left} left · ${esc(urgency.timeLeft)}</p>` : ""}
       </div>
       ${!lookingToday ? `<button type="button" class="ghost slim" data-action="jump-today">Back to today</button>` : ""}
-      ${gapNote(gap, state.freezes)}
+      ${gapNote(gap)}
       ${hint}
       ${reorderBar}
       ${body}
@@ -436,31 +458,115 @@ export function viewRivals(state, ui, now) {
     </section>`;
 }
 
-export function viewYou(state, ui) {
-  const xp = totalXp(state);
-  const progress = levelProgress(xp);
-  const streak = streakCount(state, dateKey(new Date()));
-  const gap = rawGap(state, dateKey(new Date()));
-  const standalone = window.matchMedia?.("(display-mode: standalone)")?.matches;
-  const themes = THEMES.map((theme) => {
-    const owned = state.ownedThemes.includes(theme.id);
-    const active = state.settings.theme === theme.id;
-    const afford = state.crystals >= theme.price;
+function shopSection(state, ui) {
+  const activeCat = ui.shopCat || "themes";
+  const tabs = SHOP_CATEGORIES.map(
+    (cat) => `<button type="button" class="ghost tiny ${activeCat === cat.id ? "is-on" : ""}" data-action="shop-cat" data-cat="${cat.id}">${esc(cat.label)}</button>`,
+  ).join("");
+  const items = catalogForCategory(activeCat).map((item) => {
+    const owned = isOwned(state, item);
+    const afford = state.crystals >= item.price;
     const action = owned
-      ? `<button type="button" class="ghost tiny ${active ? "is-on" : ""}" data-action="equip-theme" data-theme="${theme.id}" aria-pressed="${active}">${active ? "Using" : "Use"}</button>`
-      : `<button type="button" class="ghost tiny" data-action="ask-buy-theme" data-theme="${theme.id}" ${afford ? "" : "disabled"}>${theme.price} ${gemIcon()}</button>`;
-    return `<article class="theme ${active ? "on" : ""}">
-      <span class="swatch" data-swatch="${theme.id}"></span>
-      <span><strong>${esc(theme.name)}</strong><small>${esc(theme.blurb)}</small></span>
+      ? equipButtonForItem(state, item)
+      : `<button type="button" class="ghost tiny" data-action="ask-buy-item" data-item="${item.id}" ${afford ? "" : "disabled"}>${item.price} ${gemIcon()}</button>`;
+    return `<article class="theme shop-item">
+      <span class="swatch ${item.kind === "theme" ? "" : "gem-swatch"}" ${item.themeId ? `data-swatch="${item.themeId}"` : ""}>${item.kind === "theme" ? "" : gemIcon()}</span>
+      <span><strong>${esc(item.name)}</strong><small>${esc(item.blurb)}</small></span>
       ${action}
     </article>`;
   }).join("");
+  const life = (state.customRewards || [])
+    .map(
+      (reward) => `<article class="theme shop-item">
+      <span class="swatch gem-swatch">${gemIcon()}</span>
+      <span><strong>${esc(reward.title)}</strong><small>Your reward token</small></span>
+      <button type="button" class="ghost tiny" data-action="redeem-life" data-reward="${reward.id}" ${state.crystals >= reward.price ? "" : "disabled"}>${reward.price} ${gemIcon()}</button>
+    </article>`,
+    )
+    .join("");
+  return `
+    <h2 class="section-title" id="shop">Shop</h2>
+    <p class="lede">Spend crystals on cosmetics, FX, sounds, and things you actually want IRL.</p>
+    <div class="shop-tabs">${tabs}</div>
+  ${activeCat === "life" ? life || `<p class="slot-empty">Add a reward in Settings → Life rewards.</p>` : items || `<p class="slot-empty">Nothing here yet.</p>`}
+    <button type="button" class="ghost slim" data-action="add-life-reward">+ Add life reward token</button>`;
+}
+
+function equipButtonForItem(state, item) {
+  if (item.kind === "theme") {
+    const active = state.settings.theme === item.themeId;
+    return `<button type="button" class="ghost tiny ${active ? "is-on" : ""}" data-action="equip-theme" data-theme="${item.themeId}">${active ? "Using" : "Use"}</button>`;
+  }
+  if (item.kind === "skin") {
+    const active = state.settings.crystalSkin === item.skinId;
+    return `<button type="button" class="ghost tiny ${active ? "is-on" : ""}" data-action="equip-cosmetic" data-kind="skin" data-value="${item.skinId}">${active ? "On" : "Equip"}</button>`;
+  }
+  if (item.kind === "title") {
+    const active = state.settings.equippedTitle === item.titleId;
+    return `<button type="button" class="ghost tiny ${active ? "is-on" : ""}" data-action="equip-cosmetic" data-kind="title" data-value="${item.titleId}">${active ? "On" : "Equip"}</button>`;
+  }
+  if (item.kind === "fx") {
+    const active = state.settings.checkFx === item.fxId;
+    return `<button type="button" class="ghost tiny ${active ? "is-on" : ""}" data-action="equip-cosmetic" data-kind="fx" data-value="${item.fxId}">${active ? "On" : "Equip"}</button>`;
+  }
+  if (item.kind === "soundPack") {
+    const active = state.settings.soundPack === item.soundPackId;
+    return `<button type="button" class="ghost tiny ${active ? "is-on" : ""}" data-action="equip-cosmetic" data-kind="soundPack" data-value="${item.soundPackId}">${active ? "On" : "Equip"}</button>`;
+  }
+  return `<span class="owned-tag">Owned</span>`;
+}
+
+export function viewYou(state, ui) {
+  const xp = totalXp(state);
+  const progress = levelProgress(xp);
+  const meta = rankMeta(progress.level);
+  const streak = streakCount(state, dateKey(new Date()));
+  const gap = rawGap(state, dateKey(new Date()));
+  const title = state.settings.equippedTitle ? ` · ${state.settings.equippedTitle}` : "";
   const log = state.crystalLog.length
     ? `<ul class="log">${state.crystalLog
-        .slice(0, 6)
+        .slice(0, 8)
         .map((entry) => `<li><span>${esc(reasonLabel(entry.reason))}</span><span class="num ${entry.delta < 0 ? "neg" : ""}">${entry.delta > 0 ? "+" : ""}${entry.delta}</span></li>`)
         .join("")}</ul>`
     : `<p class="slot-empty">Crystals you earn and spend show up here.</p>`;
+  const badges = (state.ownedBadges || []).map((id) => `<span class="badge-pill">${esc(id)}</span>`).join("");
+  return `
+    <section class="you-page">
+      <h1 class="page-title">You</h1>
+      <div class="you-hero system-glass">
+        ${crystalMeterHtml({
+          progress,
+          rank: meta.rank,
+          stress: state.crystalStress,
+          pulse: ui.barPulse,
+          skin: state.settings?.crystalSkin,
+        })}
+        <p class="kicker">${esc(meta.label)}${esc(title)}</p>
+        <h2>${progress.maxed ? "The top of the scale." : `${formatNum(progress.span - progress.into)} XP to level ${progress.level + 1}`}</h2>
+        ${levelBar(progress, xp, ui.barPulse)}
+      </div>
+      <div class="stat-grid">
+        <div class="stat"><strong class="num">${streak}</strong><span>day streak</span></div>
+        <div class="stat"><strong class="num">${state.longest || 0}</strong><span>longest</span></div>
+        <div class="stat"><strong class="num">${formatNum(state.crystals)}</strong><span>crystals</span></div>
+        <div class="stat"><strong class="display">${meta.rank}</strong><span>rank</span></div>
+      </div>
+      ${badges ? `<div class="badge-row">${badges}</div>` : ""}
+      ${gapNote(gap)}
+      ${shopSection(state, ui)}
+      <h2 class="section-title">Crystal log</h2>
+      ${log}
+      <h2 class="section-title">Goals</h2>
+      <label class="field">
+        <span>What this week is for</span>
+        <textarea id="goals" rows="4" data-bind="goals" data-commit="settings" maxlength="2000">${esc(state.settings.goals)}</textarea>
+      </label>
+      <p class="footnote">Ember v2 · Europe/Stockholm · on this phone only</p>
+    </section>`;
+}
+
+export function viewSettings(state, ui) {
+  const standalone = window.matchMedia?.("(display-mode: standalone)")?.matches;
   const perm = ui.notifyState || "default";
   const permLabel = perm === "granted" ? "Allowed" : perm === "denied" ? "Blocked" : perm === "unsupported" ? "Not available" : "Not asked yet";
   const periodic = ui.periodic === "registered"
@@ -468,56 +574,60 @@ export function viewYou(state, ui) {
     : ui.periodic === "unsupported"
       ? "This browser has no background check."
       : "Background check starts after you install Ember and allow notifications.";
+  const vol = Math.round((Number(state.settings.soundVolume) || 0.72) * 100);
+  const themePick = THEMES.filter((t) => state.ownedThemes.includes(t.id))
+    .map((theme) => {
+      const active = state.settings.theme === theme.id;
+      return `<button type="button" class="ghost tiny ${active ? "is-on" : ""}" data-action="equip-theme" data-theme="${theme.id}">${esc(theme.name)}</button>`;
+    })
+    .join("");
   return `
     <section>
-      <h1 class="page-title">You</h1>
-      <div class="you-hero">
-        <div class="medallion" aria-hidden="true"><span class="display">${progress.level}</span></div>
-        <p class="kicker">Level ${progress.level} of 10</p>
-        <h2>${progress.maxed ? "The top of the scale." : `${formatNum(progress.span - progress.into)} XP to level ${progress.level + 1}`}</h2>
-        ${levelBar(progress, xp, ui.barPulse)}
-        <p class="lede">Quests pay 25 XP. A training session pays 40. The streak counts finished quests, not workouts.</p>
-      </div>
-      <div class="stat-grid">
-        <div class="stat"><strong class="num">${streak}</strong><span>day streak</span></div>
-        <div class="stat"><strong class="num">${state.longest || 0}</strong><span>longest</span></div>
-        <div class="stat"><strong class="num">${state.freezes}</strong><span>freezes</span></div>
-        <div class="stat"><strong class="num">${formatNum(state.crystals)}</strong><span>crystals</span></div>
-      </div>
-      ${gapNote(gap, state.freezes)}
-      <h2 class="section-title" id="shop">Shop</h2>
-      <article class="theme">
-        <span class="swatch gem-swatch">${gemIcon()}</span>
-        <span><strong>Streak freeze</strong><small>Covers one missed day, if you have enough for the whole gap.</small></span>
-        <button type="button" class="ghost tiny" data-action="ask-buy-freeze" ${state.crystals >= FREEZE_PRICE ? "" : "disabled"}>${FREEZE_PRICE} ${gemIcon()}</button>
-      </article>
-      ${themes}
-      ${log}
-      <h2 class="section-title">Goals</h2>
+      <h1 class="page-title">Settings</h1>
+      <h2 class="section-title">Theme</h2>
+      <p class="lede">Frost is the flagship System look. Each theme shifts the whole UI, not just the accent.</p>
+      <div class="theme-pick">${themePick}</div>
+      <h2 class="section-title">Sound</h2>
+      <button type="button" class="switch" role="switch" aria-checked="${state.settings.sound ? "true" : "false"}" data-action="toggle-setting" data-key="sound"><span>Sounds</span><i></i></button>
       <label class="field">
-        <span>What this week is for</span>
-        <textarea id="goals" rows="4" data-bind="goals" data-commit="settings" maxlength="2000">${esc(state.settings.goals)}</textarea>
+        <span>Volume</span>
+        <input type="range" min="0" max="100" value="${vol}" data-action="sound-volume" />
+        <span class="num">${vol}%</span>
       </label>
+      <button type="button" class="switch" role="switch" aria-checked="${state.settings.haptics ? "true" : "false"}" data-action="toggle-setting" data-key="haptics"><span>Vibration</span><i></i></button>
       <h2 class="section-title">Gemini</h2>
-      <p class="lede">Optional. Ember works with no key. The key stays on this phone. Generating a week sends your goals to Google’s free Gemini API, which may use free-tier text to improve Google’s products.</p>
+      <p class="lede">Optional. Ember works with no key. The key stays on this phone.</p>
       ${geminiCard(state, ui)}
       <p class="lede"><a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">Get a free key in Google AI Studio</a></p>
       <h2 class="section-title">Reminders</h2>
       ${reminderBlock(state, ui, permLabel, periodic)}
-      <h2 class="section-title">This phone</h2>
-      <button type="button" class="switch" role="switch" aria-checked="${state.settings.sound ? "true" : "false"}" data-action="toggle-setting" data-key="sound"><span>Sounds</span><i></i></button>
-      <button type="button" class="switch" role="switch" aria-checked="${state.settings.haptics ? "true" : "false"}" data-action="toggle-setting" data-key="haptics"><span>Vibration</span><i></i></button>
+      <h2 class="section-title">Backup</h2>
       <div class="stack-actions">
         <button type="button" class="ghost" data-action="export">${icon("download")} Export backup</button>
         <button type="button" class="ghost" data-action="import">${icon("upload")} Import backup</button>
       </div>
-      <p class="lede">The file backup includes your Gemini key if you saved one. Don’t post it anywhere.</p>
       ${driveSection(state, ui)}
       <h2 class="section-title">Install</h2>
       ${installBlock(standalone, ui)}
       <button type="button" class="danger" data-action="ask-reset">Erase everything on this phone</button>
-      <p class="footnote">Ember 1 · Europe/Stockholm · on this phone only</p>
     </section>`;
+}
+
+export function penaltyHtml(ui) {
+  const report = ui.penaltyWindow;
+  if (!report) return "";
+  const days = (report.dates || []).map((d) => formatPretty(d)).join(", ");
+  return `
+    <div class="penalty-window" role="dialog" aria-modal="true">
+      <div class="penalty-card system-glass">
+        <p class="penalty-tag">PENALTY</p>
+        <h2>The System has recorded a failure.</h2>
+        <p>Missed: ${esc(days || "recent days")}</p>
+        <p class="num">−${report.xpLost || 0} XP · Streak reset</p>
+        <p>A penalty quest was added for today. Clear it.</p>
+        <button type="button" class="primary" data-action="dismiss-penalty">Accept</button>
+      </div>
+    </div>`;
 }
 
 function geminiStatusLine(state) {
@@ -848,6 +958,7 @@ export function navHtml(tab) {
     ["train", "Train", "dumbbell"],
     ["rivals", "Rivals", "people"],
     ["you", "You", "user"],
+    ["settings", "Settings", "gear"],
   ];
   return `<nav class="nav">${items
     .map(([id, label, glyph]) => `<button type="button" data-action="tab" data-tab="${id}" aria-current="${tab === id ? "page" : "false"}">${icon(glyph)}<span>${label}</span></button>`)

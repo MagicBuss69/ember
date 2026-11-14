@@ -7,7 +7,6 @@ export const CRYSTAL_LEVEL = 6;
 export const CRYSTAL_FULL = 3;
 export const CRYSTAL_STREAK_DAY = 1;
 export const CRYSTAL_MILESTONES = { 7: 4, 14: 6, 30: 10 };
-export const FREEZE_PRICE = 16;
 
 /** Total XP required to arrive at each level. Index 0 is level 1. */
 export const LEVEL_START = [0, 50, 150, 300, 500, 750, 1100, 1550, 2100, 2800];
@@ -21,10 +20,12 @@ export const SLOT_LABEL = {
 };
 
 export const THEMES = [
-  { id: "ember", name: "Ember", price: 0, blurb: "Warm dark. The one you start with." },
-  { id: "pine", name: "Pine", price: 10, blurb: "Deep green, quieter nights." },
-  { id: "frost", name: "Frost", price: 10, blurb: "Cold blue, sharp mornings." },
-  { id: "ink", name: "Ink", price: 14, blurb: "Black and gold, no noise." },
+  { id: "ember", name: "Ember", price: 0, blurb: "Warm dark. The original flame." },
+  { id: "frost", name: "Frost", price: 0, blurb: "Flagship System window — cold glass and ice." },
+  { id: "pine", name: "Pine", price: 10, blurb: "Deep green grove. Quiet hunter nights." },
+  { id: "ink", name: "Ink", price: 14, blurb: "Black vault with gold seams." },
+  { id: "aurora", name: "Aurora", price: 18, blurb: "Teal-violet sky shimmer." },
+  { id: "blood", name: "Blood", price: 22, blurb: "Crimson penalty glow. Hard mode vibes." },
 ];
 
 export const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-flash-latest"];

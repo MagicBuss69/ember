@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CRYSTAL_FULL, CRYSTAL_LEVEL, CRYSTAL_STREAK_DAY, FREEZE_PRICE, XP_TASK, XP_WORKOUT } from "../src/constants.js";
+import { CRYSTAL_FULL, CRYSTAL_LEVEL, CRYSTAL_STREAK_DAY, XP_TASK, XP_WORKOUT } from "../src/constants.js";
 import {
   addWorkout,
   applyTemplateToOpenDays,
-  buyFreeze,
   buyTheme,
   createInitialState,
   deleteTask,
@@ -80,48 +79,14 @@ test("a full day pays crystals and unchecking claws them back", () => {
   assert.equal(totalXp(state), 100);
 });
 
-test("a freeze covers one missed day and is not wasted on a longer gap", () => {
+test("a missed day breaks streak without freezes", () => {
   let state = createInitialState(new Date("2026-11-11T08:00:00Z"));
-  const monday = firstTask(state, "2026-11-09");
-  state = setTaskDone(state, "2026-11-09", "morning", monday.id, true, new Date("2026-11-09T08:00:00Z"));
-  state.freezes = 1;
-  const wed = new Date("2026-11-11T08:00:00Z");
-  const prepared = prepare(state, wed);
-  assert.equal(prepared.freezesUsed.length, 1);
-  assert.equal(prepared.freezesUsed[0].date, "2026-11-10");
-  assert.equal(prepared.state.freezes, 0);
-  assert.equal(streakCount(prepared.state, "2026-11-11"), 1);
-  const again = prepare(prepared.state, wed);
-  assert.equal(again.freezesUsed.length, 0);
-
-  let broken = createInitialState(wed);
-  const mon = firstTask(broken, "2026-11-09");
-  broken = setTaskDone(broken, "2026-11-09", "morning", mon.id, true, new Date("2026-11-09T08:00:00Z"));
-  broken.days["2026-11-10"].slots.morning.forEach((task) => {
-    task.done = false;
-  });
-  broken.days["2026-11-11"].slots.morning.forEach((task) => {
-    task.done = false;
-  });
-  broken.freezes = 1;
-  const gap = rawGap(broken, "2026-11-12");
-  assert.deepEqual(gap, ["2026-11-10", "2026-11-11"]);
-  const saved = prepare(broken, new Date("2026-11-12T08:00:00Z"));
-  assert.equal(saved.freezesUsed.length, 0);
-  assert.equal(saved.state.freezes, 1);
-  assert.equal(streakCount(saved.state, "2026-11-12"), 0);
-});
-
-test("buying a freeze repairs a one-day gap", () => {
-  let state = createInitialState(new Date("2026-11-11T08:00:00Z"));
-  const monday = firstTask(state, "2026-11-09");
-  state = setTaskDone(state, "2026-11-09", "morning", monday.id, true, new Date("2026-11-09T08:00:00Z"));
-  state.crystals = FREEZE_PRICE;
-  const bought = buyFreeze(state, new Date("2026-11-11T08:00:00Z"));
-  assert.equal(bought.ok, true);
-  assert.equal(bought.state.freezes, 0);
-  assert.ok(bought.state.freezeLog.some((entry) => entry.date === "2026-11-10"));
-  assert.equal(streakCount(bought.state, "2026-11-11"), 1);
+  const task = firstTask(state, "2026-11-10");
+  state = setTaskDone(state, "2026-11-10", "morning", task.id, true, new Date("2026-11-10T08:00:00Z"));
+  const prepared = prepare(state, new Date("2026-11-12T08:00:00Z"));
+  assert.equal(streakCount(prepared.state, "2026-11-12"), 0);
+  const gap = rawGap(prepared.state, "2026-11-12");
+  assert.deepEqual(gap, ["2026-11-11"]);
 });
 
 test("themes spend crystals and cannot be equipped before purchase", () => {

@@ -1,6 +1,6 @@
 import { esc, formatNum } from "../format.js";
 import { gemIcon } from "../icons.js";
-import { confirmHtml, levelUpHtml, navHtml, sheetHtml, viewRivals, viewToday, viewTrain, viewWeek, viewYou } from "./screens.js";
+import { confirmHtml, levelUpHtml, navHtml, penaltyHtml, sheetHtml, viewRivals, viewSettings, viewToday, viewTrain, viewWeek, viewYou } from "./screens.js";
 
 const VIEWS = {
   today: viewToday,
@@ -8,6 +8,7 @@ const VIEWS = {
   train: viewTrain,
   rivals: viewRivals,
   you: viewYou,
+  settings: viewSettings,
 };
 
 export function render(state, ui, now) {
@@ -27,6 +28,7 @@ export function render(state, ui, now) {
       ${sheetHtml(state, ui, now)}
       ${confirmHtml(ui)}
       ${levelUpHtml(ui)}
+      ${penaltyHtml(ui)}
     </div>`;
 }
 

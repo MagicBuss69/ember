@@ -4,6 +4,32 @@ function rand(min, max) {
   return min + Math.random() * (max - min);
 }
 
+/** Shards that fly toward the crystal meter (quest check-off). */
+export function shardBurstToCrystal(fromX, fromY, reduced = false) {
+  if (reduced) return;
+  const target = document.querySelector("[data-crystal-meter] .crystal-gem");
+  const root = document.getElementById("fx");
+  if (!root || !target) {
+    burstAt(fromX, fromY, reduced);
+    return;
+  }
+  const rect = target.getBoundingClientRect();
+  const tx = rect.left + rect.width / 2 - fromX;
+  const ty = rect.top + rect.height / 2 - fromY;
+  const count = 8;
+  for (let i = 0; i < count; i += 1) {
+    const p = document.createElement("i");
+    p.className = "shard";
+    p.style.left = `${Math.round(fromX)}px`;
+    p.style.top = `${Math.round(fromY)}px`;
+    p.style.setProperty("--tx", `${tx + rand(-6, 6)}px`);
+    p.style.setProperty("--ty", `${ty + rand(-6, 6)}px`);
+    root.appendChild(p);
+    p.addEventListener("animationend", () => p.remove(), { once: true });
+    setTimeout(() => p.remove(), 620);
+  }
+}
+
 /** Lightweight GPU-only burst at a screen point (quest check-off). */
 export function burstAt(x, y, reduced = false) {
   if (reduced) return;

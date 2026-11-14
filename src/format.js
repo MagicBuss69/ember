@@ -42,9 +42,13 @@ export function reasonLabel(reason) {
       return "Full day";
     case "streak":
       return "Streak day";
-    case "spent-freeze":
-      return "Streak freeze";
+    case "freeze-refund":
+      return "Freeze refund";
+    case "penalty":
+      return "Penalty";
     default:
+      if (typeof reason === "string" && reason.startsWith("shop-")) return "Shop";
+      if (typeof reason === "string" && reason.startsWith("life-")) return "Life reward";
       if (typeof reason === "string" && reason.startsWith("streak-")) {
         return `${reason.slice(7)}-day streak`;
       }
