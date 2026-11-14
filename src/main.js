@@ -61,6 +61,7 @@ import { ensureAudio, playSound } from "./sounds.js";
 import { burstAt, confettiFan, dailyCompleteBanner, shardBurstToCrystal } from "./ui/fx.js";
 import { addDays, dateKey, formatPretty, weekStart } from "./time.js";
 import { render, shellError } from "./ui/render.js";
+import { compactBarVisible, intersectionRatio } from "./ui/todayCompact.js";
 
 const TABS = ["today", "week", "train", "rivals", "you", "settings"];
 const THEME_BG = {
@@ -330,33 +331,67 @@ function paint() {
   }
   ui.enter = false;
   updateBadge();
-  if (ui.tab === "today") watchTodayCompactBar();
+  if (ui.tab === "today") bindTodayCompactBar();
   else unbindTodayCompactBar();
 }
 
-function unbindTodayCompactBar() {
-  todayBoardObserver?.disconnect();
-  todayBoardObserver = null;
-  document.body.classList.remove("today-compact-on");
+function syncTodayCompactBar(show) {
+  document.body.classList.toggle("today-compact-on", show);
+  document.getElementById("today-board-compact")?.setAttribute("aria-hidden", show ? "false" : "true");
 }
 
-function watchTodayCompactBar() {
-  unbindTodayCompactBar();
+function disconnectTodayCompactObserver() {
+  todayBoardObserver?.disconnect();
+  todayBoardObserver = null;
+}
+
+function unbindTodayCompactBar() {
+  disconnectTodayCompactObserver();
+  syncTodayCompactBar(false);
+}
+
+function measureTodayCompactBar(root, expanded) {
+  if (!root || !expanded?.isConnected) return null;
+  return intersectionRatio(root.getBoundingClientRect(), expanded.getBoundingClientRect());
+}
+
+function bindTodayCompactBar() {
+  disconnectTodayCompactObserver();
   const root = document.getElementById("main");
   const expanded = document.getElementById("today-board-expanded");
-  const compact = document.getElementById("today-board-compact");
-  if (!root || !expanded) return;
-  const sync = (ratio) => {
-    const show = ratio < 0.15;
-    document.body.classList.toggle("today-compact-on", show);
-    if (compact) compact.setAttribute("aria-hidden", show ? "false" : "true");
+  if (!root || !expanded) {
+    syncTodayCompactBar(false);
+    return;
+  }
+  const applyRatio = (ratio) => syncTodayCompactBar(compactBarVisible(ratio));
+  const measureNow = () => {
+    const liveRoot = document.getElementById("main");
+    const liveExpanded = document.getElementById("today-board-expanded");
+    if (!liveRoot || !liveExpanded?.isConnected) {
+      syncTodayCompactBar(false);
+      return;
+    }
+    if (liveExpanded !== expanded || liveRoot !== root) {
+      bindTodayCompactBar();
+      return;
+    }
+    const ratio = measureTodayCompactBar(liveRoot, liveExpanded);
+    if (ratio != null) applyRatio(ratio);
   };
   todayBoardObserver = new IntersectionObserver(
-    ([entry]) => sync(entry?.intersectionRatio ?? 0),
+    ([entry]) => {
+      const live = document.getElementById("today-board-expanded");
+      if (!entry?.target?.isConnected || entry.target !== live) {
+        bindTodayCompactBar();
+        return;
+      }
+      applyRatio(entry.intersectionRatio ?? 0);
+    },
     { root, threshold: [0, 0.08, 0.15, 0.5, 1] },
   );
   todayBoardObserver.observe(expanded);
-  sync(expanded.getBoundingClientRect().height > 0 ? 1 : 0);
+  measureNow();
+  requestAnimationFrame(measureNow);
 }
 
 function soundOpts() {
