@@ -1,11 +1,13 @@
 import { GOOGLE_CLIENT_ID, VAPID_PUBLIC_KEY, WORKER_URL } from "../config.js";
 import { FREEZE_PRICE, SLOTS, SLOT_LABEL, SUGGESTED_EXERCISES, THEMES } from "../constants.js";
+import { templateTaskCount } from "../domain.js";
+import { formatLastBackupTime } from "../driveSchedule.js";
 import { geminiKeyEnding } from "../gemini.js";
 import { levelProgress } from "../economy.js";
 import { esc, formatMaybe, formatNum, reasonLabel } from "../format.js";
 import { avatar, gemIcon, icon } from "../icons.js";
 import { buildBoard } from "../rivals.js";
-import { exerciseGroups, rawGap, ringNumbers, streakCount, summarizeWeek, totalXp } from "../stats.js";
+import { exerciseGroups, rawGap, ringNumbers, streakCount, summarizeWeek, taskCount, totalXp } from "../stats.js";
 import { addDays, currentSlot, dateKey, formatPretty, formatWeekSpan, weekdayIso, weekdayLong, weekStart } from "../time.js";
 import { levelBar, emptyState, ringHtml, slotSection } from "./bits.js";
 
@@ -148,10 +150,14 @@ export function viewWeek(state, ui, now) {
   const actions = mode === "week"
     ? `<div class="stack-actions">
         <button type="button" class="primary" data-action="open-generate">Generate this week</button>
+        <button type="button" class="ghost" data-action="open-copy-day" data-kind="week" data-date="${selected}">Copy to other days</button>
         <button type="button" class="ghost" data-action="save-weekday" data-date="${selected}">Save ${esc(weekdayLong(selected))} to the template</button>
         <button type="button" class="ghost" data-action="apply-template">Fill open days from the template</button>
       </div>`
-    : `<p class="lede">This repeats every week. It fills days you haven't started. Finished days stay as they are.</p>`;
+    : `<div class="stack-actions">
+        <button type="button" class="ghost" data-action="open-copy-day" data-kind="template" data-weekday="${weekday}">Copy to other days</button>
+      </div>
+      <p class="lede">This repeats every week. It fills days you haven't started. Finished days stay as they are.</p>`;
   return `
     <section>
       <h1 class="page-title">Week</h1>
@@ -423,13 +429,18 @@ function reminderBlock(state, ui, permLabel, periodic) {
 
 function driveSection(state, ui) {
   if (!String(GOOGLE_CLIENT_ID || "").trim()) return "";
-  const last = state.settings.driveLastBackupOn;
+  const autoOn = state.settings.driveAutoBackup !== false;
+  const lastLabel = formatLastBackupTime(state.settings, new Date());
+  const statusSuffix = ui.driveStatus ? ` · ${ui.driveStatus}` : "";
+  const needsReconnect = Boolean(ui.driveNeedsReconnect && state.settings.driveLinked);
   return `
     <h2 class="section-title">Google Drive</h2>
     <p class="lede">A hidden folder on your Google account. The Gemini key is not included. Ember keeps the latest 7 backups.</p>
-    <p class="lede">${last ? `Last backup ${esc(last)}.` : "No Drive backup yet."} ${esc(ui.driveStatus || "")}</p>
+    <p class="lede" data-drive-last>Last backup: ${esc(lastLabel)}${esc(statusSuffix)}</p>
+    <button type="button" class="switch" role="switch" aria-checked="${autoOn ? "true" : "false"}" data-action="toggle-setting" data-key="driveAutoBackup"><span>Auto backup</span><i></i></button>
+    ${needsReconnect ? `<button type="button" class="primary" data-action="drive-reconnect">Tap to reconnect Drive</button>` : ""}
     <div class="stack-actions">
-      <button type="button" class="primary" data-action="drive-backup">${state.settings.driveLinked ? "Back up now" : "Connect Google Drive"}</button>
+      <button type="button" class="${needsReconnect ? "ghost" : "primary"}" data-action="drive-backup">${state.settings.driveLinked ? "Back up now" : "Connect Google Drive"}</button>
       <button type="button" class="ghost" data-action="drive-restore">Restore from Drive</button>
     </div>`;
 }
@@ -447,7 +458,7 @@ function field(label, inner) {
   return `<label class="field"><span>${label}</span>${inner}</label>`;
 }
 
-export function sheetHtml(state, ui) {
+export function sheetHtml(state, ui, now = new Date()) {
   if (!ui.sheet) return "";
   const sheet = ui.sheet;
   const draft = ui.draft || {};
@@ -455,7 +466,87 @@ export function sheetHtml(state, ui) {
   if (sheet.type === "workout") return workoutSheet(state, draft);
   if (sheet.type === "generate") return generateSheet(draft);
   if (sheet.type === "drive") return driveSheet(ui);
+  if (sheet.type === "copy-day") return copyDaySheet(state, sheet, draft, now);
   return "";
+}
+
+function copyDaySheet(state, sheet, draft, now) {
+  const isTemplate = sheet.kind === "template";
+  const copyMode = draft.copyMode === "append" ? "append" : "replace";
+  const selectedTargets = new Set((draft.targets || []).map(String));
+  const error = draft.error ? `<p class="form-error">${esc(draft.error)}</p>` : "";
+
+  let fromLabel = "";
+  let sourceCount = 0;
+  let options = [];
+
+  if (isTemplate) {
+    const srcWd = String(sheet.weekday);
+    fromLabel = `${WEEKDAYS[Number(srcWd) - 1] || "Day"} template`;
+    sourceCount = templateTaskCount(state, srcWd);
+    options = WEEKDAYS.map((name, idx) => {
+      const wd = String(idx + 1);
+      if (wd === srcWd) return null;
+      const existing = templateTaskCount(state, wd);
+      return {
+        value: wd,
+        title: name,
+        sub: existing ? `${existing} quest${existing === 1 ? "" : "s"}` : "Empty",
+      };
+    }).filter(Boolean);
+  } else {
+    const srcDate = sheet.date;
+    const start = weekStart(dateKey(now));
+    fromLabel = formatPretty(srcDate);
+    sourceCount = taskCount(state, srcDate);
+    options = Array.from({ length: 7 }, (_, idx) => {
+      const date = addDays(start, idx);
+      if (date === srcDate) return null;
+      const existing = taskCount(state, date);
+      const shortDate = formatPretty(date).replace(/^[A-Za-z]{3}\s/, "");
+      return {
+        value: date,
+        title: WEEKDAYS[idx],
+        sub: `${shortDate} · ${existing ? `${existing} quest${existing === 1 ? "" : "s"}` : "Empty"}`,
+      };
+    }).filter(Boolean);
+  }
+
+  const allSelected = options.length > 0 && options.every((opt) => selectedTargets.has(opt.value));
+  const rows = options
+    .map((opt) => {
+      const checked = selectedTargets.has(opt.value);
+      return `<label class="copy-day-row ${checked ? "is-checked" : ""}">
+        <input type="checkbox" data-copy-target="${esc(opt.value)}" ${checked ? "checked" : ""} />
+        <span class="copy-day-copy">
+          <strong>${esc(opt.title)}</strong>
+          <small>${esc(opt.sub)}</small>
+        </span>
+      </label>`;
+    })
+    .join("");
+
+  return `
+    <div class="scrim" data-action="close-sheet"></div>
+    <form class="sheet" data-form="save-copy-day">
+      <div class="handle"></div>
+      <div class="sheet-head">
+        <h2>Copy to other days</h2>
+        <button type="button" class="icon-btn" data-action="close-sheet" aria-label="Close">${icon("close")}</button>
+      </div>
+      <p class="lede">From ${esc(fromLabel)} (${sourceCount} quest${sourceCount === 1 ? "" : "s"}). Copied quests get fresh IDs and start unchecked.</p>
+      ${error}
+      <div class="segment" role="group" aria-label="How to copy">
+        <button type="button" data-action="set-copy-mode" data-copy-mode="replace" aria-pressed="${copyMode === "replace"}">Replace</button>
+        <button type="button" data-action="set-copy-mode" data-copy-mode="append" aria-pressed="${copyMode === "append"}">Add to</button>
+      </div>
+      <div class="copy-day-head">
+        <span class="kicker">Choose days</span>
+        <button type="button" class="ghost slim" data-action="copy-select-all">${allSelected ? "Clear all" : "Select all 6"}</button>
+      </div>
+      <div class="copy-day-list">${rows}</div>
+      <button type="submit" class="primary">${copyMode === "replace" ? "Replace on selected days" : "Add to selected days"}</button>
+    </form>`;
 }
 
 function driveSheet(ui) {

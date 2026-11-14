@@ -39,6 +39,12 @@ function authHeaders(token, extra = {}) {
   return { Authorization: `Bearer ${token}`, ...extra };
 }
 
+function driveError(message, status) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+
 export async function uploadBackup(token, state, now = new Date()) {
   const payload = drivePayload(state);
   const stamp = now.toISOString().replace(/[:.]/g, "-");
@@ -63,7 +69,7 @@ export async function uploadBackup(token, state, now = new Date()) {
     headers: authHeaders(token, { "Content-Type": `multipart/related; boundary=${boundary}` }),
     body,
   });
-  if (!response.ok) throw new Error("Google Drive refused the backup.");
+  if (!response.ok) throw driveError("Google Drive refused the backup.", response.status);
   return response.json();
 }
 
@@ -75,7 +81,7 @@ export async function listBackups(token) {
   url.searchParams.set("pageSize", "20");
   url.searchParams.set("fields", "files(id,name,createdTime)");
   const response = await fetch(url, { headers: authHeaders(token) });
-  if (!response.ok) throw new Error("Couldn't list Drive backups.");
+  if (!response.ok) throw driveError("Couldn't list Drive backups.", response.status);
   const data = await response.json();
   return data.files || [];
 }
@@ -85,14 +91,16 @@ export async function deleteBackup(token, id) {
     method: "DELETE",
     headers: authHeaders(token),
   });
-  if (!response.ok && response.status !== 404) throw new Error("Couldn't remove an old Drive backup.");
+  if (!response.ok && response.status !== 404) {
+    throw driveError("Couldn't remove an old Drive backup.", response.status);
+  }
 }
 
 export async function downloadBackup(token, id) {
   const response = await fetch(`${FILES}/${encodeURIComponent(id)}?alt=media`, {
     headers: authHeaders(token),
   });
-  if (!response.ok) throw new Error("Couldn't download that Drive backup.");
+  if (!response.ok) throw driveError("Couldn't download that Drive backup.", response.status);
   return response.json();
 }
 

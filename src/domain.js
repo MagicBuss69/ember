@@ -97,7 +97,9 @@ export function createInitialState(now = new Date()) {
       dismissedHint: false,
       geminiKeyStatus: "",
       driveLinked: false,
+      driveAutoBackup: true,
       driveLastBackupOn: "",
+      driveLastBackupAt: "",
       workerToken: "",
       pushOn: false,
     },
@@ -189,13 +191,16 @@ function applyLevelGrants(state, now) {
   }
 }
 
-export function settle(state, { today, touchDate, now }) {
+export function settle(state, { today, touchDate, touchDates, now }) {
   ensureWeek(state, today);
   applyFreezes(state, today, now);
   state.longest = Math.max(state.longest || 0, streakCount(state, today));
   applyLevelGrants(state, now);
   const dates = new Set([today]);
   if (touchDate) dates.add(touchDate);
+  if (Array.isArray(touchDates)) {
+    for (const date of touchDates) if (date) dates.add(date);
+  }
   for (const date of dates) applyDayGrants(state, date, now);
   applyMilestones(state, today, now);
   return state;
@@ -375,6 +380,88 @@ export function copyDayToTemplate(state, date) {
   return next;
 }
 
+export function templateTaskCount(state, weekday) {
+  const slots = state.template?.[String(weekday)];
+  if (!slots) return 0;
+  return SLOTS.reduce((sum, slot) => sum + (slots[slot]?.length || 0), 0);
+}
+
+export function occupiedCopyTargets(state, kind, targets) {
+  const unique = [...new Set((targets || []).map(String))];
+  if (kind === "template") {
+    return unique.filter((wd) => templateTaskCount(state, wd) > 0);
+  }
+  return unique.filter((date) => {
+    const slots = state.days?.[date]?.slots;
+    if (!slots) return false;
+    return SLOTS.some((slot) => (slots[slot]?.length || 0) > 0);
+  });
+}
+
+/**
+ * Copy all quests from `sourceDate` onto `targetDates` in Week mode.
+ * `mode`: `"replace"` overwrites each target day (clearing XP for overwritten done quests);
+ * `"append"` adds copied quests after existing quests in each slot.
+ * Every copied quest gets a fresh id and `done: false` while keeping title, why, time, slot, and order.
+ */
+export function copyDayToDates(state, sourceDate, targetDates, mode = "replace", now = new Date()) {
+  const next = clone(state);
+  const sourceSlots = next.days?.[sourceDate]?.slots || blankSlots();
+  const replace = mode !== "append";
+  const targets = [...new Set((targetDates || []).map(String))].filter(
+    (date) => /^\d{4}-\d{2}-\d{2}$/.test(date) && date !== sourceDate,
+  );
+  if (!targets.length) return { state: next, copied: 0 };
+
+  for (const targetDate of targets) {
+    if (!next.days[targetDate]) next.days[targetDate] = { slots: blankSlots() };
+    const destSlots = next.days[targetDate].slots;
+    for (const slot of SLOTS) {
+      const fresh = (sourceSlots[slot] || []).map((item) => taskFrom(item));
+      if (replace) {
+        for (const existing of destSlots[slot] || []) {
+          if (existing?.id) dropXp(next, existing.id, "task");
+        }
+        destSlots[slot] = fresh;
+      } else {
+        destSlots[slot] = [...(destSlots[slot] || []), ...fresh];
+      }
+    }
+  }
+
+  settle(next, { today: dateKey(now), touchDates: targets, now });
+  return { state: next, copied: targets.length };
+}
+
+/**
+ * Copy all quests from `sourceWeekday` (`"1"`..`"7"`) onto `targetWeekdays` in Template mode.
+ * `mode`: `"replace"` overwrites each target weekday; `"append"` appends in each slot.
+ */
+export function copyTemplateWeekday(state, sourceWeekday, targetWeekdays, mode = "replace") {
+  const next = clone(state);
+  const srcKey = String(sourceWeekday);
+  const sourceSlots = next.template?.[srcKey] || blankSlots();
+  const replace = mode !== "append";
+  const targets = [...new Set((targetWeekdays || []).map(String))].filter(
+    (wd) => /^[1-7]$/.test(wd) && wd !== srcKey,
+  );
+  if (!targets.length) return { state: next, copied: 0 };
+
+  for (const wd of targets) {
+    if (!next.template[wd]) next.template[wd] = blankSlots();
+    for (const slot of SLOTS) {
+      const fresh = (sourceSlots[slot] || []).map((item) => blueprint(item));
+      if (replace) {
+        next.template[wd][slot] = fresh;
+      } else {
+        next.template[wd][slot] = [...(next.template[wd][slot] || []), ...fresh];
+      }
+    }
+  }
+
+  return { state: next, copied: targets.length };
+}
+
 export function applyTemplateToOpenDays(state, today, now = new Date()) {
   const next = clone(state);
   const start = weekStart(today);
@@ -500,7 +587,9 @@ export function patchSettings(state, patch) {
   if (typeof patch.dismissedHint === "boolean") next.settings.dismissedHint = patch.dismissedHint;
   if (typeof patch.geminiKeyStatus === "string") next.settings.geminiKeyStatus = patch.geminiKeyStatus.slice(0, 20);
   if (typeof patch.driveLinked === "boolean") next.settings.driveLinked = patch.driveLinked;
+  if (typeof patch.driveAutoBackup === "boolean") next.settings.driveAutoBackup = patch.driveAutoBackup;
   if (typeof patch.driveLastBackupOn === "string") next.settings.driveLastBackupOn = patch.driveLastBackupOn.slice(0, 10);
+  if (typeof patch.driveLastBackupAt === "string") next.settings.driveLastBackupAt = patch.driveLastBackupAt.slice(0, 40);
   if (typeof patch.workerToken === "string") next.settings.workerToken = patch.workerToken.trim().slice(0, 200);
   if (typeof patch.pushOn === "boolean") next.settings.pushOn = patch.pushOn;
   return next;

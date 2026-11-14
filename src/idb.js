@@ -99,17 +99,25 @@ export async function loadState() {
   return null;
 }
 
-export async function saveState(state) {
-  let idbOk = true;
-  try {
-    await kvSet("state", state);
-  } catch {
-    idbOk = false;
-  }
-  try {
-    localStorage.setItem("ember-state", JSON.stringify(state));
-  } catch {
-    if (!idbOk) throw new Error("This phone refused to save.");
-  }
-  return idbOk;
+let saveQueue = Promise.resolve();
+
+export function saveState(state) {
+  const snapshot = structuredClone(state);
+  const run = async () => {
+    let idbOk = true;
+    try {
+      await kvSet("state", snapshot);
+    } catch {
+      idbOk = false;
+    }
+    try {
+      localStorage.setItem("ember-state", JSON.stringify(snapshot));
+    } catch {
+      if (!idbOk) throw new Error("This phone refused to save.");
+    }
+    return idbOk;
+  };
+  const next = saveQueue.then(run, run);
+  saveQueue = next.catch(() => {});
+  return next;
 }

@@ -818,6 +818,52 @@ body.dragging-quest, body.dragging-quest * { cursor: grabbing !important; user-s
   font-size: 14px;
 }
 .checkline input { width: 22px; height: 22px; accent-color: var(--accent); }
+.copy-day-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 4px 0 6px;
+}
+.copy-day-head .kicker { margin: 0; }
+.copy-day-head .ghost.slim { margin: 0; min-height: 44px; }
+.copy-day-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.copy-day-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 54px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  cursor: pointer;
+}
+.copy-day-row.is-checked {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: var(--accent-soft);
+}
+.copy-day-row input {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  accent-color: var(--accent);
+}
+.copy-day-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.copy-day-copy strong { font-size: 15px; }
+.copy-day-copy small { color: var(--faint); font-size: 12px; white-space: nowrap; }
 
 .scrim {
   position: fixed;

@@ -24,7 +24,7 @@ export function render(state, ui, now) {
       </header>
       <main class="${ui.enter ? "enter" : ""}" id="main">${view(state, ui, now)}</main>
       ${navHtml(tab)}
-      ${sheetHtml(state, ui)}
+      ${sheetHtml(state, ui, now)}
       ${confirmHtml(ui)}
       ${levelUpHtml(ui)}
     </div>`;

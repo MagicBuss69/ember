@@ -8,7 +8,8 @@ import "./styles.css";
 import { formatRestoreSummary, parseBackupText, sanitizeImport, summarizeBackup } from "./backup.js";
 import { GOOGLE_CLIENT_ID } from "./config.js";
 import { downloadBackup, listBackups, pruneBackups, restoreKeepingSecrets, uploadBackup } from "./drive.js";
-import { requestDriveToken } from "./driveAuth.js";
+import { clearDriveToken, requestDriveToken } from "./driveAuth.js";
+import { createAutoBackupController } from "./driveSchedule.js";
 import { checkGeminiKey } from "./gemini.js";
 import { disableClosedReminders, enableClosedReminders } from "./pushClient.js";
 import { FREEZE_PRICE, THEMES } from "./constants.js";
@@ -20,13 +21,16 @@ import {
   applyTemplateToOpenDays,
   buyFreeze,
   buyTheme,
+  copyDayToDates,
   copyDayToTemplate,
+  copyTemplateWeekday,
   createInitialState,
   deleteTask,
   deleteTemplateTask,
   deleteWorkout,
   equipTheme,
   moveTask,
+  occupiedCopyTargets,
   patchSettings,
   prepare,
   replaceDayFromTemplate,
@@ -48,7 +52,7 @@ import {
 } from "./notify.js";
 import { ensureRivalHistory } from "./rivals.js";
 import { exerciseGroups, openTodayCount, totalXp } from "./stats.js";
-import { addDays, dateKey, formatPretty } from "./time.js";
+import { addDays, dateKey, formatPretty, weekStart } from "./time.js";
 import { render, shellError } from "./ui/render.js";
 
 const TABS = ["today", "week", "train", "rivals", "you"];
@@ -111,6 +115,12 @@ function scrape() {
     const value = el.type === "checkbox" ? el.checked : el.value;
     assign(ui.draft, el.dataset.bind, value);
   });
+  const copyChecks = document.querySelectorAll("[data-copy-target]");
+  if (copyChecks.length && Array.isArray(ui.draft.targets)) {
+    ui.draft.targets = [...copyChecks]
+      .filter((el) => el.checked)
+      .map((el) => el.dataset.copyTarget);
+  }
 }
 
 function paint() {
@@ -337,6 +347,7 @@ async function commitWrapped(mutator, fx = {}) {
     }, 740);
   }
   syncReminderSchedule(state).catch(() => {});
+  if (!fx.skipDriveSchedule) driveScheduler.noteChange();
 }
 
 const commitAction = commitWrapped;
@@ -482,6 +493,63 @@ const actions = {
     ui.weekMode = el.dataset.mode;
     ui.keepScroll = false;
     paint();
+  },
+  "open-copy-day"(el) {
+    const kind = el.dataset.kind === "template" ? "template" : "week";
+    ui.sheet = {
+      type: "copy-day",
+      kind,
+      date: el.dataset.date || "",
+      weekday: el.dataset.weekday || "",
+    };
+    ui.draft = { copyMode: "replace", targets: [], error: "" };
+    ui.focusSheet = false;
+    ui.keepScroll = true;
+    if (!history.state?.sheet) history.pushState({ sheet: true }, "");
+    paint();
+  },
+  "set-copy-mode"(el) {
+    if (!ui.draft) return;
+    ui.draft.copyMode = el.dataset.copyMode === "append" ? "append" : "replace";
+    ui.draft.error = "";
+    ui.keepScroll = true;
+    paint();
+  },
+  "copy-select-all"() {
+    if (!ui.draft || ui.sheet?.type !== "copy-day") return;
+    const allTargets = copyTargetOptions(ui.sheet);
+    const current = new Set((ui.draft.targets || []).map(String));
+    const allChecked = allTargets.length > 0 && allTargets.every((val) => current.has(val));
+    ui.draft.targets = allChecked ? [] : allTargets;
+    ui.draft.error = "";
+    ui.keepScroll = true;
+    paint();
+  },
+  async "save-copy-day"() {
+    if (!ui.draft || ui.sheet?.type !== "copy-day") return;
+    const targets = [...new Set((ui.draft.targets || []).map(String))];
+    if (!targets.length) {
+      ui.draft.error = "Choose at least one day.";
+      ui.keepScroll = true;
+      paint();
+      return;
+    }
+    const mode = ui.draft.copyMode === "append" ? "append" : "replace";
+    if (mode === "replace") {
+      const occupied = occupiedCopyTargets(state, ui.sheet.kind, targets);
+      if (occupied.length > 0) {
+        ui.confirm = {
+          title: "Replace existing quests?",
+          body: `${occupied.length === 1 ? "1 selected day already has quests" : `${occupied.length} selected days already have quests`} and will be overwritten.`,
+          label: "Replace",
+          action: "confirm-copy-day",
+        };
+        ui.keepScroll = true;
+        paint();
+        return;
+      }
+    }
+    await runCopyDay();
   },
   async "save-weekday"(el) {
     await commitAction((current) => copyDayToTemplate(current, el.dataset.date));
@@ -630,9 +698,15 @@ const actions = {
   "equip-theme"(el) {
     commitAction((current) => equipTheme(current, el.dataset.theme), { quiet: true });
   },
-  "toggle-setting"(el) {
+  async "toggle-setting"(el) {
     const key = el.dataset.key;
-    commitAction((current) => patchSettings(current, { [key]: !current.settings[key] }), { quiet: true });
+    await commitAction((current) => {
+      const prev = key === "driveAutoBackup"
+        ? current.settings.driveAutoBackup !== false
+        : Boolean(current.settings[key]);
+      return patchSettings(current, { [key]: !prev });
+    }, { quiet: true });
+    if (key === "driveAutoBackup") driveScheduler.recheck();
   },
   "toggle-reveal"() {
     const input = document.getElementById("gemini-key");
@@ -692,7 +766,7 @@ const actions = {
     try {
       ui.driveStatus = "Backing up…";
       paint();
-      await backupToDrive(false);
+      await backupToDrive({ silent: false });
       toast("Backed up to Google Drive.");
     } catch (error) {
       ui.driveStatus = "";
@@ -700,11 +774,37 @@ const actions = {
       paint();
     }
   },
+  async "drive-reconnect"() {
+    if (!GOOGLE_CLIENT_ID) return;
+    try {
+      ui.driveStatus = "Reconnecting…";
+      paint();
+      await backupToDrive({ silent: false });
+      toast("Drive reconnected and backed up.");
+    } catch (error) {
+      ui.driveStatus = "";
+      toast(error.message || "Couldn't reconnect Drive.");
+      paint();
+    }
+  },
   async "drive-restore"() {
     if (!GOOGLE_CLIENT_ID) return;
     try {
-      const access = await requestDriveToken(state.settings.driveLinked ? "" : "consent");
-      ui.driveFiles = await listBackups(access);
+      let access = await requestDriveToken(state.settings.driveLinked ? "" : "consent");
+      let files;
+      try {
+        files = await listBackups(access);
+      } catch (error) {
+        if (error?.status === 401 || error?.status === 403) {
+          await clearDriveToken();
+          access = await requestDriveToken("");
+          files = await listBackups(access);
+        } else {
+          throw error;
+        }
+      }
+      ui.driveNeedsReconnect = false;
+      ui.driveFiles = files;
       ui.sheet = { type: "drive" };
       ui.focusSheet = false;
       ui.keepScroll = true;
@@ -771,6 +871,10 @@ const actions = {
       });
       return;
     }
+    if (confirm.action === "confirm-copy-day") {
+      await runCopyDay();
+      return;
+    }
     if (confirm.action === "import" && ui.pendingImport) {
       await applyRestoredState(ui.pendingImport);
       return;
@@ -788,7 +892,7 @@ const actions = {
         const access = await requestDriveToken("");
         const raw = await downloadBackup(access, confirm.id);
         const imported = restoreKeepingSecrets(sanitizeImport(raw, state), state);
-        await applyRestoredState(imported);
+        await applyRestoredState(imported, { fromDrive: true });
       } catch (error) {
         toast(error.message || "Couldn't restore that backup.");
       }
@@ -952,10 +1056,9 @@ async function flushSettingsInputs() {
   }
 }
 
-async function applyRestoredState(imported) {
+async function applyRestoredState(imported, options = {}) {
   clearTimeout(levelTimer);
   genToken += 1;
-  const { quests, workouts } = summarizeBackup(imported);
   const prepared = prepare(imported, new Date());
   state = prepared.state;
   ensureRivalHistory(state, prepared.today);
@@ -984,6 +1087,35 @@ async function applyRestoredState(imported) {
   paint();
   toast(formatRestoreSummary({ days: imported.days, workouts: state.workouts, xpEvents: state.xpEvents }));
   syncReminderSchedule(state).catch(() => {});
+  if (!options.fromDrive) driveScheduler.noteChange();
+}
+
+function copyTargetOptions(sheet) {
+  if (sheet?.kind === "template") {
+    const src = String(sheet.weekday);
+    return ["1", "2", "3", "4", "5", "6", "7"].filter((wd) => wd !== src);
+  }
+  const start = weekStart(dateKey(new Date()));
+  return Array.from({ length: 7 }, (_, idx) => addDays(start, idx)).filter((d) => d !== sheet?.date);
+}
+
+async function runCopyDay() {
+  const sheet = ui.sheet;
+  const draft = ui.draft;
+  if (!sheet || sheet.type !== "copy-day" || !draft) return;
+  const targets = [...new Set((draft.targets || []).map(String))];
+  const mode = draft.copyMode === "append" ? "append" : "replace";
+  let copied = 0;
+  await commitAction((current) => {
+    const result = sheet.kind === "template"
+      ? copyTemplateWeekday(current, sheet.weekday, targets, mode)
+      : copyDayToDates(current, sheet.date, targets, mode, new Date());
+    copied = result.copied;
+    return result.state;
+  }, { close: true, ring: true });
+  if (copied > 0) {
+    toast(`Copied to ${copied} ${copied === 1 ? "day" : "days"}`);
+  }
 }
 
 function bindQuestDrag(app) {
@@ -1152,14 +1284,29 @@ function bind() {
       clearTimeout(el._emberTimer);
       const bindName = el.dataset.bind;
       const value = el.value;
-      el._emberTimer = setTimeout(() => {
-        commitAction((current) => patchSettings(current, { [bindName]: value }), { quiet: true });
-      }, 350);
+      state = patchSettings(state, { [bindName]: value });
+      saveState(state).catch(() => {
+        toast("Couldn't save on this phone.");
+      });
+      if (bindName === "workerToken") syncReminderSchedule(state).catch(() => {});
+      driveScheduler.noteChange();
       return;
     }
     if (ui.draft) assign(ui.draft, el.dataset.bind, el.type === "checkbox" ? el.checked : el.value);
   });
   app.addEventListener("change", (event) => {
+    const copyCheck = event.target.closest("[data-copy-target]");
+    if (copyCheck && ui.draft && ui.sheet?.type === "copy-day") {
+      const target = copyCheck.dataset.copyTarget;
+      const set = new Set((ui.draft.targets || []).map(String));
+      if (copyCheck.checked) set.add(target);
+      else set.delete(target);
+      ui.draft.targets = [...set];
+      ui.draft.error = "";
+      ui.keepScroll = true;
+      paint();
+      return;
+    }
     const el = event.target.closest("[data-bind]");
     if (!el) return;
     if (el.dataset.commit === "settings") {
@@ -1171,6 +1318,12 @@ function bind() {
     }
     if (!ui.draft) return;
     assign(ui.draft, el.dataset.bind, el.type === "checkbox" ? el.checked : el.value);
+  });
+  window.addEventListener("pagehide", () => {
+    flushSettingsInputs();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushSettingsInputs();
   });
   window.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
@@ -1254,24 +1407,81 @@ async function boot() {
   refreshNotify().then(() => {
     if (ui.tab === "you") paint();
   });
-  maybeDailyDriveBackup();
+  driveScheduler.checkOnOpen();
 }
 
-async function backupToDrive(silent) {
-  const access = await requestDriveToken(silent && state.settings.driveLinked ? "" : "consent");
-  await uploadBackup(access, state);
-  await pruneBackups(access, 7);
-  const today = dateKey(new Date());
+const driveScheduler = createAutoBackupController({
+  getContext: () => ({ settings: state.settings, clientId: GOOGLE_CLIENT_ID }),
+  runBackup: () => backupToDrive({ silent: true }),
+});
+
+async function backupToDrive({ silent = false } = {}) {
+  if (!GOOGLE_CLIENT_ID) return false;
+  if (!silent) await flushSettingsInputs();
+  let access;
+  try {
+    access = await requestDriveToken(
+      silent ? "" : (state.settings.driveLinked ? "" : "consent"),
+      { silent },
+    );
+  } catch (error) {
+    if (silent) {
+      ui.driveStatus = "";
+      ui.driveNeedsReconnect = true;
+      if (ui.tab === "you") {
+        ui.keepScroll = true;
+        paint();
+      }
+      return false;
+    }
+    throw error;
+  }
+
+  const now = new Date();
+  try {
+    await uploadBackup(access, state, now);
+    await pruneBackups(access, 7);
+  } catch (error) {
+    if (error?.status === 401 || error?.status === 403) {
+      await clearDriveToken();
+      if (silent) {
+        ui.driveStatus = "";
+        ui.driveNeedsReconnect = true;
+        if (ui.tab === "you") {
+          ui.keepScroll = true;
+          paint();
+        }
+        return false;
+      }
+      access = await requestDriveToken("");
+      await uploadBackup(access, state, now);
+      await pruneBackups(access, 7);
+    } else if (silent) {
+      ui.driveStatus = "";
+      if (ui.tab === "you") {
+        ui.keepScroll = true;
+        paint();
+      }
+      return false;
+    } else {
+      throw error;
+    }
+  }
+
+  const today = dateKey(now);
+  const iso = now.toISOString();
   ui.driveStatus = "";
-  await commitAction((current) => patchSettings(current, { driveLinked: true, driveLastBackupOn: today }), { quiet: true });
-}
-
-function maybeDailyDriveBackup() {
-  if (!GOOGLE_CLIENT_ID || !state.settings.driveLinked) return;
-  if (state.settings.driveLastBackupOn === dateKey(new Date())) return;
-  backupToDrive(true).then(() => {
-    toast("Today's backup is on Google Drive.");
-  }).catch(() => {});
+  ui.driveNeedsReconnect = false;
+  driveScheduler.markCompleted(now.getTime());
+  await commitAction(
+    (current) => patchSettings(current, {
+      driveLinked: true,
+      driveLastBackupOn: today,
+      driveLastBackupAt: iso,
+    }),
+    { quiet: true, skipDriveSchedule: true },
+  );
+  return true;
 }
 
 boot();

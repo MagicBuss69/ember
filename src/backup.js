@@ -82,9 +82,15 @@ export function sanitizeImport(raw, current = null) {
     dismissedHint: Boolean(rawSettings.dismissedHint),
     geminiKeyStatus: importedGeminiKey ? importedKeyStatus : "",
     driveLinked: "driveLinked" in rawSettings ? Boolean(rawSettings.driveLinked) : Boolean(prevSettings.driveLinked),
+    driveAutoBackup: "driveAutoBackup" in rawSettings
+      ? rawSettings.driveAutoBackup !== false
+      : (prevSettings.driveAutoBackup !== false),
     driveLastBackupOn: "driveLastBackupOn" in rawSettings
       ? (normalizeDate(rawSettings.driveLastBackupOn) || "")
       : (normalizeDate(prevSettings.driveLastBackupOn) || ""),
+    driveLastBackupAt: "driveLastBackupAt" in rawSettings
+      ? normalizeIso(rawSettings.driveLastBackupAt)
+      : normalizeIso(prevSettings.driveLastBackupAt),
     workerToken: "workerToken" in rawSettings ? clip(rawSettings.workerToken, 200) : clip(prevSettings.workerToken, 200),
     pushOn: "pushOn" in rawSettings ? Boolean(rawSettings.pushOn) : Boolean(prevSettings.pushOn),
   };
@@ -291,6 +297,13 @@ function nonNegInt(value) {
   const n = Math.round(Number(value));
   if (!Number.isFinite(n) || n < 0) return 0;
   return n;
+}
+
+function normalizeIso(value) {
+  if (typeof value !== "string" || !value.trim()) return "";
+  const ms = Date.parse(value.trim());
+  if (!Number.isFinite(ms) || ms <= 0) return "";
+  return new Date(ms).toISOString();
 }
 
 function normalizeDate(value) {
