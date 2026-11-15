@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CHAT_GEMINI_FALLBACK_MODEL, CHAT_GEMINI_MODEL } from "../src/constants.js";
-import { coachChatTurn, rivalChatTurn } from "../src/gemini.js";
+import { coachChatTurn, resetThinkingConfigRejections, rivalChatTurn } from "../src/gemini.js";
 
 const FAKE = "test-key-do-not-log";
 
@@ -36,10 +36,21 @@ function isPrimary(url) {
   return url.includes(CHAT_GEMINI_MODEL) && !url.includes(CHAT_GEMINI_FALLBACK_MODEL);
 }
 
-function bodyHasThinking(init) {
-  const body = JSON.parse(String(init?.body || "{}"));
-  return Boolean(body.generationConfig?.thinkingConfig);
+function parseBody(init) {
+  return JSON.parse(String(init?.body || "{}"));
 }
+
+function bodyHasThinking(init) {
+  return Boolean(parseBody(init).generationConfig?.thinkingConfig);
+}
+
+function bodyThinkingBudget(init) {
+  return parseBody(init).generationConfig?.thinkingConfig?.thinkingBudget;
+}
+
+test.beforeEach(() => {
+  resetThinkingConfigRejections();
+});
 
 test("503 on the primary model returns the fallback reply", async () => {
   await withFetch((url) => (
@@ -126,6 +137,20 @@ test("a deliberate user abort does not call the fallback model", async () => {
   });
 });
 
+test("gemini 3.x chat sends thinkingLevel not thinkingBudget", async () => {
+  await withFetch((url, _calls, init) => {
+    if (!isPrimary(url)) return okReply({ reply: "ok", actions: [] });
+    assert.equal(bodyThinkingBudget(init), undefined);
+    const level = parseBody(init).generationConfig?.thinkingConfig?.thinkingLevel;
+    assert.equal(level, "low");
+    return okReply({ reply: "level ok", actions: [] });
+  }, async (calls) => {
+    const result = await coachChatTurn(FAKE, {}, [], "hello");
+    assert.equal(result.reply, "level ok");
+    assert.equal(calls.filter(isPrimary).length, 1);
+  });
+});
+
 test("400 INVALID_ARGUMENT retries once without thinkingConfig", async () => {
   let primaryAttempts = 0;
   await withFetch((url, _calls, init) => {
@@ -133,6 +158,7 @@ test("400 INVALID_ARGUMENT retries once without thinkingConfig", async () => {
     primaryAttempts += 1;
     if (primaryAttempts === 1) {
       assert.equal(bodyHasThinking(init), true);
+      assert.equal(bodyThinkingBudget(init), undefined);
       return errBody(400, "Request contains an invalid argument", "INVALID_ARGUMENT");
     }
     assert.equal(bodyHasThinking(init), false);
@@ -141,6 +167,37 @@ test("400 INVALID_ARGUMENT retries once without thinkingConfig", async () => {
     const result = await coachChatTurn(FAKE, {}, [], "hello");
     assert.equal(result.reply, "after thinking retry");
     assert.equal(calls.filter(isPrimary).length, 2);
+  });
+});
+
+test("after one 400 rejection the same model skips thinkingConfig on the next chat", async () => {
+  let phase = 0;
+  await withFetch((url, _calls, init) => {
+    if (!isPrimary(url)) return okReply({ reply: "skip", actions: [] });
+    if (phase === 0) {
+      phase = 1;
+      assert.equal(bodyHasThinking(init), true);
+      return errBody(400, "Request contains an invalid argument", "INVALID_ARGUMENT");
+    }
+    assert.equal(phase, 1);
+    phase = 2;
+    assert.equal(bodyHasThinking(init), false);
+    return okReply({ reply: "first turn ok", actions: [] });
+  }, async () => {
+    const first = await coachChatTurn(FAKE, {}, [], "hello");
+    assert.equal(first.reply, "first turn ok");
+  });
+  await withFetch((url, _calls, init) => {
+    if (!isPrimary(url)) {
+      assert.equal(bodyHasThinking(init), false);
+      return okReply({ reply: "second turn ok", actions: [] });
+    }
+    assert.equal(bodyHasThinking(init), false);
+    return okReply({ reply: "second turn ok", actions: [] });
+  }, async (calls) => {
+    const second = await coachChatTurn(FAKE, {}, [], "hello again");
+    assert.equal(second.reply, "second turn ok");
+    assert.equal(calls.filter(isPrimary).length, 1);
   });
 });
 

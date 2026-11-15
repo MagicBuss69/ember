@@ -102,7 +102,30 @@ function readText(payload) {
   return text;
 }
 
-async function callModel(model, apiKey, goals, signal, withThinking) {
+const thinkingConfigRejected = new Set();
+
+export function resetThinkingConfigRejections() {
+  thinkingConfigRejected.clear();
+}
+
+function isGemini3Model(model) {
+  return /gemini-3/i.test(String(model || ""));
+}
+
+function attachThinkingConfig(generationConfig, model) {
+  if (isGemini3Model(model)) {
+    const level = /gemini-3\.8-flash/i.test(model) ? "low" : "minimal";
+    generationConfig.thinkingConfig = { thinkingLevel: level };
+  } else {
+    generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  }
+}
+
+function shouldAttachThinking(model, skipThinking) {
+  return !skipThinking && !thinkingConfigRejected.has(model);
+}
+
+async function callModel(model, apiKey, goals, signal, skipThinking) {
   const body = {
     contents: [{ role: "user", parts: [{ text: `${PROMPT_HEAD}${goals.trim() || "General health, coding, and confidence for a teenager in school."}` }] }],
     generationConfig: {
@@ -111,7 +134,7 @@ async function callModel(model, apiKey, goals, signal, withThinking) {
       responseMimeType: "application/json",
     },
   };
-  if (withThinking) body.generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  if (shouldAttachThinking(model, skipThinking)) attachThinkingConfig(body.generationConfig, model);
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
@@ -173,7 +196,7 @@ function invalidArgument400(error) {
   return error?.status === 400 && !geminiAuthRefusal(error);
 }
 
-async function postChatJson(model, apiKey, prompt, signal, withThinking) {
+async function postChatJson(model, apiKey, prompt, signal, skipThinking) {
   const body = {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: {
@@ -182,7 +205,7 @@ async function postChatJson(model, apiKey, prompt, signal, withThinking) {
       responseMimeType: "application/json",
     },
   };
-  if (withThinking) body.generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  if (shouldAttachThinking(model, skipThinking)) attachThinkingConfig(body.generationConfig, model);
   let response;
   try {
     response = await fetch(
@@ -215,11 +238,13 @@ async function postChatJson(model, apiKey, prompt, signal, withThinking) {
 }
 
 async function chatWithModel(model, apiKey, prompt, signal) {
+  const hadThinking = shouldAttachThinking(model, false);
   try {
-    return await postChatJson(model, apiKey, prompt, signal, true);
+    return await postChatJson(model, apiKey, prompt, signal, false);
   } catch (error) {
-    if (invalidArgument400(error)) {
-      return postChatJson(model, apiKey, prompt, signal, false);
+    if (invalidArgument400(error) && hadThinking) {
+      thinkingConfigRejected.add(model);
+      return postChatJson(model, apiKey, prompt, signal, true);
     }
     throw error;
   }
@@ -309,11 +334,13 @@ export async function generateWeek(apiKey, goals, signal) {
   let last = null;
   for (const model of GEMINI_MODELS) {
     try {
+      const hadThinking = shouldAttachThinking(model, false);
       try {
-        return await callModel(model, key, goals, signal, true);
+        return await callModel(model, key, goals, signal, false);
       } catch (error) {
-        if (invalidArgument400(error)) {
-          return await callModel(model, key, goals, signal, false);
+        if (invalidArgument400(error) && hadThinking) {
+          thinkingConfigRejected.add(model);
+          return await callModel(model, key, goals, signal, true);
         }
         throw error;
       }
