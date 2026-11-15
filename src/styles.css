@@ -1846,9 +1846,12 @@ body.today-compact-on main {
   opacity: 0.7;
 }
 .crystal-meter.is-dim .crystal-fill { opacity: 0.45; filter: grayscale(0.4); }
-.crystal-meter.skin-ice { --crystal: #e7f7ff; }
+.crystal-meter.skin-ice { --crystal: #7ee8ff; }
+.crystal-meter.skin-ice .crystal-gem-wrap { filter: drop-shadow(0 0 10px rgba(80, 210, 255, 0.8)) drop-shadow(0 0 3px rgba(200, 245, 255, 0.55)); }
 .crystal-meter.skin-ember { --crystal: #ff6a1a; }
-.crystal-meter.skin-void { --crystal: #c9a6ff; }
+.crystal-meter.skin-ember .crystal-gem-wrap { filter: drop-shadow(0 0 12px rgba(255, 100, 30, 0.85)) drop-shadow(0 0 4px rgba(255, 180, 80, 0.5)); }
+.crystal-meter.skin-void { --crystal: #d4af37; }
+.crystal-meter.skin-void .crystal-gem-wrap { filter: drop-shadow(0 0 8px rgba(212, 175, 55, 0.4)); }
 .crystal-copy strong { display: block; font-size: 16px; }
 .crystal-xp { color: var(--faint); font-size: 12px; }
 .note.warn { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, transparent); }
@@ -1948,6 +1951,23 @@ body.today-compact-on main {
 .crystal-meter .hero-gem .cg-f2,
 .crystal-meter .hero-gem .cg-f3,
 .crystal-meter .hero-gem .cg-body { opacity: calc(0.55 + var(--cg-fill, 0.35) * 0.45); }
+.crystal-meter.skin-ice .hero-gem .cg-body { fill: #5ec0e8; }
+.crystal-meter.skin-ice .hero-gem .cg-f1 { fill: #d4f5ff; }
+.crystal-meter.skin-ice .hero-gem .cg-f2 { fill: #9ee8ff; }
+.crystal-meter.skin-ice .hero-gem .cg-f3 { fill: #7ad4f0; }
+.crystal-meter.skin-ember .hero-gem .cg-body { fill: #6b2208; }
+.crystal-meter.skin-ember .hero-gem .cg-f1 { fill: #ff8830; }
+.crystal-meter.skin-ember .hero-gem .cg-f2 { fill: #ff5a12; }
+.crystal-meter.skin-ember .hero-gem .cg-f3 { fill: #e84400; }
+.crystal-meter.skin-void .hero-gem { color: #d4af37; }
+.crystal-meter.skin-void .hero-gem .cg-body { fill: #08080f; }
+.crystal-meter.skin-void .hero-gem .cg-f1 { fill: #161622; }
+.crystal-meter.skin-void .hero-gem .cg-f2 { fill: #101018; }
+.crystal-meter.skin-void .hero-gem .cg-f3 { fill: #0c0c14; }
+.crystal-meter.skin-void .hero-gem .cg-outline { display: block; opacity: 0.88; }
+.shop-item img[src*="skin-ice"] { filter: saturate(1.35) brightness(1.08) hue-rotate(-8deg); }
+.shop-item img[src*="skin-ember"] { filter: saturate(1.25) brightness(1.05) hue-rotate(12deg); }
+.shop-item img[src*="skin-void"] { filter: saturate(0.35) brightness(0.72) contrast(1.15); }
 .crystal-svg .cg-shine { fill: rgba(255, 255, 255, 0.35); opacity: 0.55; }
 .crystal-svg .cg-stack {
   clip-path: inset(calc((1 - var(--cg-fill, 0)) * 100%) 0 0 0);
