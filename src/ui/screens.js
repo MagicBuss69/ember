@@ -683,6 +683,9 @@ export function viewSettings(state, ui) {
         <label class="field compact"><span>Max push-ups</span><input type="number" min="1" max="300" inputmode="numeric" data-pushup-max value="${esc(state.settings.pushupMax || 10)}" /></label>
       </div>
       <button type="button" class="ghost" data-action="test-pushups">Test this max</button>`}
+      <p class="lede">OnePlus and ColorOS block a challenge from opening on top of another app unless Ember may display over other apps and use full-screen intents.</p>
+      <button type="button" class="ghost" data-action="open-overlay-settings">Allow display over other apps</button>
+      <button type="button" class="ghost" data-action="open-fullscreen-settings">Allow full-screen challenges</button>
       <button type="button" class="ghost" data-action="open-accessibility">Open accessibility settings</button>
       <button type="button" class="ghost" data-action="pick-blocked-apps">Choose blocked apps</button>
       <p class="footnote">Sideloaded APK: enable Accessibility for Ember. On Android 13+, App info → ⋮ → Allow restricted settings. Blocked: ${esc((state.settings.blockedPackages || []).join(", ") || "YouTube, TikTok (if installed)")}</p>

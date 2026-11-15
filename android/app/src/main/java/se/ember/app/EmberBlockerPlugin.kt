@@ -1,8 +1,11 @@
 package se.ember.app
 
+import android.app.NotificationManager
 import android.content.ClipData
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import com.getcapacitor.JSArray
@@ -80,6 +83,42 @@ class EmberBlockerPlugin : Plugin() {
         result.put("openChallenge", open)
         result.put("confirmChallenge", confirm)
         call.resolve(result)
+    }
+
+    @PluginMethod
+    fun blockerPermissions(call: PluginCall) {
+        val overlays = Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(context)
+        val fullScreen = if (Build.VERSION.SDK_INT >= 34) {
+            val manager = context.getSystemService(NotificationManager::class.java)
+            manager.canUseFullScreenIntent()
+        } else {
+            true
+        }
+        val result = JSObject()
+        result.put("overlay", overlays)
+        result.put("fullScreen", fullScreen)
+        call.resolve(result)
+    }
+
+    @PluginMethod
+    fun openOverlaySettings(call: PluginCall) {
+        val intent = Intent(
+            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+            Uri.parse("package:${context.packageName}"),
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+        call.resolve()
+    }
+
+    @PluginMethod
+    fun openFullScreenSettings(call: PluginCall) {
+        if (Build.VERSION.SDK_INT >= 34) {
+            val intent = Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT)
+                .setData(Uri.parse("package:${context.packageName}"))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+        }
+        call.resolve()
     }
 
     @PluginMethod

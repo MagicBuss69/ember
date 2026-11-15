@@ -29,23 +29,56 @@ test("elbow angle is straight up and bent at the bottom of a push-up", () => {
   assert.equal(elbowAngle(null, { x: 0, y: 0 }, { x: 1, y: 0 }), null);
 });
 
+function pump(counter, sample, frames = 3) {
+  let next = counter;
+  for (let i = 0; i < frames; i += 1) next = stepRepCounter(next, sample);
+  return next;
+}
+
 test("a rep counts only on a down-then-up, and a hidden arm is ignored", () => {
   let counter = createRepCounter();
   counter = stepRepCounter(counter, { left: arm(170), right: arm(170, 0.2) });
   assert.equal(counter.reps, 0);
   assert.equal(counter.phase, "up");
-  counter = stepRepCounter(counter, { left: arm(80) });
+  counter = pump(counter, { left: arm(80) });
   assert.equal(counter.phase, "down");
   assert.equal(counter.reps, 0);
   counter = stepRepCounter(counter, { left: arm(110) });
   assert.equal(counter.reps, 0, "halfway back up is not a rep");
-  counter = stepRepCounter(counter, { left: arm(160) });
+  counter = pump(counter, { left: arm(160) });
   assert.equal(counter.reps, 1);
   assert.equal(counter.phase, "up");
-  counter = stepRepCounter(counter, { left: arm(40, 0.2), right: arm(40, 0.2) });
+  counter = pump(counter, { left: arm(40, 0.2), right: arm(40, 0.2) });
   assert.equal(counter.reps, 1, "low-confidence frames must not move the count");
   const preferred = bestElbowAngle({ left: arm(100, 0.6), right: arm(40, 0.95) });
   assert.ok(preferred < 60);
+});
+
+test("noisy angles still count one rep, and a shallow bend does not", () => {
+  const noisy = [];
+  for (let i = 0; i < 5; i += 1) noisy.push(166 + (i % 2 ? 7 : -6));
+  for (let i = 0; i < 6; i += 1) noisy.push(102 + (i % 2 ? 6 : -8));
+  for (let i = 0; i < 6; i += 1) noisy.push(163 + (i % 2 ? -7 : 5));
+  let counter = createRepCounter();
+  for (const angle of noisy) counter = stepRepCounter(counter, { angle });
+  assert.equal(counter.reps, 1);
+  for (const angle of noisy) counter = stepRepCounter(counter, { angle });
+  assert.equal(counter.reps, 2);
+  let shallow = createRepCounter();
+  for (let i = 0; i < 12; i += 1) shallow = stepRepCounter(shallow, { angle: 140 + (i % 2 ? 4 : -4) });
+  assert.equal(shallow.reps, 0);
+  assert.equal(shallow.phase, "up");
+});
+
+test("wrists folding up toward the shoulders count when the elbow angle is missing", () => {
+  let counter = createRepCounter();
+  counter = pump(counter, { fold: 0.02 }, 3);
+  assert.equal(counter.phase, "up");
+  counter = pump(counter, { fold: 0.45 }, 3);
+  assert.equal(counter.phase, "down");
+  counter = pump(counter, { fold: 0.04 }, 3);
+  assert.equal(counter.reps, 1);
+  assert.equal(counter.phase, "up");
 });
 
 test("push-up gate blocks until an unlock, and quest mode is optional", () => {

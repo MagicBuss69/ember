@@ -73,6 +73,36 @@ export async function shareNativeBackup(filename, text) {
   return true;
 }
 
+export async function blockerPermissionStatus() {
+  if (!Capacitor.isNativePlatform()) return { overlay: false, fullScreen: false, native: false };
+  try {
+    const result = await EmberBlocker.blockerPermissions();
+    return { overlay: Boolean(result?.overlay), fullScreen: Boolean(result?.fullScreen), native: true };
+  } catch {
+    return { overlay: false, fullScreen: false, native: true };
+  }
+}
+
+export async function openOverlaySettings() {
+  if (!Capacitor.isNativePlatform()) return false;
+  try {
+    await EmberBlocker.openOverlaySettings();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function openFullScreenSettings() {
+  if (!Capacitor.isNativePlatform()) return false;
+  try {
+    await EmberBlocker.openFullScreenSettings();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function openAccessibilitySettings() {
   if (!Capacitor.isNativePlatform()) return false;
   try {

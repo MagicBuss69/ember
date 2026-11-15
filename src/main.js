@@ -66,6 +66,8 @@ import {
   filterInstalledDefaults,
   listLaunchableApps,
   openAccessibilitySettings,
+  openFullScreenSettings,
+  openOverlaySettings,
   pushBlockerSnapshot,
   startPushupTest,
 } from "./blockerBridge.js";
@@ -1278,6 +1280,14 @@ const actions = {
   async "open-accessibility"() {
     const ok = await openAccessibilitySettings();
     if (!ok) toast("Accessibility settings are only available in the Android app.");
+  },
+  async "open-overlay-settings"() {
+    const ok = await openOverlaySettings();
+    if (!ok) toast("Display-over-apps is only available in the Android app.");
+  },
+  async "open-fullscreen-settings"() {
+    const ok = await openFullScreenSettings();
+    if (!ok) toast("Full-screen challenges are only available in the Android app.");
   },
   async "confirm-challenge"() {
     const now = new Date();

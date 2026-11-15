@@ -3,9 +3,12 @@ package se.ember.app
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Size
+import android.view.Surface
 import android.view.View
 import android.widget.Button
 import android.widget.TextView
@@ -20,8 +23,8 @@ import androidx.core.content.ContextCompat
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.pose.Pose
 import com.google.mlkit.vision.pose.PoseDetection
+import com.google.mlkit.vision.pose.PoseDetectorOptions
 import com.google.mlkit.vision.pose.PoseLandmark
-import com.google.mlkit.vision.pose.accurate.AccuratePoseDetectorOptions
 import org.json.JSONObject
 import java.time.Instant
 import java.util.concurrent.Executors
@@ -38,6 +41,9 @@ class PushupActivity : AppCompatActivity() {
     private var blockedPackage = ""
     private var finished = false
     private var sawPose = false
+    private var missedPoses = 0
+    private var previewUse: Preview? = null
+    private var analysisUse: ImageAnalysis? = null
 
     private val cameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) startCamera() else useManual("Camera permission is off, so Ember can't see the reps.")
@@ -83,9 +89,26 @@ class PushupActivity : AppCompatActivity() {
         showing = true
     }
 
+    override fun onResume() {
+        super.onResume()
+        resumed = true
+        showing = true
+    }
+
+    override fun onPause() {
+        resumed = false
+        super.onPause()
+    }
+
     override fun onStop() {
         showing = false
         super.onStop()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        blockedPackage = intent.getStringExtra(EXTRA_PACKAGE) ?: blockedPackage
     }
 
     override fun onDestroy() {
@@ -98,25 +121,36 @@ class PushupActivity : AppCompatActivity() {
         future.addListener({
             try {
                 val provider = future.get()
+                val rotation = currentRotation()
                 val preview = Preview.Builder().build().also {
+                    it.targetRotation = rotation
                     it.setSurfaceProvider(findViewById<PreviewView>(R.id.pushup_preview).surfaceProvider)
                 }
-                val options = AccuratePoseDetectorOptions.Builder()
-                    .setDetectorMode(AccuratePoseDetectorOptions.STREAM_MODE)
+                val options = PoseDetectorOptions.Builder()
+                    .setDetectorMode(PoseDetectorOptions.STREAM_MODE)
                     .build()
                 val detector = PoseDetection.getClient(options)
                 val analysis = ImageAnalysis.Builder()
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .setTargetResolution(Size(640, 480))
                     .build()
+                analysis.targetRotation = rotation
+                previewUse = preview
+                analysisUse = analysis
                 analysis.setAnalyzer(analysisExecutor) { imageProxy ->
                     val media = imageProxy.image
                     if (media == null || manual || finished) {
                         imageProxy.close()
                         return@setAnalyzer
                     }
-                    val image = InputImage.fromMediaImage(media, imageProxy.imageInfo.rotationDegrees)
+                    val rotationDegrees = imageProxy.imageInfo.rotationDegrees
+                    val rawW = imageProxy.width
+                    val rawH = imageProxy.height
+                    val uprightW = if (rotationDegrees % 180 == 90) rawH else rawW
+                    val uprightH = if (rotationDegrees % 180 == 90) rawW else rawH
+                    val image = InputImage.fromMediaImage(media, rotationDegrees)
                     detector.process(image)
-                        .addOnSuccessListener { pose -> onPose(pose) }
+                        .addOnSuccessListener { pose -> onPose(pose, uprightW, uprightH) }
                         .addOnFailureListener {
                             if (poseFailed.compareAndSet(false, true)) {
                                 mainHandler.post { useManual("Pose detection failed, so Ember can't count from the camera.") }
@@ -132,42 +166,73 @@ class PushupActivity : AppCompatActivity() {
         }, ContextCompat.getMainExecutor(this))
     }
 
-    private fun onPose(pose: Pose) {
-        val angle = visibleElbow(pose) ?: return
-        sawPose = true
-        PushupCounter.step(counter, angle)
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        val rotation = currentRotation()
+        previewUse?.targetRotation = rotation
+        analysisUse?.targetRotation = rotation
+    }
+
+    private fun currentRotation(): Int {
+        val display = if (Build.VERSION.SDK_INT >= 30) display else windowManager.defaultDisplay
+        return display?.rotation ?: Surface.ROTATION_0
+    }
+
+    private fun onPose(pose: Pose, imageW: Int, imageH: Int) {
+        val left = armOf(pose, PoseLandmark.LEFT_SHOULDER, PoseLandmark.LEFT_ELBOW, PoseLandmark.LEFT_WRIST)
+        val right = armOf(pose, PoseLandmark.RIGHT_SHOULDER, PoseLandmark.RIGHT_ELBOW, PoseLandmark.RIGHT_WRIST)
+        val seen = left != null || right != null
+        if (seen) {
+            sawPose = true
+            missedPoses = 0
+            PushupCounter.observe(counter, left, right)
+        } else {
+            missedPoses += 1
+        }
+        val skeleton = skeletonPoints(pose, imageW, imageH)
         mainHandler.post {
             if (finished) return@post
+            findViewById<PoseOverlayView>(R.id.pushup_skeleton).setSkeleton(skeleton)
+            val tracking = seen || missedPoses < 8
+            val seenView = findViewById<TextView>(R.id.pushup_seen)
+            seenView.text = if (tracking && sawPose) "Tracking" else "Not seen"
+            seenView.setTextColor(if (tracking && sawPose) 0xFF7CFFB2.toInt() else 0xFFF2C14E.toInt())
             render()
             if (!practice && counter.reps >= target) completeChallenge()
         }
     }
 
-    private fun visibleElbow(pose: Pose): Double? {
-        val left = landmarkAngle(pose, PoseLandmark.LEFT_SHOULDER, PoseLandmark.LEFT_ELBOW, PoseLandmark.LEFT_WRIST)
-        val right = landmarkAngle(pose, PoseLandmark.RIGHT_SHOULDER, PoseLandmark.RIGHT_ELBOW, PoseLandmark.RIGHT_WRIST)
-        if (left == null) return right?.second
-        if (right == null) return left.second
-        return if (right.first >= left.first) right.second else left.second
-    }
-
-    private fun landmarkAngle(pose: Pose, shoulderType: Int, elbowType: Int, wristType: Int): Pair<Float, Double>? {
+    private fun armOf(pose: Pose, shoulderType: Int, elbowType: Int, wristType: Int): PushupCounter.Arm? {
         val shoulder = pose.getPoseLandmark(shoulderType) ?: return null
         val elbow = pose.getPoseLandmark(elbowType) ?: return null
         val wrist = pose.getPoseLandmark(wristType) ?: return null
         val seen = minOf(shoulder.inFrameLikelihood, elbow.inFrameLikelihood, wrist.inFrameLikelihood)
-        if (seen < PushupCounter.MIN_LIKELIHOOD) return null
-        val angle = PushupCounter.elbowAngle(
+        return PushupCounter.Arm(
             shoulder.position.x, shoulder.position.y,
             elbow.position.x, elbow.position.y,
             wrist.position.x, wrist.position.y,
-        ) ?: return null
-        return seen to angle
+            seen,
+        )
+    }
+
+    private fun skeletonPoints(pose: Pose, imageW: Int, imageH: Int): FloatArray {
+        if (imageW <= 0 || imageH <= 0) return FloatArray(0)
+        val kinds = intArrayOf(
+            PoseLandmark.LEFT_SHOULDER, PoseLandmark.LEFT_ELBOW, PoseLandmark.LEFT_WRIST,
+            PoseLandmark.RIGHT_SHOULDER, PoseLandmark.RIGHT_ELBOW, PoseLandmark.RIGHT_WRIST,
+        )
+        val out = FloatArray(kinds.size * 2) { Float.NaN }
+        for (i in kinds.indices) {
+            val mark = pose.getPoseLandmark(kinds[i]) ?: continue
+            if (mark.inFrameLikelihood < PushupCounter.MIN_LIKELIHOOD) continue
+            out[i * 2] = mark.position.x / imageW
+            out[i * 2 + 1] = mark.position.y / imageH
+        }
+        return out
     }
 
     private fun addManualRep() {
-        if (counter.phase == "up") counter.phase = "down"
-        PushupCounter.step(counter, PushupCounter.UP_ANGLE)
+        PushupCounter.manualRep(counter)
         render()
         if (!practice && counter.reps >= target) completeChallenge()
     }
@@ -246,6 +311,7 @@ class PushupActivity : AppCompatActivity() {
         const val EXTRA_PACKAGE = "package"
         const val EXTRA_PRACTICE = "practice"
         @Volatile var showing: Boolean = false
+        @Volatile var resumed: Boolean = false
         @Volatile var lastLaunchMs: Long = 0
     }
 }
