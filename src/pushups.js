@@ -11,6 +11,8 @@ export const PUSHUP_CALIBRATION_MS = 2000;
 export const PUSHUP_REP_GAP_MS = 500;
 export const DEFAULT_UNLOCK_MINUTES = 15;
 export const DEFAULT_PUSHUP_MAX = 10;
+/** Heads-up this long before an unlock window ends. */
+export const UNLOCK_WARN_MS = 60 * 1000;
 
 export function clampUnlockMinutes(value) {
   const n = Math.round(Number(value));
@@ -205,4 +207,33 @@ export function shouldGatePackage({ blockMode, locked, packages, packageName, un
   if (!Array.isArray(packages) || !packages.includes(packageName)) return false;
   if (blockMode === "quests") return Boolean(locked);
   return !(Number(unlockUntil) > Number(now));
+}
+
+/**
+ * Unlock windows loop. `unlocks` maps a package to the epoch ms it stays open.
+ * Entries at or before `now` are due to relock. The soonest future entry is the
+ * next exact alarm, with a warning one minute before that moment when it is
+ * still ahead.
+ */
+export function planUnlockLoop(unlocks, now = 0, warnMs = UNLOCK_WARN_MS) {
+  const due = [];
+  let nextExpiry = null;
+  let nextPackage = null;
+  const entries = unlocks && typeof unlocks === "object" ? Object.entries(unlocks) : [];
+  for (const [pkg, untilRaw] of entries) {
+    if (!pkg) continue;
+    const until = Number(untilRaw);
+    if (!Number.isFinite(until) || until <= 0) continue;
+    if (until <= now) {
+      due.push(pkg);
+      continue;
+    }
+    if (nextExpiry == null || until < nextExpiry || (until === nextExpiry && pkg < nextPackage)) {
+      nextExpiry = until;
+      nextPackage = pkg;
+    }
+  }
+  due.sort();
+  const warnAt = nextExpiry != null && nextExpiry - warnMs > now ? nextExpiry - warnMs : null;
+  return { due, nextPackage, nextExpiry, warnAt };
 }

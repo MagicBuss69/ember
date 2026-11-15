@@ -12,8 +12,10 @@ import {
   elbowAngle,
   raisePushupMax,
   shoulderHeight,
+  planUnlockLoop,
   shouldGatePackage,
   stepRepCounter,
+  UNLOCK_WARN_MS,
 } from "../src/pushups.js";
 
 function arm(angle, likelihood = 0.9) {
@@ -140,6 +142,11 @@ test("push-up gate blocks until an unlock, and quest mode is optional", () => {
     false,
   );
   assert.equal(
+    shouldGatePackage({ blockMode: "pushups", locked: true, packages, packageName: packages[0], unlockUntil: 100, now: 100 }),
+    true,
+    "the window is closed at the exact expiry",
+  );
+  assert.equal(
     shouldGatePackage({ blockMode: "quests", locked: false, packages, packageName: packages[0], now: 100 }),
     false,
   );
@@ -149,6 +156,33 @@ test("push-up gate blocks until an unlock, and quest mode is optional", () => {
   );
   assert.equal(raisePushupMax(10, 12), 12);
   assert.equal(raisePushupMax(10, 8), 10);
+});
+
+test("an unlock window relocks at expiry and warns one minute before", () => {
+  const now = 1_000_000;
+  const idle = planUnlockLoop({}, now);
+  assert.deepEqual(idle.due, []);
+  assert.equal(idle.nextExpiry, null);
+  assert.equal(idle.warnAt, null);
+
+  const open = planUnlockLoop({ "com.youtube": now + 15 * 60 * 1000 }, now);
+  assert.deepEqual(open.due, []);
+  assert.equal(open.nextPackage, "com.youtube");
+  assert.equal(open.nextExpiry, now + 15 * 60 * 1000);
+  assert.equal(open.warnAt, open.nextExpiry - UNLOCK_WARN_MS);
+
+  const soon = planUnlockLoop({ "com.youtube": now + 20_000, "com.old": now - 1 }, now);
+  assert.deepEqual(soon.due, ["com.old"]);
+  assert.equal(soon.nextPackage, "com.youtube");
+  assert.equal(soon.warnAt, null);
+
+  const exact = planUnlockLoop({ "com.youtube": now, "com.later": now + 5 * 60 * 1000 }, now);
+  assert.deepEqual(exact.due, ["com.youtube"]);
+  assert.equal(exact.nextPackage, "com.later");
+  assert.equal(exact.warnAt, exact.nextExpiry - UNLOCK_WARN_MS);
+
+  const tie = planUnlockLoop({ "com.b": now + 60_000, "com.a": now + 60_000 }, now);
+  assert.equal(tie.nextPackage, "com.a");
 });
 
 test("unlock length defaults to 15 and a beaten max survives prepare", () => {

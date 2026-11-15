@@ -64,34 +64,81 @@ data class BlockerSnapshotData(
             }
         }
 
+        private val LOCK = Any()
+
         fun unlockUntil(context: Context, packageName: String): Long {
-            val prefs = context.getSharedPreferences(EmberBlockerPlugin.PREFS, Context.MODE_PRIVATE)
-            val raw = prefs.getString(EmberBlockerPlugin.KEY_UNLOCKS, "{}") ?: "{}"
-            return try {
-                JSONObject(raw).optLong(packageName, 0L)
-            } catch (_: Exception) {
-                0L
+            val all = readUnlocks(context)
+            return all[packageName] ?: 0L
+        }
+
+        fun readUnlocks(context: Context): Map<String, Long> {
+            synchronized(LOCK) {
+                val prefs = context.getSharedPreferences(EmberBlockerPlugin.PREFS, Context.MODE_PRIVATE)
+                val raw = prefs.getString(EmberBlockerPlugin.KEY_UNLOCKS, "{}") ?: "{}"
+                val json = try {
+                    JSONObject(raw)
+                } catch (_: Exception) {
+                    return emptyMap()
+                }
+                val out = LinkedHashMap<String, Long>()
+                val keys = json.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    if (key.isBlank()) continue
+                    val until = json.optLong(key, 0L)
+                    if (until > 0L) out[key] = until
+                }
+                return out
             }
         }
 
         fun grantUnlock(context: Context, packageName: String, untilMs: Long) {
-            val prefs = context.getSharedPreferences(EmberBlockerPlugin.PREFS, Context.MODE_PRIVATE)
-            val raw = prefs.getString(EmberBlockerPlugin.KEY_UNLOCKS, "{}") ?: "{}"
-            val json = try {
-                JSONObject(raw)
-            } catch (_: Exception) {
-                JSONObject()
+            synchronized(LOCK) {
+                val prefs = context.getSharedPreferences(EmberBlockerPlugin.PREFS, Context.MODE_PRIVATE)
+                val raw = prefs.getString(EmberBlockerPlugin.KEY_UNLOCKS, "{}") ?: "{}"
+                val json = try {
+                    JSONObject(raw)
+                } catch (_: Exception) {
+                    JSONObject()
+                }
+                val now = System.currentTimeMillis()
+                val keys = json.keys()
+                val keep = JSONObject()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    val until = json.optLong(key, 0L)
+                    if (until > now) keep.put(key, until)
+                }
+                keep.put(packageName, untilMs)
+                prefs.edit().putString(EmberBlockerPlugin.KEY_UNLOCKS, keep.toString()).commit()
             }
-            val now = System.currentTimeMillis()
-            val keys = json.keys()
-            val keep = JSONObject()
-            while (keys.hasNext()) {
-                val key = keys.next()
-                val until = json.optLong(key, 0L)
-                if (until > now) keep.put(key, until)
+            EmberAlarmScheduler.reschedule(context)
+        }
+
+        /** Drops windows that have ended so the app is blocked again. */
+        fun revokeExpired(context: Context, now: Long): List<String> {
+            synchronized(LOCK) {
+                val prefs = context.getSharedPreferences(EmberBlockerPlugin.PREFS, Context.MODE_PRIVATE)
+                val raw = prefs.getString(EmberBlockerPlugin.KEY_UNLOCKS, "{}") ?: "{}"
+                val json = try {
+                    JSONObject(raw)
+                } catch (_: Exception) {
+                    return emptyList()
+                }
+                val keys = json.keys()
+                val keep = JSONObject()
+                val revoked = mutableListOf<String>()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    val until = json.optLong(key, 0L)
+                    if (key.isNotBlank() && until > now) keep.put(key, until)
+                    else if (key.isNotBlank()) revoked.add(key)
+                }
+                if (revoked.isNotEmpty()) {
+                    prefs.edit().putString(EmberBlockerPlugin.KEY_UNLOCKS, keep.toString()).commit()
+                }
+                return revoked
             }
-            keep.put(packageName, untilMs)
-            prefs.edit().putString(EmberBlockerPlugin.KEY_UNLOCKS, keep.toString()).commit()
         }
 
         private fun parseIso(text: String): Long {

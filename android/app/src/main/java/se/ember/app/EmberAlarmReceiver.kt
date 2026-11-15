@@ -18,6 +18,11 @@ class EmberAlarmReceiver : BroadcastReceiver() {
                 EmberInbox.append(context, "miss", if (id.isNotBlank()) id else "deadline")
                 if (snap.challengeActive) openEmber(context)
             }
+            EmberAlarmScheduler.ACTION_UNLOCK_EXPIRE -> EmberUnlockLoop.onExpired(context)
+            EmberAlarmScheduler.ACTION_UNLOCK_WARN -> {
+                val pkg = intent.getStringExtra(EmberAlarmScheduler.EXTRA_PACKAGE) ?: ""
+                if (pkg.isNotBlank()) EmberUnlockLoop.showWarning(context, pkg)
+            }
         }
         EmberAlarmScheduler.reschedule(context)
     }
