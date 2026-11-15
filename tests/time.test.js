@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { addDays, dateKey, stockholmParts, weekdayIso, weekdayLong, weekStart, zonedTimeToUtc } from "../src/time.js";
+import {
+  addDays,
+  dateKey,
+  formatCountdown,
+  stockholmParts,
+  weekdayIso,
+  weekdayLong,
+  weekStart,
+  zonedTimeToUtc,
+} from "../src/time.js";
 
 test("Stockholm date key and Monday week", () => {
   const friday = new Date("2026-11-13T12:00:00Z");
@@ -30,4 +39,10 @@ test("spring-forward morning still returns an instant", () => {
   assert.equal(parts.key, "2026-03-29");
   assert.equal(parts.hour, 7);
   assert.equal(parts.minute, 30);
+});
+
+test("formatCountdown uses total seconds not broken modulus", () => {
+  assert.equal(formatCountdown(59500), "1:00");
+  assert.equal(formatCountdown(60000), "1:00");
+  assert.equal(formatCountdown(61000), "1:01");
 });

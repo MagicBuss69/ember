@@ -21,7 +21,7 @@
             android:exported="false"
             android:excludeFromRecents="true"
             android:launchMode="singleTask"
-            android:theme="@style/AppTheme.NoActionBarLaunch" />
+            android:theme="@style/AppTheme.NoActionBar" />
 
         <service
             android:name=".EmberAccessibilityService"

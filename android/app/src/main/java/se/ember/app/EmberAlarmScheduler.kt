@@ -35,10 +35,13 @@ object EmberAlarmScheduler {
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or
             (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
         val pi = PendingIntent.getBroadcast(context, req, intent, flags)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atMs, pi)
-        } else {
-            am.setExact(AlarmManager.RTC_WAKEUP, atMs, pi)
+        when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !am.canScheduleExactAlarms() ->
+                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atMs, pi)
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ->
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atMs, pi)
+            else ->
+                am.setExact(AlarmManager.RTC_WAKEUP, atMs, pi)
         }
     }
 

@@ -72,7 +72,7 @@ import { exerciseGroups, isComplete, openTodayCount, totalXp } from "./stats.js"
 import { addCustomReward, buyItem, equipCosmetic, redeemCustomReward, removeCustomReward, SHOP_CATALOG } from "./shop.js";
 import { ensureAudio, playSound } from "./sounds.js";
 import { burstAt, confettiFan, dailyCompleteBanner, shardBurstToCrystal } from "./ui/fx.js";
-import { addDays, dateKey, formatPretty, weekStart } from "./time.js";
+import { addDays, dateKey, formatCountdown, formatPretty, weekStart } from "./time.js";
 import { render, shellError } from "./ui/render.js";
 import {
   installTodayCompactScroll,
@@ -2022,6 +2022,11 @@ function bind() {
     }
   });
   app.addEventListener("change", (event) => {
+    const quietTime = event.target.closest("input[type=time][data-quiet-time]");
+    if (quietTime) {
+      actions["patch-quiet-time"](quietTime);
+      return;
+    }
     const blockedCheck = event.target.closest("[data-blocked-app]");
     if (blockedCheck && ui.draft && ui.sheet?.type === "blocker-picker") {
       actions["toggle-blocked-app"](blockedCheck);
@@ -2132,20 +2137,24 @@ function startChallengeClock() {
     if (document.visibilityState !== "visible") return;
     const now = new Date();
     const beforeId = state.challenges?.current?.id || "";
+    const rollBefore = state.challenges?.nextRollAt || "";
     const { state: next, events } = processChallenges(state, now);
     const afterId = next.challenges?.current?.id || "";
+    const rollAfter = next.challenges?.nextRollAt || "";
     const tick = document.getElementById("challenge-countdown");
     if (tick && next.challenges?.current) {
       const ms = Math.max(0, new Date(next.challenges.current.deadlineAt).getTime() - now.getTime());
-      tick.textContent = `${Math.floor(ms / 60000)}:${String(Math.ceil((ms % 60000) / 1000)).padStart(2, "0")}`;
+      tick.textContent = formatCountdown(ms);
     }
-    if (!events.length && beforeId === afterId) return;
+    const challengesChanged = events.length > 0 || beforeId !== afterId || rollBefore !== rollAfter;
+    if (!challengesChanged) return;
     state = next;
     try {
       await saveState(state);
     } catch {
       /* ignore */
     }
+    await pushBlockerSnapshot(state, now).catch(() => {});
     if (ui.tab === "today") {
       ui.keepScroll = true;
       paint();

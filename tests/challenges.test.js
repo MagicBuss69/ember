@@ -161,3 +161,11 @@ test("roll interval stays within hourly band", () => {
   const next = new Date(state.challenges.nextRollAt).getTime() - OPEN_EVENING.getTime();
   assert.ok(next >= ROLL_MIN_MS - 5000);
 });
+
+test("processChallenges seeds nextRollAt in place when missing", () => {
+  const state = createInitialState(OPEN_EVENING);
+  state.challenges.nextRollAt = null;
+  const { events } = processChallenges(state, OPEN_EVENING);
+  assert.equal(events.length, 0);
+  assert.ok(state.challenges.nextRollAt);
+});

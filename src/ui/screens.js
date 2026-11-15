@@ -14,7 +14,17 @@ import { avatar, icon } from "../icons.js";
 import { challengeSnapshot } from "../challenges.js";
 import { buildBoard } from "../rivals.js";
 import { exerciseGroups, rawGap, ringNumbers, streakCount, summarizeWeek, taskCount, totalXp, weekCompare } from "../stats.js";
-import { addDays, currentSlot, dateKey, formatPretty, formatWeekSpan, weekdayIso, weekdayLong, weekStart } from "../time.js";
+import {
+  addDays,
+  currentSlot,
+  dateKey,
+  formatCountdown,
+  formatPretty,
+  formatWeekSpan,
+  weekdayIso,
+  weekdayLong,
+  weekStart,
+} from "../time.js";
 import { coachSheetHtml, rivalChatSheetHtml } from "./coachSheet.js";
 import { crystalMeterHtml, emptyState, levelBar, ringHtml, slotSection, weekChartHtml } from "./bits.js";
 
@@ -39,13 +49,6 @@ function sortSlotItems(items) {
   const penalties = items.filter((task) => task.penaltyTag);
   const rest = items.filter((task) => !task.penaltyTag);
   return [...penalties, ...rest];
-}
-
-function formatCountdown(ms) {
-  const total = Math.max(0, Math.ceil(ms / 1000));
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 function challengeCard(state, now) {
@@ -647,14 +650,14 @@ export function viewSettings(state, ui) {
       <h3 class="subsection-title">School quiet (Mon–Fri)</h3>
       <button type="button" class="switch" role="switch" aria-checked="${state.settings.quietSchool?.on !== false ? "true" : "false"}" data-action="toggle-setting" data-key="quietSchool" data-field="on"><span>School quiet hours</span><i></i></button>
       <div class="row-fields">
-        <label class="field compact"><span>From</span><input type="time" value="${esc(state.settings.quietSchool?.start || "06:35")}" data-action="patch-quiet-time" data-parent="quietSchool" data-field="start" /></label>
-        <label class="field compact"><span>Until</span><input type="time" value="${esc(state.settings.quietSchool?.end || "16:00")}" data-action="patch-quiet-time" data-parent="quietSchool" data-field="end" /></label>
+        <label class="field compact"><span>From</span><input type="time" value="${esc(state.settings.quietSchool?.start || "06:35")}" data-quiet-time data-parent="quietSchool" data-field="start" /></label>
+        <label class="field compact"><span>Until</span><input type="time" value="${esc(state.settings.quietSchool?.end || "16:00")}" data-quiet-time data-parent="quietSchool" data-field="end" /></label>
       </div>
       <h3 class="subsection-title">Night quiet</h3>
       <button type="button" class="switch" role="switch" aria-checked="${state.settings.quietNight?.on !== false ? "true" : "false"}" data-action="toggle-setting" data-key="quietNight" data-field="on"><span>Night quiet hours</span><i></i></button>
       <div class="row-fields">
-        <label class="field compact"><span>From</span><input type="time" value="${esc(state.settings.quietNight?.start || "22:00")}" data-action="patch-quiet-time" data-parent="quietNight" data-field="start" /></label>
-        <label class="field compact"><span>Until</span><input type="time" value="${esc(state.settings.quietNight?.end || "06:20")}" data-action="patch-quiet-time" data-parent="quietNight" data-field="end" /></label>
+        <label class="field compact"><span>From</span><input type="time" value="${esc(state.settings.quietNight?.start || "22:00")}" data-quiet-time data-parent="quietNight" data-field="start" /></label>
+        <label class="field compact"><span>Until</span><input type="time" value="${esc(state.settings.quietNight?.end || "06:20")}" data-quiet-time data-parent="quietNight" data-field="end" /></label>
       </div>
       <h2 class="section-title">Android blocker</h2>
       <p class="lede">Sideloaded APK: enable Accessibility for Ember. On Android 13+, open App info → ⋮ → <strong>Allow restricted settings</strong> before toggling the service.</p>
@@ -838,7 +841,7 @@ function blockerPickerSheet(state, draft) {
       </label>`;
     })
     .join("");
-  return `<form class="sheet-body" data-action="save-blocked-apps">
+  return `<form class="sheet-body" data-form="save-blocked-apps">
     <div class="sheet-head"><h2>Blocked apps</h2><button type="button" class="icon-btn" data-action="close-sheet">${icon("close")}</button></div>
     <p class="lede">Checked apps are blocked until every quest is done. Default picks YouTube and TikTok when installed.</p>
   <div class="copy-day-list">${rows || "<p class=muted>No launchable apps found.</p>"}</div>

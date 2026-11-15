@@ -14,6 +14,10 @@ import androidx.core.app.NotificationCompat
 class EmberChallengeForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        stopSelf(startId)
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         ensureChannel()
         val open = Intent(this, MainActivity::class.java)

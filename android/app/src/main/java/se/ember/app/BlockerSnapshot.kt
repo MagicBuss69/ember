@@ -4,6 +4,8 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 
+typealias BlockerSnapshot = BlockerSnapshotData
+
 data class BlockerSnapshotData(
     val locked: Boolean,
     val packages: List<String>,
