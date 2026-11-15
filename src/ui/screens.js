@@ -11,6 +11,7 @@ import { currencyBlocked, openPenaltyQuests } from "../penalty.js";
 import { esc, formatMaybe, formatNum, reasonLabel } from "../format.js";
 import { currencyIcon, gemIcon, itemThumb } from "../art.js";
 import { avatar, icon } from "../icons.js";
+import { challengeSnapshot } from "../challenges.js";
 import { buildBoard } from "../rivals.js";
 import { exerciseGroups, rawGap, ringNumbers, streakCount, summarizeWeek, taskCount, totalXp, weekCompare } from "../stats.js";
 import { addDays, currentSlot, dateKey, formatPretty, formatWeekSpan, weekdayIso, weekdayLong, weekStart } from "../time.js";
@@ -38,6 +39,34 @@ function sortSlotItems(items) {
   const penalties = items.filter((task) => task.penaltyTag);
   const rest = items.filter((task) => !task.penaltyTag);
   return [...penalties, ...rest];
+}
+
+function formatCountdown(ms) {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function challengeCard(state, now) {
+  if (!state.settings?.challengesOn) return "";
+  const snap = challengeSnapshot(state, now);
+  const current = snap.current;
+  if (!current) {
+  const next = snap.nextRollAt ? new Date(snap.nextRollAt) : null;
+    const eta = next && next > now ? `Next roll around ${next.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Waiting for the next roll";
+    return `<article class="challenge-card challenge-card-idle" data-challenge-card>
+      <p class="challenge-kicker">Hourly challenge</p>
+      <p class="muted">${esc(eta)}${snap.locked ? " · Finish every quest (not events) to unlock." : snap.quiet ? " · Quiet hours." : ""}</p>
+    </article>`;
+  }
+  const unit = current.isSeconds ? "sec" : "reps";
+  return `<article class="challenge-card challenge-card-active" data-challenge-card>
+    <p class="challenge-kicker">Challenge · ${esc(current.label)}</p>
+    <p class="challenge-big"><span class="num">${current.reps}</span> ${esc(unit)}</p>
+    <p class="challenge-timer">Time left <strong id="challenge-countdown">${formatCountdown(snap.msRemaining)}</strong></p>
+    <button type="button" class="primary" data-action="confirm-challenge">Done (honor system)</button>
+  </article>`;
 }
 
 function mustDoBanner(state, today) {
@@ -108,6 +137,7 @@ export function viewToday(state, ui, now) {
   return `
     <section class="today">
       ${lookingToday ? mustDoBanner(state, today) : ""}
+      ${lookingToday ? challengeCard(state, now) : ""}
       <div id="today-board-expanded" class="today-board-expanded">
         <div class="sticky-board">
           <div class="sticky-board-head">
@@ -611,6 +641,21 @@ export function viewSettings(state, ui) {
         <span class="num">${vol}%</span>
       </label>
       <button type="button" class="switch" role="switch" aria-checked="${state.settings.haptics ? "true" : "false"}" data-action="toggle-setting" data-key="haptics"><span>Vibration</span><i></i></button>
+      <h2 class="section-title">Challenges</h2>
+      <p class="lede">Hourly movement rolls with 10 minutes to confirm. Quiet hours pause rolls; open challenges cancel without punishment.</p>
+      <button type="button" class="switch" role="switch" aria-checked="${state.settings.challengesOn !== false ? "true" : "false"}" data-action="toggle-setting" data-key="challengesOn"><span>Hourly challenges</span><i></i></button>
+      <h3 class="subsection-title">School quiet (Mon–Fri)</h3>
+      <button type="button" class="switch" role="switch" aria-checked="${state.settings.quietSchool?.on !== false ? "true" : "false"}" data-action="toggle-setting" data-key="quietSchool" data-field="on"><span>School quiet hours</span><i></i></button>
+      <div class="row-fields">
+        <label class="field compact"><span>From</span><input type="time" value="${esc(state.settings.quietSchool?.start || "06:35")}" data-action="patch-quiet-time" data-parent="quietSchool" data-field="start" /></label>
+        <label class="field compact"><span>Until</span><input type="time" value="${esc(state.settings.quietSchool?.end || "16:00")}" data-action="patch-quiet-time" data-parent="quietSchool" data-field="end" /></label>
+      </div>
+      <h3 class="subsection-title">Night quiet</h3>
+      <button type="button" class="switch" role="switch" aria-checked="${state.settings.quietNight?.on !== false ? "true" : "false"}" data-action="toggle-setting" data-key="quietNight" data-field="on"><span>Night quiet hours</span><i></i></button>
+      <div class="row-fields">
+        <label class="field compact"><span>From</span><input type="time" value="${esc(state.settings.quietNight?.start || "22:00")}" data-action="patch-quiet-time" data-parent="quietNight" data-field="start" /></label>
+        <label class="field compact"><span>Until</span><input type="time" value="${esc(state.settings.quietNight?.end || "06:20")}" data-action="patch-quiet-time" data-parent="quietNight" data-field="end" /></label>
+      </div>
       <h2 class="section-title">Gemini</h2>
       <p class="lede">Optional. Ember works with no key. The key stays on this phone.</p>
       ${geminiCard(state, ui)}

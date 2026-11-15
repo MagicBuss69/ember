@@ -2092,6 +2092,38 @@ body.today-compact-on main {
   line-height: 1.45;
 }
 
+.challenge-card {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--bg-raised);
+}
+.challenge-card-active {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+.challenge-kicker {
+  margin: 0 0 6px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.challenge-big { margin: 0 0 8px; font-size: 22px; }
+.challenge-timer { margin: 0 0 10px; }
+.subsection-title {
+  margin: 12px 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.row-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.field.compact span { font-size: 13px; }
+
 @media (max-width: 390px) {
   .nav button { font-size: 9px; gap: 2px; padding: 0 1px; }
   .nav button svg { width: 20px; height: 20px; }

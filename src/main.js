@@ -28,6 +28,7 @@ import {
   buyTheme,
   copyDayToDates,
   copyDayToTemplate,
+  confirmActiveChallenge,
   copyTemplateWeekday,
   createInitialState,
   deleteTask,
@@ -58,6 +59,7 @@ import {
   syncReminderSchedule,
   watchReminders,
 } from "./notify.js";
+import { processChallenges } from "./challenges.js";
 import { ensureRivalHistory, rivalPromptFacts } from "./rivals.js";
 import { exerciseGroups, isComplete, openTodayCount, totalXp } from "./stats.js";
 import { addCustomReward, buyItem, equipCosmetic, redeemCustomReward, removeCustomReward, SHOP_CATALOG } from "./shop.js";
@@ -1189,13 +1191,43 @@ const actions = {
   },
   async "toggle-setting"(el) {
     const key = el.dataset.key;
+    const field = el.dataset.field;
     await commitAction((current) => {
-      const prev = key === "driveAutoBackup"
-        ? current.settings.driveAutoBackup !== false
-        : Boolean(current.settings[key]);
-      return patchSettings(current, { [key]: !prev });
+      if (field && (key === "quietSchool" || key === "quietNight")) {
+        const bucket = { ...(current.settings[key] || {}) };
+        const prev = bucket[field];
+        bucket[field] = typeof prev === "boolean" ? !prev : bucket[field] !== false;
+        return patchSettings(current, { [key]: bucket });
+      }
+      if (key === "challengesOn") {
+        const on = current.settings.challengesOn !== false;
+        return patchSettings(current, { challengesOn: !on });
+      }
+      if (key === "driveAutoBackup") {
+        return patchSettings(current, { driveAutoBackup: current.settings.driveAutoBackup === false });
+      }
+      if (typeof current.settings[key] === "boolean") {
+        return patchSettings(current, { [key]: !current.settings[key] });
+      }
+      return current;
     }, { quiet: true });
     if (key === "driveAutoBackup") driveScheduler.recheck();
+  },
+  async "patch-quiet-time"(el) {
+    const parent = el.dataset.parent;
+    const field = el.dataset.field;
+    const value = el.value;
+    if (!parent || !field || !value) return;
+    await commitAction(
+      (current) => patchSettings(current, { [parent]: { ...(current.settings[parent] || {}), [field]: value } }),
+      { quiet: true },
+    );
+  },
+  async "confirm-challenge"() {
+    const now = new Date();
+    await commitAction((current) => confirmActiveChallenge(current, now).state, { quiet: false });
+    ui.keepScroll = true;
+    paint();
   },
   "toggle-reveal"() {
     const input = document.getElementById("gemini-key");
@@ -2032,6 +2064,33 @@ function bind() {
   });
 }
 
+function startChallengeClock() {
+  if (ui.challengeTimer) clearInterval(ui.challengeTimer);
+  ui.challengeTimer = setInterval(async () => {
+    if (document.visibilityState !== "visible") return;
+    const now = new Date();
+    const beforeId = state.challenges?.current?.id || "";
+    const { state: next, events } = processChallenges(state, now);
+    const afterId = next.challenges?.current?.id || "";
+    const tick = document.getElementById("challenge-countdown");
+    if (tick && next.challenges?.current) {
+      const ms = Math.max(0, new Date(next.challenges.current.deadlineAt).getTime() - now.getTime());
+      tick.textContent = `${Math.floor(ms / 60000)}:${String(Math.ceil((ms % 60000) / 1000)).padStart(2, "0")}`;
+    }
+    if (!events.length && beforeId === afterId) return;
+    state = next;
+    try {
+      await saveState(state);
+    } catch {
+      /* ignore */
+    }
+    if (ui.tab === "today") {
+      ui.keepScroll = true;
+      paint();
+    }
+  }, 1000);
+}
+
 async function boot() {
   ui.tab = tabFromHash();
   ui.notifyState = globalThis.Notification?.permission || "unsupported";
@@ -2064,6 +2123,7 @@ async function boot() {
   }
   bind();
   paint();
+  startChallengeClock();
   if (state.lastPenaltyReport) {
     ui.penaltyWindow = state.lastPenaltyReport;
     sfx("penalty");

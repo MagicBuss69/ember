@@ -14,6 +14,7 @@ import { levelFor, questXpForLevel } from "./economy.js";
 import { currencyBlocked } from "./penalty.js";
 import { uid } from "./format.js";
 import {
+  confirmChallenge,
   defaultChallengeSettings,
   foldChallengesIntoPrepare,
   normalizeQuietNight,
@@ -654,6 +655,12 @@ export function buyTheme(state, themeId, now = new Date()) {
   next.ownedThemes.push(themeId);
   next.settings.theme = themeId;
   next.crystalLog.unshift({ at: now.toISOString(), delta: -theme.price, reason: `theme-${themeId}` });
+  return { state: next, ok: true };
+}
+
+export function confirmActiveChallenge(state, now = new Date()) {
+  const next = clone(state);
+  if (!confirmChallenge(next, now)) return { state: next, ok: false };
   return { state: next, ok: true };
 }
 
