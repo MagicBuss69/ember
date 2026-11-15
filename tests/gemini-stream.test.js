@@ -3,7 +3,9 @@ import test from "node:test";
 import { CHAT_GEMINI_FALLBACK_MODEL, CHAT_GEMINI_MODEL } from "../src/constants.js";
 import {
   coachChatTurn,
+  coachStreamDisplayText,
   createSseDeltaParser,
+  decodePartialJsonStringContent,
   resetThinkingConfigRejections,
   textDeltaFromSseData,
 } from "../src/gemini.js";
@@ -143,6 +145,50 @@ test("mid-stream failure keeps partial text without fallback", async () => {
     );
     assert.equal(calls.length, 1);
   });
+});
+
+function streamOkReply(obj) {
+  const text = JSON.stringify(obj);
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(sseLine({ candidates: [{ content: { parts: [{ text }] } }] })));
+      controller.close();
+    },
+  });
+  return { ok: true, status: 200, body: stream };
+}
+
+test("pre-first-chunk stream read failure falls back to flash-lite", async () => {
+  await withFetch((url) => {
+    if (isPrimary(url) && isStream(url)) {
+      const stream = new ReadableStream({
+        pull() {
+          return Promise.reject(new DOMException("signal timed out", "TimeoutError"));
+        },
+      });
+      return { ok: true, status: 200, body: stream };
+    }
+    if (url.includes(CHAT_GEMINI_FALLBACK_MODEL)) {
+      return streamOkReply({ reply: "after stalled read", actions: [] });
+    }
+    throw new Error(url);
+  }, async (calls) => {
+    const result = await coachChatTurn(FAKE, {}, [], "hello", AbortSignal.timeout(45000));
+    assert.equal(result.reply, "after stalled read");
+    assert.equal(calls.filter((c) => isPrimary(c.href)).length, 1);
+    assert.equal(calls.filter((c) => c.href.includes(CHAT_GEMINI_FALLBACK_MODEL)).length, 1);
+  });
+});
+
+test("coachStreamDisplayText keeps escaped backslash before n", () => {
+  const buffer = '{"reply":"use \\\\n not a newline';
+  assert.equal(coachStreamDisplayText(buffer), "use \\n not a newline");
+});
+
+test("decodePartialJsonStringContent drops an incomplete trailing unicode escape", () => {
+  assert.equal(decodePartialJsonStringContent("hi\\u00"), "hi");
+  assert.equal(decodePartialJsonStringContent("trail\\"), "trail");
 });
 
 test("bad API key does not retry or fall back on stream", async () => {

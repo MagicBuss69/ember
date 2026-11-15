@@ -273,6 +273,12 @@ export function createSseDeltaParser() {
   };
 }
 
+function isStreamBodyReadError(error) {
+  if (error instanceof TypeError) return true;
+  const name = String(error?.name || "");
+  return name === "AbortError" || name === "TimeoutError" || name === "NetworkError";
+}
+
 async function readStreamText(response, onChunk) {
   const body = response?.body;
   if (!body?.getReader) {
@@ -298,7 +304,11 @@ async function readStreamText(response, onChunk) {
       onChunk?.({ textSoFar, delta });
     });
   } catch (error) {
-    if (textSoFar) error.partialText = textSoFar;
+    if (textSoFar) {
+      error.partialText = textSoFar;
+    } else if (isStreamBodyReadError(error)) {
+      error.network = true;
+    }
     throw error;
   } finally {
     reader.releaseLock();
@@ -384,19 +394,69 @@ async function chatWithFallbackStream(apiKey, prompt, signal, onChunk) {
   }
 }
 
+function trimIncompleteJsonEscape(piece) {
+  return String(piece || "").replace(/\\(?:u[0-9a-fA-F]{0,3})?$/i, "");
+}
+
+export function decodePartialJsonStringContent(piece) {
+  const trimmed = trimIncompleteJsonEscape(piece);
+  try {
+    return JSON.parse(`"${trimmed}"`);
+  } catch {
+    let out = "";
+    for (let i = 0; i < trimmed.length; i += 1) {
+      const ch = trimmed[i];
+      if (ch !== "\\") {
+        out += ch;
+        continue;
+      }
+      const next = trimmed[i + 1];
+      if (next === undefined) break;
+      if (next === "n") {
+        out += "\n";
+        i += 1;
+        continue;
+      }
+      if (next === "r") {
+        out += "\r";
+        i += 1;
+        continue;
+      }
+      if (next === "t") {
+        out += "\t";
+        i += 1;
+        continue;
+      }
+      if (next === '"') {
+        out += '"';
+        i += 1;
+        continue;
+      }
+      if (next === "\\") {
+        out += "\\";
+        i += 1;
+        continue;
+      }
+      if (next === "u") {
+        const hex = trimmed.slice(i + 2, i + 6);
+        if (/^[0-9a-fA-F]{4}$/.test(hex)) {
+          out += String.fromCodePoint(parseInt(hex, 16));
+          i += 5;
+          continue;
+        }
+      }
+      out += next;
+      i += 1;
+    }
+    return out;
+  }
+}
+
 export function coachStreamDisplayText(buffer) {
   const raw = String(buffer || "");
   const match = raw.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)/);
   if (!match) return "";
-  const piece = match[1];
-  try {
-    return JSON.parse(`"${piece}"`);
-  } catch {
-    return piece
-      .replace(/\\n/g, "\n")
-      .replace(/\\"/g, '"')
-      .replace(/\\\\/g, "\\");
-  }
+  return decodePartialJsonStringContent(match[1]);
 }
 
 const COACH_INSTRUCTIONS = `You are Ember's in-app coach for a private self-improvement PWA (quests, templates, calendar events, settings).
