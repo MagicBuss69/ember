@@ -1,0 +1,66 @@
+{
+  "id": "/ember/",
+  "name": "Ember",
+  "short_name": "Ember",
+  "description": "Private daily quests, levels, and training. Stored only on this phone.",
+  "start_url": "/ember/",
+  "scope": "/ember/",
+  "display": "standalone",
+  "orientation": "any",
+  "display_override": ["standalone"],
+  "background_color": "#071018",
+  "theme_color": "#071018",
+  "lang": "en",
+  "dir": "ltr",
+  "prefer_related_applications": false,
+  "categories": ["health", "lifestyle", "fitness"],
+  "icons": [
+    {
+      "src": "/ember/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/ember/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/ember/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/ember/icons/badge-96.png",
+      "sizes": "96x96",
+      "type": "image/png",
+      "purpose": "monochrome"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/ember/screenshots/today.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Today's quests"
+    },
+    {
+      "src": "/ember/screenshots/train.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Workout log"
+    },
+    {
+      "src": "/ember/screenshots/rivals.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Race against last week"
+    }
+  ]
+}
