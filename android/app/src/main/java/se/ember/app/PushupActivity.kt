@@ -51,6 +51,7 @@ class PushupActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        instance = this
         setContentView(R.layout.activity_pushup)
         practice = intent.getBooleanExtra(EXTRA_PRACTICE, false)
         blockedPackage = intent.getStringExtra(EXTRA_PACKAGE) ?: ""
@@ -112,6 +113,7 @@ class PushupActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        if (instance == this) instance = null
         analysisExecutor.shutdown()
         super.onDestroy()
     }
@@ -310,6 +312,12 @@ class PushupActivity : AppCompatActivity() {
 
     private fun cancel() {
         finished = true
+        val manager = getSystemService(android.app.NotificationManager::class.java)
+        manager?.cancel(EmberGate.PUSHUP_NOTIF_ID)
+        if (practice || blockedPackage.isBlank()) {
+            finish()
+            return
+        }
         val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
         home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(home)
@@ -322,5 +330,15 @@ class PushupActivity : AppCompatActivity() {
         @Volatile var showing: Boolean = false
         @Volatile var resumed: Boolean = false
         @Volatile var lastLaunchMs: Long = 0
+        @Volatile private var instance: PushupActivity? = null
+
+        /** Launcher opens should land on Ember, not a leftover push-up screen. */
+        @JvmStatic
+        fun dismissForLauncher() {
+            val act = instance ?: return
+            if (act.isFinishing) return
+            act.finished = true
+            act.finish()
+        }
     }
 }

@@ -17,5 +17,21 @@ public class MainActivity extends BridgeActivity {
     protected void onNewIntent(Intent intent) {
         setIntent(intent);
         super.onNewIntent(intent);
+        noteLauncherOpen(intent);
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        noteLauncherOpen(getIntent());
+    }
+
+    private void noteLauncherOpen(Intent intent) {
+        if (intent == null) return;
+        if (!Intent.ACTION_MAIN.equals(intent.getAction())) return;
+        if (intent.getBooleanExtra("ember_open_challenge", false)) return;
+        if (intent.getBooleanExtra("ember_confirm_challenge", false)) return;
+        EmberGate.noteLauncherOpen(this);
+        PushupActivity.dismissForLauncher();
     }
 }

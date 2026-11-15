@@ -63,6 +63,7 @@ import {
 import {
   consumeChallengeIntent,
   drainNativeInbox,
+  hydrateChallengeFromNative,
   filterInstalledDefaults,
   listLaunchableApps,
   openAccessibilitySettings,
@@ -2175,8 +2176,9 @@ async function resumeFromNative() {
   const prepared = prepare(next, new Date());
   const merged = prepared.state;
   const changed = merged !== state || next !== state;
-  state = merged;
-  if (changed) {
+  state = await hydrateChallengeFromNative(merged, new Date());
+  const challengeReady = Boolean(state.challenges?.current?.label);
+  if (changed || challengeReady) {
     try {
       await saveState(state);
     } catch {
@@ -2197,7 +2199,7 @@ async function resumeFromNative() {
       await pushBlockerSnapshot(state, new Date()).catch(() => {});
     }
   }
-  if (intent.openChallenge || intent.confirmChallenge) {
+  if (intent.openChallenge || intent.confirmChallenge || challengeReady) {
     ui.tab = "today";
     setHash("today");
     ui.keepScroll = false;
@@ -2264,7 +2266,7 @@ async function boot() {
     }
   }
   const prepared = prepare(initial, new Date());
-  state = prepared.state;
+  state = await hydrateChallengeFromNative(prepared.state, new Date());
   ensureRivalHistory(state, prepared.today);
   try {
     await saveState(state);

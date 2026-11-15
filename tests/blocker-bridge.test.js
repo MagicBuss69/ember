@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildBlockerSnapshot, DEFAULT_BLOCKED_PACKAGES } from "../src/blockerBridge.js";
+import { buildBlockerSnapshot, DEFAULT_BLOCKED_PACKAGES, restoreChallengeFromSnapshot } from "../src/blockerBridge.js";
 import { openChallenge } from "../src/challenges.js";
 import { createInitialState, setTaskDone } from "../src/domain.js";
 import { challengeLiveHtml } from "../src/ui/screens.js";
@@ -48,4 +48,38 @@ test("an open hourly challenge shows the exercise, reps, countdown, and Done", (
   assert.match(html, />Done</);
   state.settings.quietNight = { on: true, start: "18:00", end: "23:00" };
   assert.equal(challengeLiveHtml(state, NOW), "");
+});
+
+test("a native snapshot puts the exercise back when the web view has none", () => {
+  const now = new Date("2026-11-13T20:00:00+01:00");
+  const state = createInitialState(now);
+  const deadline = new Date(now.getTime() + 8 * 60 * 1000).toISOString();
+  const restored = restoreChallengeFromSnapshot(state, {
+    challengeActive: true,
+    challengeLabel: "Squats",
+    challengeReps: 15,
+    challengeDeadline: deadline,
+    challengeId: "ch-1",
+    quiet: false,
+  }, now);
+  assert.equal(restored.challenges.current.label, "Squats");
+  assert.equal(restored.challenges.current.reps, 15);
+  const html = challengeLiveHtml(restored, now);
+  assert.match(html, /Squats/);
+  assert.match(html, />15</);
+  assert.match(html, /data-challenge-countdown/);
+  assert.match(html, />Done</);
+  assert.equal(restoreChallengeFromSnapshot(state, {
+    challengeActive: true,
+    challengeLabel: "Squats",
+    challengeReps: 15,
+    challengeDeadline: deadline,
+    quiet: true,
+  }, now).challenges.current, null);
+  assert.equal(restoreChallengeFromSnapshot(state, {
+    challengeActive: true,
+    challengeLabel: "Squats",
+    challengeReps: 15,
+    challengeDeadline: new Date(now.getTime() - 1000).toISOString(),
+  }, now).challenges.current, null);
 });

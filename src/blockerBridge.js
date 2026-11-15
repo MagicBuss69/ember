@@ -1,5 +1,5 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
-import { challengeSnapshot } from "./challenges.js";
+import { challengeSnapshot, isQuietHour } from "./challenges.js";
 import { dateKey } from "./time.js";
 
 export const DEFAULT_BLOCKED_PACKAGES = [
@@ -32,6 +32,54 @@ export function buildBlockerSnapshot(state, now = new Date()) {
     challengeId: snap.current?.id || "",
     today: dateKey(now),
   };
+}
+
+/**
+ * The native snapshot is what the alarm and notification were showing.
+ * If the web view opens before IndexedDB has that challenge, put it back
+ * so the exercise, reps, countdown, and Done button can render.
+ */
+export function restoreChallengeFromSnapshot(state, raw, now = new Date()) {
+  if (!state || typeof state !== "object") return state;
+  if (isQuietHour(now, state.settings)) return state;
+  let snap = raw;
+  if (typeof raw === "string") {
+    try {
+      snap = JSON.parse(raw);
+    } catch {
+      return state;
+    }
+  }
+  if (!snap || typeof snap !== "object" || !snap.challengeActive || snap.quiet) return state;
+  const deadlineMs = Date.parse(snap.challengeDeadline || "");
+  if (!(deadlineMs > now.getTime())) return state;
+  const current = state.challenges?.current;
+  if (current?.label && Date.parse(current.deadlineAt) > now.getTime()) return state;
+  const next = structuredClone(state);
+  next.challenges = next.challenges && typeof next.challenges === "object"
+    ? next.challenges
+    : { current: null, nextRollAt: null, difficultyStep: 0, processedInbox: [] };
+  next.challenges.current = {
+    id: String(snap.challengeId || current?.id || `snap-${deadlineMs}`),
+    typeId: String(snap.challengeTypeId || current?.typeId || "pushups"),
+    label: String(snap.challengeLabel || "Push-ups"),
+    reps: Math.max(1, Math.round(Number(snap.challengeReps) || 10)),
+    isSeconds: Boolean(snap.challengeIsSeconds),
+    difficulty: Math.max(1, Math.round(Number(snap.difficulty) || 1)),
+    openedAt: new Date(deadlineMs - 10 * 60 * 1000).toISOString(),
+    deadlineAt: new Date(deadlineMs).toISOString(),
+  };
+  return next;
+}
+
+export async function hydrateChallengeFromNative(state, now = new Date()) {
+  if (!Capacitor.isNativePlatform()) return state;
+  try {
+    const result = await EmberBlocker.readSnapshot();
+    return restoreChallengeFromSnapshot(state, result?.json, now);
+  } catch {
+    return state;
+  }
 }
 
 export async function drainNativeInbox(state) {

@@ -14,11 +14,10 @@ class EmberAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
         val type = event.eventType
-        if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
-            type != AccessibilityEvent.TYPE_WINDOWS_CHANGED
-        ) return
+        if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        if (!EmberGate.allowInterception()) return
         val pkg = event.packageName?.toString() ?: return
-        if (pkg == packageName) return
+        if (EmberGate.isIgnoredPackage(pkg, packageName)) return
         val snap = BlockerSnapshot.read(this)
         val until = BlockerSnapshot.unlockUntil(this, pkg)
         if (!snap.shouldBlock(pkg, until)) return
@@ -79,7 +78,7 @@ class EmberAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val CHANNEL = "ember_pushup_launch"
-        private const val NOTIF_ID = 7701
+        private const val NOTIF_ID = EmberGate.PUSHUP_NOTIF_ID
         @Volatile private var lastPackage: String = ""
     }
 }
