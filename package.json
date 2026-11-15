@@ -7,9 +7,13 @@
     "dev": "vite --host 127.0.0.1 --port 43123 --strictPort",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1 --port 43124 --strictPort",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "cap:sync": "npm run build && npx cap sync android"
   },
   "dependencies": {
+    "@capacitor/android": "^6.2.3",
+    "@capacitor/cli": "^6.2.3",
+    "@capacitor/core": "^6.2.3",
     "@fontsource/fraunces": "^5.2.5",
     "@fontsource/outfit": "^5.2.5"
   },

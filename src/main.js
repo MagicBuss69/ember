@@ -59,6 +59,7 @@ import {
   syncReminderSchedule,
   watchReminders,
 } from "./notify.js";
+import { pushBlockerSnapshot } from "./blockerBridge.js";
 import { processChallenges } from "./challenges.js";
 import { ensureRivalHistory, rivalPromptFacts } from "./rivals.js";
 import { exerciseGroups, isComplete, openTodayCount, totalXp } from "./stats.js";
@@ -502,6 +503,7 @@ async function commitWrapped(mutator, fx = {}) {
   }
   syncReminderSchedule(state).catch(() => {});
   if (!fx.skipDriveSchedule) driveScheduler.noteChange();
+  pushBlockerSnapshot(state, new Date()).catch(() => {});
 }
 
 const commitAction = commitWrapped;
@@ -2124,6 +2126,7 @@ async function boot() {
   bind();
   paint();
   startChallengeClock();
+  pushBlockerSnapshot(state, new Date()).catch(() => {});
   if (state.lastPenaltyReport) {
     ui.penaltyWindow = state.lastPenaltyReport;
     sfx("penalty");
