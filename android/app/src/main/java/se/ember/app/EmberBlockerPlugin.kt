@@ -139,6 +139,7 @@ class EmberBlockerPlugin : Plugin() {
         }
         val intent = Intent(host, PushupActivity::class.java)
             .putExtra(PushupActivity.EXTRA_PRACTICE, true)
+            .addFlags(EmberGate.gateFlags())
         host.startActivity(intent)
         call.resolve()
     }

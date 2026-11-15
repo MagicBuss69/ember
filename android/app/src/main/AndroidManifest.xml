@@ -26,6 +26,8 @@
             android:name=".PushupActivity"
             android:exported="false"
             android:launchMode="singleTask"
+            android:taskAffinity="se.ember.app.gate"
+            android:excludeFromRecents="true"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
@@ -34,8 +36,9 @@
         <activity
             android:name=".BlockActivity"
             android:exported="false"
-            android:excludeFromRecents="true"
             android:launchMode="singleTask"
+            android:taskAffinity="se.ember.app.gate"
+            android:excludeFromRecents="true"
             android:theme="@style/AppTheme.NoActionBar" />
 
         <service

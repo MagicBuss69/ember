@@ -40,6 +40,7 @@ class PushupActivity : AppCompatActivity() {
     private var target = 10
     private var blockedPackage = ""
     private var finished = false
+    private var finishReason = "unspecified"
     private var sawPose = false
     private var missedPoses = 0
     private var previewUse: Preview? = null
@@ -116,6 +117,31 @@ class PushupActivity : AppCompatActivity() {
         if (instance == this) instance = null
         analysisExecutor.shutdown()
         super.onDestroy()
+    }
+
+    override fun finish() {
+        EmberBlockLog.finish("PushupActivity", finishReason)
+        super.finish()
+    }
+
+    override fun finishAffinity() {
+        EmberBlockLog.finish("PushupActivity", "finishAffinity $finishReason")
+        super.finishAffinity()
+    }
+
+    override fun finishAndRemoveTask() {
+        EmberBlockLog.finish("PushupActivity", "finishAndRemoveTask $finishReason")
+        super.finishAndRemoveTask()
+    }
+
+    override fun moveTaskToBack(nonRoot: Boolean): Boolean {
+        EmberBlockLog.moveToBack("PushupActivity", "nonRoot=$nonRoot")
+        return super.moveTaskToBack(nonRoot)
+    }
+
+    private fun finishGate(reason: String) {
+        finishReason = reason
+        finish()
     }
 
     private fun startCamera() {
@@ -283,7 +309,7 @@ class PushupActivity : AppCompatActivity() {
             launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             startActivity(launch)
         }
-        finish()
+        finishGate("unlock granted, close the gate only")
     }
 
     private fun finishPractice() {
@@ -307,7 +333,7 @@ class PushupActivity : AppCompatActivity() {
         event.put("reps", counter.reps)
         event.put("max", raised)
         EmberInbox.appendEvent(this, event)
-        finish()
+        finishGate("practice done, close the gate only")
     }
 
     private fun cancel() {
@@ -315,13 +341,23 @@ class PushupActivity : AppCompatActivity() {
         val manager = getSystemService(android.app.NotificationManager::class.java)
         manager?.cancel(EmberGate.PUSHUP_NOTIF_ID)
         if (practice || blockedPackage.isBlank()) {
-            finish()
+            finishGate("practice cancel, close the gate only")
             return
         }
+        val live = EmberAccessibilityService.livePackage()
+        if (EmberGate.mainStarted || EmberGate.isSystemChrome(live)) {
+            android.util.Log.i(
+                EmberBlockLog.TAG,
+                "skip home; mainStarted=${EmberGate.mainStarted} live=$live",
+            )
+            finishGate("blocked cancel while Ember or system UI is in front, close the gate only")
+            return
+        }
+        EmberBlockLog.home("PushupActivity", "cancel blocked $blockedPackage")
         val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
         home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(home)
-        finish()
+        finishGate("blocked cancel, close the gate only")
     }
 
     companion object {
@@ -332,12 +368,17 @@ class PushupActivity : AppCompatActivity() {
         @Volatile var lastLaunchMs: Long = 0
         @Volatile private var instance: PushupActivity? = null
 
-        /** Launcher opens should land on Ember, not a leftover push-up screen. */
+        /** Ember came forward. Close the gate task only, never Ember's task. */
         @JvmStatic
-        fun dismissForLauncher() {
+        fun dismissForLauncher(emberTaskId: Int) {
             val act = instance ?: return
             if (act.isFinishing) return
+            if (act.isTaskRoot && act.taskId == emberTaskId) {
+                android.util.Log.i(EmberBlockLog.TAG, "skip finish; gate is the root of Ember's task")
+                return
+            }
             act.finished = true
+            act.finishReason = "Ember resumed, close the gate only"
             act.finish()
         }
     }

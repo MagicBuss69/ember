@@ -23,7 +23,38 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onResume() {
         super.onResume();
+        EmberGate.setMainStarted(true);
         noteLauncherOpen(getIntent());
+    }
+
+    @Override
+    public void onPause() {
+        EmberGate.setMainStarted(false);
+        super.onPause();
+    }
+
+    @Override
+    public void finish() {
+        EmberBlockLog.finish("MainActivity", "finish()");
+        super.finish();
+    }
+
+    @Override
+    public void finishAffinity() {
+        EmberBlockLog.finish("MainActivity", "finishAffinity()");
+        super.finishAffinity();
+    }
+
+    @Override
+    public void finishAndRemoveTask() {
+        EmberBlockLog.finish("MainActivity", "finishAndRemoveTask()");
+        super.finishAndRemoveTask();
+    }
+
+    @Override
+    public boolean moveTaskToBack(boolean nonRoot) {
+        EmberBlockLog.moveToBack("MainActivity", "nonRoot=" + nonRoot);
+        return super.moveTaskToBack(nonRoot);
     }
 
     private void noteLauncherOpen(Intent intent) {
@@ -32,6 +63,6 @@ public class MainActivity extends BridgeActivity {
         if (intent.getBooleanExtra("ember_open_challenge", false)) return;
         if (intent.getBooleanExtra("ember_confirm_challenge", false)) return;
         EmberGate.noteLauncherOpen(this);
-        PushupActivity.dismissForLauncher();
+        PushupActivity.dismissForLauncher(getTaskId());
     }
 }

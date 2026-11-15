@@ -63,7 +63,7 @@ class EmberAccessibilityService : AccessibilityService() {
 
     private fun evaluate(pkg: String) {
         if (EmberGate.isIgnoredPackage(pkg, packageName)) {
-            if (pkg == watchPackage) clearWatch()
+            clearWatch()
             return
         }
         val snap = BlockerSnapshot.read(this)
@@ -76,7 +76,18 @@ class EmberAccessibilityService : AccessibilityService() {
         }
         if (!EmberGate.allowInterception()) return
         if (!snap.shouldBlock(pkg, until, now)) return
+        if (!confirmedBlocked(pkg)) return
         launchGate(pkg, snap.blockMode == "quests", now)
+    }
+
+    /** A stale window event must not gate Ember, the launcher, or the keyguard. */
+    private fun confirmedBlocked(expected: String): Boolean {
+        if (EmberGate.isIgnoredPackage(expected, packageName)) return false
+        if (EmberGate.mainStarted) return false
+        val live = liveForeground()
+        if (live.isBlank()) return true
+        if (EmberGate.isIgnoredPackage(live, packageName)) return false
+        return live == expected
     }
 
     /** While a blocked app is open, fire at its unlock expiry even with no new window event. */
@@ -127,21 +138,25 @@ class EmberAccessibilityService : AccessibilityService() {
     }
 
     private fun kickIfForeground(packages: List<String>) {
-        var fg = foregroundPackage
-        if (fg.isBlank()) {
-            fg = try {
-                rootInActiveWindow?.packageName?.toString().orEmpty()
-            } catch (_: Exception) {
-                ""
-            }
-            if (fg.isNotBlank()) foregroundPackage = fg
-        }
-        if (fg.isBlank() || !packages.contains(fg)) return
-        if (EmberGate.isIgnoredPackage(fg, packageName)) return
+        if (EmberGate.mainStarted) return
+        val live = liveForeground()
+        if (live.isNotBlank()) foregroundPackage = live
+        val fg = foregroundPackage
+        if (fg.isBlank() || EmberGate.isIgnoredPackage(fg, packageName)) return
+        if (live.isNotBlank() && live != fg) return
+        if (!packages.contains(fg)) return
         val snap = BlockerSnapshot.read(this)
         val now = System.currentTimeMillis()
         if (!snap.shouldBlock(fg, 0L, now)) return
         launchGate(fg, snap.blockMode == "quests", now)
+    }
+
+    private fun liveForeground(): String {
+        return try {
+            rootInActiveWindow?.packageName?.toString().orEmpty()
+        } catch (_: Exception) {
+            ""
+        }
     }
 
     private fun launchGate(pkg: String, questsMode: Boolean, now: Long) {
@@ -152,13 +167,13 @@ class EmberAccessibilityService : AccessibilityService() {
     }
 
     private fun launchNow(pkg: String, questsMode: Boolean) {
+        if (EmberGate.mainStarted || !confirmedBlocked(pkg)) {
+            android.util.Log.i(EmberBlockLog.TAG, "skip gate for $pkg; Ember or system UI is in front")
+            return
+        }
         val cls = if (questsMode) BlockActivity::class.java else PushupActivity::class.java
         val launch = Intent(this, cls).apply {
-            addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP,
-            )
+            addFlags(EmberGate.gateFlags())
             putExtra(PushupActivity.EXTRA_PACKAGE, pkg)
         }
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or
@@ -184,12 +199,11 @@ class EmberAccessibilityService : AccessibilityService() {
         }
         try {
             startActivity(launch)
-        } catch (_: Exception) {
-            try {
-                performGlobalAction(GLOBAL_ACTION_HOME)
-            } catch (_: Exception) {
-                /* the full-screen intent is the other path */
-            }
+        } catch (error: Exception) {
+            android.util.Log.i(
+                EmberBlockLog.TAG,
+                "skip home; startActivity failed (${error.javaClass.simpleName}) for $pkg",
+            )
         }
     }
 
@@ -212,6 +226,12 @@ class EmberAccessibilityService : AccessibilityService() {
         fun kickIfWatching(packages: List<String>) {
             val svc = instance ?: return
             svc.handler.post { svc.kickIfForeground(packages) }
+        }
+
+        @JvmStatic
+        fun livePackage(): String {
+            val svc = instance ?: return ""
+            return svc.liveForeground().ifBlank { svc.foregroundPackage }
         }
     }
 }

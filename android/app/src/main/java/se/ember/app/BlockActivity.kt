@@ -19,7 +19,30 @@ class BlockActivity : AppCompatActivity() {
             val main = Intent(this, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             startActivity(main)
+            finishReason = "open Ember, close the gate only"
             finish()
         }
+    }
+
+    private var finishReason = "unspecified"
+
+    override fun finish() {
+        EmberBlockLog.finish("BlockActivity", finishReason)
+        super.finish()
+    }
+
+    override fun finishAffinity() {
+        EmberBlockLog.finish("BlockActivity", "finishAffinity $finishReason")
+        super.finishAffinity()
+    }
+
+    override fun finishAndRemoveTask() {
+        EmberBlockLog.finish("BlockActivity", "finishAndRemoveTask $finishReason")
+        super.finishAndRemoveTask()
+    }
+
+    override fun moveTaskToBack(nonRoot: Boolean): Boolean {
+        EmberBlockLog.moveToBack("BlockActivity", "nonRoot=$nonRoot")
+        return super.moveTaskToBack(nonRoot)
     }
 }
