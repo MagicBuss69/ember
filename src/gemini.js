@@ -196,7 +196,7 @@ function invalidArgument400(error) {
   return error?.status === 400 && !geminiAuthRefusal(error);
 }
 
-async function postChatJson(model, apiKey, prompt, signal, skipThinking) {
+function buildChatBody(model, prompt, skipThinking) {
   const body = {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: {
@@ -206,45 +206,145 @@ async function postChatJson(model, apiKey, prompt, signal, skipThinking) {
     },
   };
   if (shouldAttachThinking(model, skipThinking)) attachThinkingConfig(body.generationConfig, model);
+  return body;
+}
+
+function chatHttpError(response, payload, apiKey) {
+  const msg = payload?.error?.message || "";
+  const error = new Error(chatFriendly(response.status, msg, apiKey));
+  error.status = response.status;
+  error.apiStatus = payload?.error?.status || "";
+  error.detail = redactSensitive(msg, apiKey);
+  return error;
+}
+
+export function textDeltaFromSseData(data) {
+  const raw = String(data || "").trim();
+  if (!raw || raw === "[DONE]") return "";
+  let payload;
+  try {
+    payload = JSON.parse(raw);
+  } catch {
+    return "";
+  }
+  if (payload?.error) {
+    const error = new Error(payload.error.message || "Gemini stream error.");
+    error.status = payload.error.code || 502;
+    error.apiStatus = payload.error.status || "";
+    error.detail = redactSensitive(payload.error.message || "", "");
+    throw error;
+  }
+  const parts = payload?.candidates?.[0]?.content?.parts || [];
+  return parts.map((part) => part.text || "").join("");
+}
+
+/** Accumulates SSE chunks; exported for tests. */
+export function createSseDeltaParser() {
+  let lineBuffer = "";
+  let eventData = [];
+  const flushEvent = (emit) => {
+    if (!eventData.length) return;
+    const joined = eventData.join("\n");
+    eventData = [];
+    const delta = textDeltaFromSseData(joined);
+    if (delta) emit(delta);
+  };
+  return {
+    feed(chunk, emit) {
+      lineBuffer += String(chunk ?? "");
+      let newline;
+      while ((newline = lineBuffer.indexOf("\n")) >= 0) {
+        let line = lineBuffer.slice(0, newline);
+        lineBuffer = lineBuffer.slice(newline + 1);
+        if (line.endsWith("\r")) line = line.slice(0, -1);
+        if (line === "") {
+          flushEvent(emit);
+          continue;
+        }
+        if (line.startsWith("data:")) eventData.push(line.slice(5).trimStart());
+      }
+    },
+    finish(emit) {
+      const trailing = lineBuffer.trim();
+      if (trailing.startsWith("data:")) eventData.push(trailing.slice(5).trimStart());
+      lineBuffer = "";
+      flushEvent(emit);
+    },
+  };
+}
+
+async function readStreamText(response, onChunk) {
+  const body = response?.body;
+  if (!body?.getReader) {
+    const error = new Error("Couldn't reach Gemini.");
+    error.network = true;
+    throw error;
+  }
+  const parser = createSseDeltaParser();
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let textSoFar = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parser.feed(decoder.decode(value, { stream: true }), (delta) => {
+        textSoFar += delta;
+        onChunk?.({ textSoFar, delta });
+      });
+    }
+    parser.finish((delta) => {
+      textSoFar += delta;
+      onChunk?.({ textSoFar, delta });
+    });
+  } catch (error) {
+    if (textSoFar) error.partialText = textSoFar;
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+  if (!textSoFar.trim()) {
+    const error = new Error("Gemini returned an empty reply.");
+    error.status = 502;
+    throw error;
+  }
+  return textSoFar;
+}
+
+async function postChatStream(model, apiKey, prompt, signal, skipThinking, onChunk) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`;
   let response;
   try {
-    response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
-        body: JSON.stringify(body),
-        signal,
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
       },
-    );
+      body: JSON.stringify(buildChatBody(model, prompt, skipThinking)),
+      signal,
+    });
   } catch {
     const error = new Error("Couldn't reach Gemini.");
     error.network = true;
     throw error;
   }
-  const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const msg = payload?.error?.message || "";
-    const error = new Error(chatFriendly(response.status, msg, apiKey));
-    error.status = response.status;
-    error.apiStatus = payload?.error?.status || "";
-    error.detail = redactSensitive(msg, apiKey);
-    throw error;
+    const payload = await response.json().catch(() => ({}));
+    throw chatHttpError(response, payload, apiKey);
   }
-  return extractJson(readText(payload));
+  const text = await readStreamText(response, onChunk);
+  return extractJson(text);
 }
 
-async function chatWithModel(model, apiKey, prompt, signal) {
+async function chatStreamWithModel(model, apiKey, prompt, signal, onChunk) {
   const hadThinking = shouldAttachThinking(model, false);
   try {
-    return await postChatJson(model, apiKey, prompt, signal, false);
+    return await postChatStream(model, apiKey, prompt, signal, false, onChunk);
   } catch (error) {
     if (invalidArgument400(error) && hadThinking) {
       thinkingConfigRejected.add(model);
-      return postChatJson(model, apiKey, prompt, signal, true);
+      return postChatStream(model, apiKey, prompt, signal, true, onChunk);
     }
     throw error;
   }
@@ -263,13 +363,39 @@ function isTimeoutAbort(signal) {
   return signal?.reason?.name === "TimeoutError";
 }
 
-async function chatWithFallback(apiKey, prompt, signal) {
+async function chatWithFallbackStream(apiKey, prompt, signal, onChunk) {
+  let gotChunk = false;
+  let partialText = "";
+  const trackChunk = (info) => {
+    gotChunk = true;
+    partialText = info.textSoFar;
+    onChunk?.(info);
+  };
   try {
-    return await chatWithModel(CHAT_GEMINI_MODEL, apiKey, prompt, signal);
+    return await chatStreamWithModel(CHAT_GEMINI_MODEL, apiKey, prompt, signal, trackChunk);
   } catch (error) {
     if (signal?.aborted && !isTimeoutAbort(signal)) throw error;
+    if (gotChunk) {
+      error.partialText = partialText;
+      throw error;
+    }
     if (!chatShouldFallback(error)) throw error;
-    return chatWithModel(CHAT_GEMINI_FALLBACK_MODEL, apiKey, prompt, AbortSignal.timeout(30000));
+    return chatStreamWithModel(CHAT_GEMINI_FALLBACK_MODEL, apiKey, prompt, AbortSignal.timeout(30000), onChunk);
+  }
+}
+
+export function coachStreamDisplayText(buffer) {
+  const raw = String(buffer || "");
+  const match = raw.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)/);
+  if (!match) return "";
+  const piece = match[1];
+  try {
+    return JSON.parse(`"${piece}"`);
+  } catch {
+    return piece
+      .replace(/\\n/g, "\n")
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, "\\");
   }
 }
 
@@ -299,25 +425,25 @@ export function parseRivalPayload(value) {
   return { reply };
 }
 
-export async function coachChatTurn(apiKey, context, history, message, signal) {
+export async function coachChatTurn(apiKey, context, history, message, signal, onChunk) {
   const key = String(apiKey || "").trim();
   if (!key) throw new Error("Add a Gemini key in Setup first.");
   if (typeof navigator !== "undefined" && navigator.onLine === false) {
     throw new Error("You're offline. Connect once to chat.");
   }
   const prompt = `${COACH_INSTRUCTIONS}\n\nContext:\n${JSON.stringify(context)}\n\nRecent chat:\n${JSON.stringify((history || []).slice(-10))}\n\nUser message:\n${String(message || "").slice(0, 2000)}`;
-  const payload = await chatWithFallback(key, prompt, signal);
+  const payload = await chatWithFallbackStream(key, prompt, signal, onChunk);
   return parseCoachPayload(payload);
 }
 
-export async function rivalChatTurn(apiKey, facts, history, message, signal) {
+export async function rivalChatTurn(apiKey, facts, history, message, signal, onChunk) {
   const key = String(apiKey || "").trim();
   if (!key) throw new Error("Add a Gemini key in Setup first.");
   if (typeof navigator !== "undefined" && navigator.onLine === false) {
     throw new Error("You're offline. Connect once to chat.");
   }
   const prompt = `${RIVAL_INSTRUCTIONS}\n\nCharacter facts:\n${JSON.stringify(facts)}\n\nRecent chat:\n${JSON.stringify((history || []).slice(-10))}\n\nUser message:\n${String(message || "").slice(0, 2000)}`;
-  const payload = await chatWithFallback(key, prompt, signal);
+  const payload = await chatWithFallbackStream(key, prompt, signal, onChunk);
   return parseRivalPayload(payload);
 }
 

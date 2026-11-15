@@ -5,16 +5,24 @@ import { coachChatTurn, resetThinkingConfigRejections, rivalChatTurn } from "../
 
 const FAKE = "test-key-do-not-log";
 
-function http(status, body) {
-  return { ok: status >= 200 && status < 300, status, json: async () => body };
+function sseLine(obj) {
+  return `data: ${JSON.stringify(obj)}\n\n`;
 }
 
-function okReply(obj) {
-  return http(200, { candidates: [{ content: { parts: [{ text: JSON.stringify(obj) }] } }] });
+function streamOkReply(obj) {
+  const text = JSON.stringify(obj);
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(sseLine({ candidates: [{ content: { parts: [{ text }] } }] })));
+      controller.close();
+    },
+  });
+  return { ok: true, status: 200, body: stream };
 }
 
 function errBody(status, message, apiStatus = "") {
-  return http(status, { error: { code: status, message, status: apiStatus } });
+  return { ok: false, status, json: async () => ({ error: { code: status, message, status: apiStatus } }) };
 }
 
 async function withFetch(handler, run) {
@@ -54,7 +62,7 @@ test.beforeEach(() => {
 
 test("503 on the primary model returns the fallback reply", async () => {
   await withFetch((url) => (
-    isPrimary(url) ? errBody(503, "high demand", "UNAVAILABLE") : okReply({ reply: "fallback reply", actions: [] })
+    isPrimary(url) ? errBody(503, "high demand", "UNAVAILABLE") : streamOkReply({ reply: "fallback reply", actions: [] })
   ), async (calls) => {
     const coach = await coachChatTurn(FAKE, {}, [], "hello");
     assert.equal(coach.reply, "fallback reply");
@@ -70,7 +78,7 @@ test("503 on the primary model returns the fallback reply", async () => {
 test("a network error on the primary model falls back", async () => {
   await withFetch((url) => {
     if (isPrimary(url)) throw new TypeError("Failed to fetch");
-    return okReply({ reply: "after network", actions: [] });
+    return streamOkReply({ reply: "after network", actions: [] });
   }, async (calls) => {
     const result = await coachChatTurn(FAKE, {}, [], "hello");
     assert.equal(result.reply, "after network");
@@ -102,7 +110,7 @@ test("primary timeout then fallback succeeds with a fresh abort signal", async (
   await withFetch((url, _calls, init) => {
     if (isPrimary(url)) throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
     fallbackSignal = init?.signal;
-    return okReply({ reply: "after timeout fallback", actions: [] });
+    return streamOkReply({ reply: "after timeout fallback", actions: [] });
   }, async (calls) => {
     const result = await coachChatTurn(FAKE, {}, [], "hello", primaryTimeout);
     assert.equal(result.reply, "after timeout fallback");
@@ -116,7 +124,7 @@ test("the fallback request uses a signal that is not already aborted", async () 
   await withFetch((url, _calls, init) => (
     isPrimary(url)
       ? errBody(503, "high demand", "UNAVAILABLE")
-      : (fallbackSignal = init?.signal, okReply({ reply: "ok", actions: [] }))
+      : (fallbackSignal = init?.signal, streamOkReply({ reply: "ok", actions: [] }))
   ), async (calls) => {
     await coachChatTurn(FAKE, {}, [], "hello", AbortSignal.timeout(45000));
     assert.equal(calls.length, 2);
@@ -129,7 +137,7 @@ test("a deliberate user abort does not call the fallback model", async () => {
   user.abort(new DOMException("cancelled", "AbortError"));
   await withFetch((url) => {
     if (isPrimary(url)) throw new DOMException("cancelled", "AbortError");
-    return okReply({ reply: "should not run", actions: [] });
+    return streamOkReply({ reply: "should not run", actions: [] });
   }, async (calls) => {
     await assert.rejects(() => coachChatTurn(FAKE, {}, [], "hello", user.signal));
     assert.equal(calls.length, 1);
@@ -139,11 +147,11 @@ test("a deliberate user abort does not call the fallback model", async () => {
 
 test("gemini 3.x chat sends thinkingLevel not thinkingBudget", async () => {
   await withFetch((url, _calls, init) => {
-    if (!isPrimary(url)) return okReply({ reply: "ok", actions: [] });
+    if (!isPrimary(url)) return streamOkReply({ reply: "ok", actions: [] });
     assert.equal(bodyThinkingBudget(init), undefined);
     const level = parseBody(init).generationConfig?.thinkingConfig?.thinkingLevel;
     assert.equal(level, "low");
-    return okReply({ reply: "level ok", actions: [] });
+    return streamOkReply({ reply: "level ok", actions: [] });
   }, async (calls) => {
     const result = await coachChatTurn(FAKE, {}, [], "hello");
     assert.equal(result.reply, "level ok");
@@ -154,7 +162,7 @@ test("gemini 3.x chat sends thinkingLevel not thinkingBudget", async () => {
 test("400 INVALID_ARGUMENT retries once without thinkingConfig", async () => {
   let primaryAttempts = 0;
   await withFetch((url, _calls, init) => {
-    if (!isPrimary(url)) return okReply({ reply: "skip", actions: [] });
+    if (!isPrimary(url)) return streamOkReply({ reply: "skip", actions: [] });
     primaryAttempts += 1;
     if (primaryAttempts === 1) {
       assert.equal(bodyHasThinking(init), true);
@@ -162,7 +170,7 @@ test("400 INVALID_ARGUMENT retries once without thinkingConfig", async () => {
       return errBody(400, "Request contains an invalid argument", "INVALID_ARGUMENT");
     }
     assert.equal(bodyHasThinking(init), false);
-    return okReply({ reply: "after thinking retry", actions: [] });
+    return streamOkReply({ reply: "after thinking retry", actions: [] });
   }, async (calls) => {
     const result = await coachChatTurn(FAKE, {}, [], "hello");
     assert.equal(result.reply, "after thinking retry");
@@ -173,7 +181,7 @@ test("400 INVALID_ARGUMENT retries once without thinkingConfig", async () => {
 test("after one 400 rejection the same model skips thinkingConfig on the next chat", async () => {
   let phase = 0;
   await withFetch((url, _calls, init) => {
-    if (!isPrimary(url)) return okReply({ reply: "skip", actions: [] });
+    if (!isPrimary(url)) return streamOkReply({ reply: "skip", actions: [] });
     if (phase === 0) {
       phase = 1;
       assert.equal(bodyHasThinking(init), true);
@@ -182,7 +190,7 @@ test("after one 400 rejection the same model skips thinkingConfig on the next ch
     assert.equal(phase, 1);
     phase = 2;
     assert.equal(bodyHasThinking(init), false);
-    return okReply({ reply: "first turn ok", actions: [] });
+    return streamOkReply({ reply: "first turn ok", actions: [] });
   }, async () => {
     const first = await coachChatTurn(FAKE, {}, [], "hello");
     assert.equal(first.reply, "first turn ok");
@@ -190,10 +198,10 @@ test("after one 400 rejection the same model skips thinkingConfig on the next ch
   await withFetch((url, _calls, init) => {
     if (!isPrimary(url)) {
       assert.equal(bodyHasThinking(init), false);
-      return okReply({ reply: "second turn ok", actions: [] });
+      return streamOkReply({ reply: "second turn ok", actions: [] });
     }
     assert.equal(bodyHasThinking(init), false);
-    return okReply({ reply: "second turn ok", actions: [] });
+    return streamOkReply({ reply: "second turn ok", actions: [] });
   }, async (calls) => {
     const second = await coachChatTurn(FAKE, {}, [], "hello again");
     assert.equal(second.reply, "second turn ok");
@@ -205,7 +213,7 @@ test("two 400s on the primary model fall back to flash-lite", async () => {
   await withFetch((url) => (
     isPrimary(url)
       ? errBody(400, "Request contains an invalid argument", "INVALID_ARGUMENT")
-      : okReply({ reply: "lite reply", actions: [] })
+      : streamOkReply({ reply: "lite reply", actions: [] })
   ), async (calls) => {
     const result = await coachChatTurn(FAKE, {}, [], "hello");
     assert.equal(result.reply, "lite reply");

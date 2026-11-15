@@ -1,4 +1,5 @@
 import { esc } from "../format.js";
+import { coachStreamDisplayText } from "../gemini.js";
 import { icon } from "../icons.js";
 import { RIVALS } from "../rivals.js";
 
@@ -15,11 +16,16 @@ export function scrollChatLogToBottom(root, selector = CHAT_LOG_SELECTOR) {
   requestAnimationFrame(() => applyChatLogScrollEnd(el));
 }
 
+function bubbleText(msg) {
+  if (msg.streaming) return esc(coachStreamDisplayText(msg.text) || "…");
+  return esc(msg.text);
+}
+
 function messageRows(messages) {
   return (messages || [])
     .map(
-      (msg) => `<div class="chat-bubble ${msg.role === "user" ? "is-user" : "is-coach"}">
-        <p>${esc(msg.text)}</p>
+      (msg) => `<div class="chat-bubble ${msg.role === "user" ? "is-user" : "is-coach"}${msg.streaming ? " is-streaming" : ""}">
+        <p>${bubbleText(msg)}</p>
       </div>`,
     )
     .join("");
@@ -69,4 +75,12 @@ export function rivalChatSheetHtml(draft) {
       </label>
       <button type="submit" class="primary" ${busy || !(draft.draft || "").trim() ? "disabled" : ""}>${busy ? "Thinking…" : "Send"}</button>
     </form>`;
+}
+
+/** Update only the in-progress assistant bubble while streaming (no full paint). */
+export function updateStreamingChatBubble(displayText, root = document) {
+  const log = root.querySelector(CHAT_LOG_SELECTOR);
+  const bubble = log?.querySelector(".chat-bubble.is-streaming p");
+  if (bubble) bubble.textContent = displayText || "…";
+  applyChatLogScrollEnd(log);
 }

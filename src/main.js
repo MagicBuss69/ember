@@ -14,7 +14,8 @@ import { createAutoBackupController } from "./driveSchedule.js";
 import { applyCoachActions, planCoachTurn } from "./coachActions.js";
 import { buildCoachContext } from "./coachContext.js";
 import { loadCoachChat, loadRivalChat, saveCoachChat, saveRivalChat } from "./chatLog.js";
-import { checkGeminiKey, coachChatTurn, redactSensitive, rivalChatTurn } from "./gemini.js";
+import { checkGeminiKey, coachChatTurn, coachStreamDisplayText, redactSensitive, rivalChatTurn } from "./gemini.js";
+import { scrollChatLogToBottom, updateStreamingChatBubble } from "./ui/coachSheet.js";
 import { disableClosedReminders, enableClosedReminders } from "./pushClient.js";
 import { THEMES } from "./constants.js";
 import {
@@ -64,7 +65,6 @@ import { ensureAudio, playSound } from "./sounds.js";
 import { burstAt, confettiFan, dailyCompleteBanner, shardBurstToCrystal } from "./ui/fx.js";
 import { addDays, dateKey, formatPretty, weekStart } from "./time.js";
 import { render, shellError } from "./ui/render.js";
-import { scrollChatLogToBottom } from "./ui/coachSheet.js";
 import {
   installTodayCompactScroll,
   refreshTodayCompactBarMarkup,
@@ -850,22 +850,30 @@ const actions = {
     ui.draft.loading = true;
     ui.draft.error = "";
     const nowIso = new Date().toISOString();
-    ui.draft.messages = [...(ui.draft.messages || []), { role: "user", text: message, at: nowIso }];
+    ui.draft.messages = [
+      ...(ui.draft.messages || []),
+      { role: "user", text: message, at: nowIso },
+      { role: "assistant", text: "", streaming: true, at: nowIso },
+    ];
     ui.draft.draft = "";
     ui.keepScroll = true;
     paint();
+    const onCoachChunk = ({ textSoFar }) => {
+      updateStreamingChatBubble(coachStreamDisplayText(textSoFar));
+    };
     try {
       const context = buildCoachContext(state, new Date());
       const { reply, actions } = await coachChatTurn(
         key,
         context,
-        ui.draft.messages,
+        ui.draft.messages.filter((row) => !row.streaming),
         message,
         AbortSignal.timeout(45000),
+        onCoachChunk,
       );
       const plan = planCoachTurn(state, actions);
       ui.draft.messages = [
-        ...ui.draft.messages,
+        ...ui.draft.messages.filter((row) => !row.streaming),
         { role: "assistant", text: reply, at: new Date().toISOString() },
       ];
       ui.coachMessages = ui.draft.messages;
@@ -897,6 +905,17 @@ const actions = {
       paint();
     } catch (error) {
       ui.draft.loading = false;
+      const partial = error.partialText ? coachStreamDisplayText(error.partialText) : "";
+      if (partial) {
+        ui.draft.messages = [
+          ...ui.draft.messages.filter((row) => !row.streaming),
+          { role: "assistant", text: `${partial}\n(reply cut off)`, at: new Date().toISOString() },
+        ];
+        ui.coachMessages = ui.draft.messages;
+        await saveCoachChat(ui.coachMessages);
+      } else {
+        ui.draft.messages = ui.draft.messages.filter((row) => !row.streaming);
+      }
       ui.draft.error = redactSensitive(error.message || "Gemini didn't answer.", key);
       ui.keepScroll = true;
       paint();
@@ -917,22 +936,30 @@ const actions = {
     ui.draft.loading = true;
     ui.draft.error = "";
     const nowIso = new Date().toISOString();
-    ui.draft.messages = [...(ui.draft.messages || []), { role: "user", text: message, at: nowIso }];
+    ui.draft.messages = [
+      ...(ui.draft.messages || []),
+      { role: "user", text: message, at: nowIso },
+      { role: "assistant", text: "", streaming: true, at: nowIso },
+    ];
     ui.draft.draft = "";
     ui.keepScroll = true;
     paint();
+    const onRivalChunk = ({ textSoFar }) => {
+      updateStreamingChatBubble(coachStreamDisplayText(textSoFar));
+    };
     try {
       const facts = rivalPromptFacts(state, rivalId, new Date());
       if (!facts) throw new Error("That rival isn't here.");
       const { reply } = await rivalChatTurn(
         key,
         facts,
-        ui.draft.messages,
+        ui.draft.messages.filter((row) => !row.streaming),
         message,
         AbortSignal.timeout(45000),
+        onRivalChunk,
       );
       ui.draft.messages = [
-        ...ui.draft.messages,
+        ...ui.draft.messages.filter((row) => !row.streaming),
         { role: "assistant", text: reply, at: new Date().toISOString() },
       ];
       await saveRivalChat(rivalId, ui.draft.messages);
@@ -941,6 +968,16 @@ const actions = {
       paint();
     } catch (error) {
       ui.draft.loading = false;
+      const partial = error.partialText ? coachStreamDisplayText(error.partialText) : "";
+      if (partial) {
+        ui.draft.messages = [
+          ...ui.draft.messages.filter((row) => !row.streaming),
+          { role: "assistant", text: `${partial}\n(reply cut off)`, at: new Date().toISOString() },
+        ];
+        await saveRivalChat(rivalId, ui.draft.messages);
+      } else {
+        ui.draft.messages = ui.draft.messages.filter((row) => !row.streaming);
+      }
       ui.draft.error = redactSensitive(error.message || "Gemini didn't answer.", key);
       ui.keepScroll = true;
       paint();
