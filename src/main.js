@@ -61,6 +61,7 @@ import {
   watchReminders,
 } from "./notify.js";
 import {
+  consumeChallengeIntent,
   drainNativeInbox,
   filterInstalledDefaults,
   listLaunchableApps,
@@ -2172,6 +2173,26 @@ async function resumeFromNative() {
       /* ignore */
     }
     await pushBlockerSnapshot(state, new Date());
+  }
+  const intent = await consumeChallengeIntent();
+  if (intent.confirmChallenge && state.challenges?.current) {
+    const confirmed = confirmActiveChallenge(state, new Date());
+    if (confirmed.ok) {
+      state = confirmed.state;
+      try {
+        await saveState(state);
+      } catch {
+        /* ignore */
+      }
+      await pushBlockerSnapshot(state, new Date()).catch(() => {});
+    }
+  }
+  if (intent.openChallenge || intent.confirmChallenge) {
+    ui.tab = "today";
+    setHash("today");
+    ui.keepScroll = false;
+    paint();
+  } else if (changed) {
     ui.keepScroll = true;
     paint();
   }
@@ -2187,10 +2208,12 @@ function startChallengeClock() {
     const { state: next, events } = processChallenges(state, now);
     const afterId = next.challenges?.current?.id || "";
     const rollAfter = next.challenges?.nextRollAt || "";
-    const tick = document.getElementById("challenge-countdown");
-    if (tick && next.challenges?.current) {
+    if (next.challenges?.current) {
       const ms = Math.max(0, new Date(next.challenges.current.deadlineAt).getTime() - now.getTime());
-      tick.textContent = formatCountdown(ms);
+      const label = formatCountdown(ms);
+      document.querySelectorAll("[data-challenge-countdown]").forEach((tick) => {
+        tick.textContent = label;
+      });
     }
     const challengesChanged = events.length > 0 || beforeId !== afterId || rollBefore !== rollAfter;
     if (!challengesChanged) return;
@@ -2201,7 +2224,7 @@ function startChallengeClock() {
       /* ignore */
     }
     await pushBlockerSnapshot(state, now).catch(() => {});
-    if (ui.tab === "today") {
+    if (ui.tab === "today" || state.challenges?.current) {
       ui.keepScroll = true;
       paint();
     }

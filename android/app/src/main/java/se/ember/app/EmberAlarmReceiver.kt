@@ -34,7 +34,8 @@ class EmberAlarmReceiver : BroadcastReceiver() {
 
     private fun openEmber(context: Context) {
         val main = Intent(context, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            .putExtra("ember_open_challenge", true)
         context.startActivity(main)
     }
 }

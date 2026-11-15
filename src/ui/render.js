@@ -1,7 +1,7 @@
 import { esc, formatNum } from "../format.js";
 import { currencyIcon } from "../art.js";
 import { icon } from "../icons.js";
-import { confirmHtml, levelUpHtml, navHtml, penaltyHtml, sheetHtml, viewRivals, viewSettings, viewToday, viewTrain, viewWeek, viewYou } from "./screens.js";
+import { challengeLiveHtml, confirmHtml, levelUpHtml, navHtml, penaltyHtml, sheetHtml, viewRivals, viewSettings, viewToday, viewTrain, viewWeek, viewYou } from "./screens.js";
 
 const VIEWS = {
   today: viewToday,
@@ -27,6 +27,7 @@ export function render(state, ui, now) {
       </header>
       <main class="${ui.enter ? "enter" : ""}" id="main">${view(state, ui, now)}</main>
       ${navHtml(tab)}
+      ${challengeLiveHtml(state, now)}
       ${sheetHtml(state, ui, now)}
       ${confirmHtml(ui)}
       ${levelUpHtml(ui)}

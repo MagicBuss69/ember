@@ -55,21 +55,35 @@ function challengeCard(state, now) {
   if (!state.settings?.challengesOn) return "";
   const snap = challengeSnapshot(state, now);
   const current = snap.current;
-  if (!current) {
-  const next = snap.nextRollAt ? new Date(snap.nextRollAt) : null;
+  if (!current || snap.quiet) {
+    const next = snap.nextRollAt ? new Date(snap.nextRollAt) : null;
     const eta = next && next > now ? `Next roll around ${next.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Waiting for the next roll";
     return `<article class="challenge-card challenge-card-idle" data-challenge-card>
       <p class="challenge-kicker">Hourly challenge</p>
       <p class="muted">${esc(eta)}${snap.locked ? " · Finish every quest (not events) to unlock." : snap.quiet ? " · Quiet hours." : ""}</p>
     </article>`;
   }
-  const unit = current.isSeconds ? "sec" : "reps";
-  return `<article class="challenge-card challenge-card-active" data-challenge-card>
-    <p class="challenge-kicker">Challenge · ${esc(current.label)}</p>
-    <p class="challenge-big"><span class="num">${current.reps}</span> ${esc(unit)}</p>
-    <p class="challenge-timer">Time left <strong id="challenge-countdown">${formatCountdown(snap.msRemaining)}</strong></p>
-    <button type="button" class="primary" data-action="confirm-challenge">Done (honor system)</button>
-  </article>`;
+  return challengeBody(current, snap.msRemaining, "article");
+}
+
+/** Fixed challenge panel. Hidden during quiet hours and when nothing is open. */
+export function challengeLiveHtml(state, now = new Date()) {
+  const snap = challengeSnapshot(state, now);
+  if (!snap.current || snap.quiet) return "";
+  return `<aside class="challenge-live" role="status">${challengeBody(snap.current, snap.msRemaining, "div")}</aside>`;
+}
+
+function challengeBody(current, msRemaining, tag) {
+  const unit = current.isSeconds ? "seconds" : "reps";
+  const label = current.label || "Move";
+  const reps = Number(current.reps) || 0;
+  return `<${tag} class="challenge-card challenge-card-active" data-challenge-card>
+    <p class="challenge-kicker">Hourly challenge</p>
+    <h2 class="challenge-name">${esc(label)}</h2>
+    <p class="challenge-big"><span class="num">${reps}</span> ${esc(unit)}</p>
+    <p class="challenge-timer">Time left <strong data-challenge-countdown>${formatCountdown(msRemaining)}</strong></p>
+    <button type="button" class="primary" data-action="confirm-challenge">Done</button>
+  </${tag}>`;
 }
 
 function mustDoBanner(state, today) {

@@ -17,6 +17,9 @@ data class BlockerSnapshotData(
     val blockMode: String,
     val unlockMinutes: Int,
     val pushupMax: Int,
+    val challengeLabel: String,
+    val challengeReps: Int,
+    val challengeIsSeconds: Boolean,
 ) {
     fun shouldBlock(packageName: String, unlockedUntilMs: Long = 0L, now: Long = System.currentTimeMillis()): Boolean {
         if (!packages.contains(packageName)) return false
@@ -52,9 +55,12 @@ data class BlockerSnapshotData(
                     blockMode = if (mode == "quests") "quests" else "pushups",
                     unlockMinutes = json.optInt("unlockMinutes", 15).coerceIn(1, 180),
                     pushupMax = json.optInt("pushupMax", 10).coerceIn(1, 300),
+                    challengeLabel = json.optString("challengeLabel", ""),
+                    challengeReps = json.optInt("challengeReps", 0),
+                    challengeIsSeconds = json.optBoolean("challengeIsSeconds", false),
                 )
             } catch (_: Exception) {
-                BlockerSnapshotData(true, emptyList(), false, 0L, false, 1, 0L, "pushups", 15, 10)
+                BlockerSnapshotData(true, emptyList(), false, 0L, false, 1, 0L, "pushups", 15, 10, "", 0, false)
             }
         }
 

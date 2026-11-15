@@ -23,6 +23,9 @@ export function buildBlockerSnapshot(state, now = new Date()) {
       : DEFAULT_BLOCKED_PACKAGES),
     challengeActive: snap.challengeActive,
     challengeDeadline: snap.challengeDeadline || "",
+    challengeLabel: snap.current?.label || "",
+    challengeReps: Math.max(0, Math.round(Number(snap.current?.reps) || 0)),
+    challengeIsSeconds: Boolean(snap.current?.isSeconds),
     quiet: snap.quiet,
     difficulty: snap.difficulty,
     nextRollAt: snap.nextRollAt || "",
@@ -42,6 +45,19 @@ export async function drainNativeInbox(state) {
     return next;
   } catch {
     return state;
+  }
+}
+
+export async function consumeChallengeIntent() {
+  if (!Capacitor.isNativePlatform()) return { openChallenge: false, confirmChallenge: false };
+  try {
+    const result = await EmberBlocker.consumeOpenIntent();
+    return {
+      openChallenge: Boolean(result?.openChallenge),
+      confirmChallenge: Boolean(result?.confirmChallenge),
+    };
+  } catch {
+    return { openChallenge: false, confirmChallenge: false };
   }
 }
 

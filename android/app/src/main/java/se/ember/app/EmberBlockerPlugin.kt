@@ -70,6 +70,19 @@ class EmberBlockerPlugin : Plugin() {
 
     /** WebView download clicks are ignored, so the APK exports through the share sheet. */
     @PluginMethod
+    fun consumeOpenIntent(call: PluginCall) {
+        val intent = activity?.intent
+        val open = intent?.getBooleanExtra("ember_open_challenge", false) == true
+        val confirm = intent?.getBooleanExtra("ember_confirm_challenge", false) == true
+        intent?.removeExtra("ember_open_challenge")
+        intent?.removeExtra("ember_confirm_challenge")
+        val result = JSObject()
+        result.put("openChallenge", open)
+        result.put("confirmChallenge", confirm)
+        call.resolve(result)
+    }
+
+    @PluginMethod
     fun startPushupTest(call: PluginCall) {
         val host = activity
         if (host == null) {
