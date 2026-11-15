@@ -4,11 +4,14 @@ import { createInitialState, patchSettings, prepare } from "../src/domain.js";
 import { sanitizeImport } from "../src/backup.js";
 import {
   DEFAULT_UNLOCK_MINUTES,
+  PUSHUP_CALIBRATION_MS,
+  PUSHUP_REP_GAP_MS,
   bestElbowAngle,
   clampUnlockMinutes,
   createRepCounter,
   elbowAngle,
   raisePushupMax,
+  shoulderHeight,
   shouldGatePackage,
   stepRepCounter,
 } from "../src/pushups.js";
@@ -70,15 +73,57 @@ test("noisy angles still count one rep, and a shallow bend does not", () => {
   assert.equal(shallow.phase, "up");
 });
 
-test("wrists folding up toward the shoulders count when the elbow angle is missing", () => {
+test("shoulder height is in shoulder-widths, so stepping back from the camera does not change it", () => {
+  const near = shoulderHeight(
+    { x: 0, y: 0 },
+    { x: 2, y: 0 },
+    { x: 0, y: 3, likelihood: 0.9 },
+    { x: 2, y: 3, likelihood: 0.9 },
+  );
+  const far = shoulderHeight(
+    { x: 0, y: 0 },
+    { x: 4, y: 0 },
+    { x: 0, y: 6, likelihood: 0.8 },
+    { x: 4, y: 6, likelihood: 0.9 },
+  );
+  assert.ok(Math.abs(near - 1.5) < 0.001);
+  assert.ok(Math.abs(far - 1.5) < 0.001);
+});
+
+test("a plank calibration then a shoulder drop and return counts one rep", () => {
+  const plank = { t: 0, height: 1.6 };
   let counter = createRepCounter();
-  counter = pump(counter, { fold: 0.02 }, 3);
-  assert.equal(counter.phase, "up");
-  counter = pump(counter, { fold: 0.45 }, 3);
+  counter = stepRepCounter(counter, plank);
+  assert.equal(counter.calibrating, true);
+  assert.equal(counter.reps, 0);
+  counter = stepRepCounter(counter, { t: PUSHUP_CALIBRATION_MS, height: 1.6 });
+  counter = stepRepCounter(counter, { t: PUSHUP_CALIBRATION_MS, height: 1.6 });
+  counter = stepRepCounter(counter, { t: PUSHUP_CALIBRATION_MS, height: 1.6 });
+  assert.equal(counter.calibrating, false);
+  assert.ok(Math.abs(counter.baseline - 1.6) < 0.05);
+  counter = pump(counter, { t: 3000, height: 1.0 }, 4);
   assert.equal(counter.phase, "down");
-  counter = pump(counter, { fold: 0.04 }, 3);
+  assert.equal(counter.reps, 0);
+  counter = pump(counter, { t: 3600, height: 1.58 }, 4);
   assert.equal(counter.reps, 1);
   assert.equal(counter.phase, "up");
+});
+
+test("shoulder and elbow signals inside half a second count as one rep", () => {
+  let counter = createRepCounter();
+  counter = stepRepCounter(counter, { t: 0, height: 1.6 });
+  counter = stepRepCounter(counter, { t: PUSHUP_CALIBRATION_MS, height: 1.6 });
+  counter = stepRepCounter(counter, { t: PUSHUP_CALIBRATION_MS, height: 1.6 });
+  counter = stepRepCounter(counter, { t: PUSHUP_CALIBRATION_MS, height: 1.6 });
+  counter = pump(counter, { t: 2500, height: 1.0, angle: 100 }, 4);
+  counter = pump(counter, { t: 3000, height: 1.58, angle: 165 }, 4);
+  assert.equal(counter.reps, 1);
+  counter = pump(counter, { t: 3200, angle: 100 }, 4);
+  counter = pump(counter, { t: 3400, angle: 170 }, 4);
+  assert.equal(counter.reps, 1, "a second signal inside 0.5s must not add a rep");
+  counter = pump(counter, { t: 3000 + PUSHUP_REP_GAP_MS + 50, angle: 100 }, 4);
+  counter = pump(counter, { t: 4000, angle: 170 }, 4);
+  assert.equal(counter.reps, 2);
 });
 
 test("push-up gate blocks until an unlock, and quest mode is optional", () => {

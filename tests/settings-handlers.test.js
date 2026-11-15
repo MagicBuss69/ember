@@ -19,6 +19,20 @@ test("blocker picker form submits via data-form not click delegate", () => {
   assert.match(html, /data-blocked-search[^>]*placeholder="Search apps"/);
   assert.match(html, /class="sheet sheet-blocker"/);
   assert.ok(html.indexOf("Alpha") < html.indexOf("Zed"));
+  const picked = sheetHtml(state, {
+    sheet: { type: "blocker-picker" },
+    draft: {
+      apps: [
+        { id: "com.app", label: "Alpha" },
+        { id: "com.mango", label: "Mango" },
+        { id: "com.zed", label: "Zed" },
+      ],
+      selected: ["com.zed"],
+      blockedSearch: "a",
+    },
+  });
+  assert.ok(picked.indexOf("Zed") < picked.indexOf("Alpha"));
+  assert.ok(picked.indexOf("Alpha") < picked.indexOf("Mango"));
 });
 
 test("quiet time inputs use change path not data-action", () => {

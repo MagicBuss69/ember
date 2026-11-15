@@ -2,11 +2,13 @@
 export const PUSHUP_DOWN_ANGLE = 110;
 export const PUSHUP_UP_ANGLE = 150;
 export const PUSHUP_MIN_LIKELIHOOD = 0.3;
-/** Weight of the newest frame in the elbow/fold smoother. */
+/** Weight of the newest frame in the smoother. */
 export const PUSHUP_EMA = 0.7;
-/** Wrist pulled in toward the shoulder (0 straight, higher when folded). */
-export const PUSHUP_FOLD_DOWN = 0.28;
-export const PUSHUP_FOLD_UP = 0.12;
+/** Shoulder drop below the plank baseline, in shoulder-widths. */
+export const PUSHUP_DROP_DOWN = 0.35;
+export const PUSHUP_DROP_UP = 0.12;
+export const PUSHUP_CALIBRATION_MS = 2000;
+export const PUSHUP_REP_GAP_MS = 500;
 export const DEFAULT_UNLOCK_MINUTES = 15;
 export const DEFAULT_PUSHUP_MAX = 10;
 
@@ -38,13 +40,36 @@ function dist(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-/** 0 when the arm is straight, higher when the wrist rises toward the shoulder. */
-export function armFold(shoulder, elbow, wrist) {
-  if (!shoulder || !elbow || !wrist) return null;
-  const segments = dist(shoulder, elbow) + dist(elbow, wrist);
-  if (segments < 1e-3) return null;
-  const span = dist(shoulder, wrist);
-  return Math.max(0, Math.min(1, 1 - span / segments));
+/**
+ * Shoulder-line height above the wrists, in units of shoulder width.
+ * Larger means the shoulders are higher above the wrists. Camera distance cancels out.
+ */
+export function shoulderHeight(leftShoulder, rightShoulder, leftWrist, rightWrist) {
+  if (!leftShoulder || !rightShoulder) return null;
+  const width = dist(leftShoulder, rightShoulder);
+  if (!(width > 1e-3)) return null;
+  const midY = (leftShoulder.y + rightShoulder.y) / 2;
+  const wrists = [leftWrist, rightWrist].filter((wrist) => wrist && Number.isFinite(wrist.y));
+  if (!wrists.length) return null;
+  let wristY;
+  if (
+    wrists.length === 2 &&
+    Number.isFinite(leftWrist.likelihood) &&
+    Number.isFinite(rightWrist.likelihood)
+  ) {
+    if (Math.abs(leftWrist.likelihood - rightWrist.likelihood) <= 0.2) wristY = (leftWrist.y + rightWrist.y) / 2;
+    else wristY = leftWrist.likelihood >= rightWrist.likelihood ? leftWrist.y : rightWrist.y;
+  } else {
+    wristY = wrists[0].y;
+  }
+  return (wristY - midY) / width;
+}
+
+function median(values) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2) return sorted[mid];
+  return (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
 function finite(value) {
@@ -54,9 +79,8 @@ function finite(value) {
 function armReading(arm) {
   if (!arm || !(arm.likelihood >= PUSHUP_MIN_LIKELIHOOD)) return null;
   const angle = elbowAngle(arm.shoulder, arm.elbow, arm.wrist);
-  const fold = armFold(arm.shoulder, arm.elbow, arm.wrist);
-  if (angle == null && fold == null) return null;
-  return { angle, fold, likelihood: arm.likelihood };
+  if (angle == null) return null;
+  return { angle, likelihood: arm.likelihood };
 }
 
 function average(a, b) {
@@ -74,10 +98,10 @@ export function combineArms(arms) {
   const right = armReading(arms?.right);
   if (!left && !right) return { angle: null, fold: null, seen: false };
   if (left && right && Math.abs(left.likelihood - right.likelihood) <= 0.2) {
-    return { angle: average(left.angle, right.angle), fold: average(left.fold, right.fold), seen: true };
+    return { angle: average(left.angle, right.angle), seen: true };
   }
   const pick = !left ? right : !right ? left : left.likelihood >= right.likelihood ? left : right;
-  return { angle: pick.angle, fold: pick.fold, seen: true };
+  return { angle: pick.angle, seen: true };
 }
 
 export function bestElbowAngle(arms) {
@@ -85,7 +109,17 @@ export function bestElbowAngle(arms) {
 }
 
 export function createRepCounter() {
-  return { phase: "up", reps: 0, angle: null, fold: null };
+  return {
+    phase: "up",
+    reps: 0,
+    angle: null,
+    height: null,
+    baseline: null,
+    calibrating: true,
+    calibSamples: [],
+    calibStartedAt: null,
+    lastRepAt: null,
+  };
 }
 
 function ema(prev, sample) {
@@ -95,42 +129,67 @@ function ema(prev, sample) {
 }
 
 function sampleOf(input) {
-  if (input && (input.left || input.right)) return combineArms(input);
-  const angle = finite(input?.angle);
-  const fold = finite(input?.fold);
-  return { angle, fold, seen: angle != null || fold != null };
+  const fromArms = input && (input.left || input.right) ? combineArms(input) : null;
+  const angle = finite(input?.angle) ?? fromArms?.angle ?? null;
+  let height = finite(input?.height);
+  if (height == null && input?.leftShoulder && input?.rightShoulder) {
+    height = shoulderHeight(input.leftShoulder, input.rightShoulder, input.leftWrist, input.rightWrist);
+  }
+  return { angle, height };
 }
 
 /**
- * Down below ~110° (or wrists folded up toward the shoulders). Up above ~150°
- * (or arms extended again). A missing frame does not move the count.
+ * Main signal: shoulder-line height versus the wrists, compared with a plank baseline.
+ * Elbow angle can also complete the same rep. Two signals inside 0.5s count once.
  */
 export function stepRepCounter(counter, input) {
   const next = {
     phase: counter?.phase === "down" ? "down" : "up",
     reps: Math.max(0, Math.round(Number(counter?.reps) || 0)),
     angle: finite(counter?.angle),
-    fold: finite(counter?.fold),
+    height: finite(counter?.height),
+    baseline: finite(counter?.baseline),
+    calibrating: counter?.calibrating !== false,
+    calibSamples: Array.isArray(counter?.calibSamples) ? counter.calibSamples.slice() : [],
+    calibStartedAt: finite(counter?.calibStartedAt),
+    lastRepAt: finite(counter?.lastRepAt),
   };
+  const t = finite(input?.t) ?? (next.lastRepAt == null ? 0 : next.lastRepAt + PUSHUP_REP_GAP_MS);
   if (input?.manual) {
     next.reps += 1;
     next.phase = "up";
+    next.calibrating = false;
+    next.lastRepAt = t;
     return next;
   }
-  const sample = sampleOf(input);
-  if (sample.angle == null && sample.fold == null) return next;
+  const sample = sampleOf(input || {});
+  if (sample.angle == null && sample.height == null) return next;
   next.angle = ema(next.angle, sample.angle);
-  next.fold = ema(next.fold, sample.fold);
+  next.height = ema(next.height, sample.height);
+  if (sample.height != null && next.calibrating) {
+    if (next.calibStartedAt == null) next.calibStartedAt = t;
+    next.calibSamples.push(sample.height);
+    if (t - next.calibStartedAt >= PUSHUP_CALIBRATION_MS && next.calibSamples.length >= 4) {
+      next.baseline = median(next.calibSamples);
+      next.calibrating = false;
+    } else {
+      return next;
+    }
+  }
+  const travel = next.baseline != null && next.height != null ? next.baseline - next.height : null;
+  const shoulderDown = travel != null && travel >= PUSHUP_DROP_DOWN;
+  const shoulderUp = travel != null && travel <= PUSHUP_DROP_UP;
   const angleDown = next.angle != null && next.angle <= PUSHUP_DOWN_ANGLE;
   const angleUp = next.angle != null && next.angle >= PUSHUP_UP_ANGLE;
-  const foldDown = next.fold != null && next.fold >= PUSHUP_FOLD_DOWN;
-  const foldUp = next.fold != null && next.fold <= PUSHUP_FOLD_UP;
-  const down = angleDown || (next.angle == null && foldDown) || (next.angle != null && next.angle <= 130 && foldDown);
-  const up = angleUp || (next.angle == null && foldUp);
-  if (next.phase === "up" && down && !up) next.phase = "down";
+  const down = shoulderDown || angleDown;
+  const up = shoulderUp || angleUp;
+  if (next.phase === "up" && down) next.phase = "down";
   else if (next.phase === "down" && up && !down) {
     next.phase = "up";
-    next.reps += 1;
+    if (next.lastRepAt == null || t - next.lastRepAt >= PUSHUP_REP_GAP_MS) {
+      next.reps += 1;
+      next.lastRepAt = t;
+    }
   }
   return next;
 }

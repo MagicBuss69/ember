@@ -185,7 +185,7 @@ class PushupActivity : AppCompatActivity() {
         if (seen) {
             sawPose = true
             missedPoses = 0
-            PushupCounter.observe(counter, left, right)
+            PushupCounter.observe(counter, left, right, System.currentTimeMillis())
         } else {
             missedPoses += 1
         }
@@ -252,6 +252,15 @@ class PushupActivity : AppCompatActivity() {
 
     private fun render() {
         findViewById<TextView>(R.id.pushup_count).text = counter.reps.toString()
+        if (manual) return
+        val hint = findViewById<TextView>(R.id.pushup_hint)
+        if (counter.calibrating) {
+            val started = counter.calibStartedAt
+            val left = if (started == null) 2.0 else ((2000.0 - (System.currentTimeMillis() - started)) / 1000.0).coerceAtLeast(0.0)
+            hint.text = "Hold the top of a push-up. Calibrating ${kotlin.math.ceil(left).toInt()}s"
+        } else if (hint.text?.startsWith("Hold the top") == true) {
+            hint.text = "Down, then back up. The line across your shoulders is what counts."
+        }
     }
 
     private fun completeChallenge() {

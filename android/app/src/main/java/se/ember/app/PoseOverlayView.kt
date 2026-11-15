@@ -6,7 +6,7 @@ import android.graphics.Paint
 import android.util.AttributeSet
 import android.view.View
 
-/** Normalized shoulder-elbow-wrist sticks for both arms. NaN separates a missing joint. */
+/** Left arm, right arm, and the line between the shoulders. Six joints: LS LE LW RS RE RW. */
 class PoseOverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
     private var points = FloatArray(0)
     private val bone = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -29,17 +29,20 @@ class PoseOverlayView(context: Context, attrs: AttributeSet?) : View(context, at
         super.onDraw(canvas)
         val w = width.toFloat()
         val h = height.toFloat()
-        if (w <= 0f || h <= 0f || points.size < 4) return
-        var i = 0
-        while (i + 3 < points.size) {
-            val x1 = points[i]
-            val y1 = points[i + 1]
-            val x2 = points[i + 2]
-            val y2 = points[i + 3]
+        if (w <= 0f || h <= 0f || points.size < 12) return
+        val segments = intArrayOf(0, 1, 1, 2, 3, 4, 4, 5, 0, 3)
+        var s = 0
+        while (s + 1 < segments.size) {
+            val a = segments[s]
+            val b = segments[s + 1]
+            val x1 = points[a * 2]
+            val y1 = points[a * 2 + 1]
+            val x2 = points[b * 2]
+            val y2 = points[b * 2 + 1]
             if (!x1.isNaN() && !y1.isNaN() && !x2.isNaN() && !y2.isNaN()) {
                 canvas.drawLine(x1 * w, y1 * h, x2 * w, y2 * h, bone)
             }
-            i += 2
+            s += 2
         }
         var j = 0
         while (j + 1 < points.size) {

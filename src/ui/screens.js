@@ -682,7 +682,8 @@ export function viewSettings(state, ui) {
         <label class="field compact"><span>Unlock minutes</span><input type="number" min="1" max="180" inputmode="numeric" data-unlock-minutes value="${esc(state.settings.unlockMinutes || 15)}" /></label>
         <label class="field compact"><span>Max push-ups</span><input type="number" min="1" max="300" inputmode="numeric" data-pushup-max value="${esc(state.settings.pushupMax || 10)}" /></label>
       </div>
-      <button type="button" class="ghost" data-action="test-pushups">Test this max</button>`}
+      <button type="button" class="ghost" data-action="test-pushups">Test my max push-ups</button>
+      <p class="footnote">Hold the top of a push-up for two seconds, then do as many as you can. Beating this number raises your max.</p>`}
       <p class="lede">OnePlus and ColorOS block a challenge from opening on top of another app unless Ember may display over other apps and use full-screen intents.</p>
       <button type="button" class="ghost" data-action="open-overlay-settings">Allow display over other apps</button>
       <button type="button" class="ghost" data-action="open-fullscreen-settings">Allow full-screen challenges</button>
@@ -859,10 +860,14 @@ export function sheetHtml(state, ui, now = new Date()) {
 }
 
 function blockerPickerSheet(state, draft) {
-  const apps = [...(draft.apps || [])].sort((a, b) =>
-    String(a.label || a.id).localeCompare(String(b.label || b.id), undefined, { sensitivity: "base" }),
-  );
   const selected = new Set((draft.selected || state.settings.blockedPackages || []).map(String));
+  const byName = (a, b) =>
+    String(a.label || a.id).localeCompare(String(b.label || b.id), undefined, { sensitivity: "base" });
+  const apps = [...(draft.apps || [])].sort((a, b) => {
+    const group = (selected.has(a.id) ? 0 : 1) - (selected.has(b.id) ? 0 : 1);
+    if (group) return group;
+    return byName(a, b);
+  });
   const q = esc(draft.blockedSearch || "");
   const rows = apps
     .map((app) => {
