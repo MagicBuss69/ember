@@ -7,16 +7,15 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import androidx.core.app.NotificationCompat
 
 class EmberChallengeForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
-
-    override fun onTimeout(startId: Int) {
-        stopSelf(startId)
-    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         ensureChannel()
@@ -34,11 +33,26 @@ class EmberChallengeForegroundService : Service() {
             .setContentIntent(pi)
             .setOngoing(true)
             .build()
-        startForeground(NOTIF_ID, notification)
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(
+                NOTIF_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+            )
+        } else {
+            startForeground(NOTIF_ID, notification)
+        }
+        val remaining = BlockerSnapshot.read(this).challengeDeadlineMs - System.currentTimeMillis()
+        if (remaining > 0) {
+            Handler(Looper.getMainLooper()).postDelayed(
+                { stopSelf() },
+                remaining.coerceAtMost(10L * 60L * 1000L + 5000L),
+            )
+        }
         return START_STICKY
     }
 
-  companion object {
+    companion object {
         private const val CHANNEL = "ember_challenge"
         private const val NOTIF_ID = 4420
 

@@ -58,4 +58,4 @@ Install: `adb install -r app/build/outputs/apk/debug/app-debug.apk`
 
 - Accessibility blocking (HOME + full-screen block activity)
 - Exact alarms while the app is killed
-- Foreground service notification during an open challenge
+- Foreground service notification during an open challenge (uses `specialUse` FGS so the full 10-minute deadline is allowed)
