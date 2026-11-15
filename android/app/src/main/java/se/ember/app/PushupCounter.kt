@@ -2,7 +2,6 @@ package se.ember.app
 
 import kotlin.math.acos
 import kotlin.math.hypot
-import kotlin.math.toDegrees
 
 /**
  * Same thresholds as src/pushups.js. A rep is a down-then-up of the elbow.
@@ -22,7 +21,7 @@ object PushupCounter {
         val mag = hypot(ax.toDouble(), ay.toDouble()) * hypot(bx.toDouble(), by.toDouble())
         if (mag < 1e-3) return null
         val cos = ((ax * bx + ay * by) / mag).coerceIn(-1.0, 1.0)
-        return toDegrees(acos(cos))
+        return java.lang.Math.toDegrees(acos(cos))
     }
 
     fun step(state: State, angle: Double?) {
