@@ -36,6 +36,11 @@ function isPrimary(url) {
   return url.includes(CHAT_GEMINI_MODEL) && !url.includes(CHAT_GEMINI_FALLBACK_MODEL);
 }
 
+function bodyHasThinking(init) {
+  const body = JSON.parse(String(init?.body || "{}"));
+  return Boolean(body.generationConfig?.thinkingConfig);
+}
+
 test("503 on the primary model returns the fallback reply", async () => {
   await withFetch((url) => (
     isPrimary(url) ? errBody(503, "high demand", "UNAVAILABLE") : okReply({ reply: "fallback reply", actions: [] })
@@ -118,6 +123,51 @@ test("a deliberate user abort does not call the fallback model", async () => {
     await assert.rejects(() => coachChatTurn(FAKE, {}, [], "hello", user.signal));
     assert.equal(calls.length, 1);
     assert.ok(isPrimary(calls[0]));
+  });
+});
+
+test("400 INVALID_ARGUMENT retries once without thinkingConfig", async () => {
+  let primaryAttempts = 0;
+  await withFetch((url, _calls, init) => {
+    if (!isPrimary(url)) return okReply({ reply: "skip", actions: [] });
+    primaryAttempts += 1;
+    if (primaryAttempts === 1) {
+      assert.equal(bodyHasThinking(init), true);
+      return errBody(400, "Request contains an invalid argument", "INVALID_ARGUMENT");
+    }
+    assert.equal(bodyHasThinking(init), false);
+    return okReply({ reply: "after thinking retry", actions: [] });
+  }, async (calls) => {
+    const result = await coachChatTurn(FAKE, {}, [], "hello");
+    assert.equal(result.reply, "after thinking retry");
+    assert.equal(calls.filter(isPrimary).length, 2);
+  });
+});
+
+test("two 400s on the primary model fall back to flash-lite", async () => {
+  await withFetch((url) => (
+    isPrimary(url)
+      ? errBody(400, "Request contains an invalid argument", "INVALID_ARGUMENT")
+      : okReply({ reply: "lite reply", actions: [] })
+  ), async (calls) => {
+    const result = await coachChatTurn(FAKE, {}, [], "hello");
+    assert.equal(result.reply, "lite reply");
+    assert.equal(calls.filter(isPrimary).length, 2);
+    assert.equal(calls.filter((url) => url.includes(CHAT_GEMINI_FALLBACK_MODEL)).length, 1);
+  });
+});
+
+test("403 on the primary model does not fall back", async () => {
+  await withFetch(() => errBody(403, "API key not valid", "PERMISSION_DENIED"), async (calls) => {
+    await assert.rejects(
+      () => coachChatTurn(FAKE, {}, [], "hello"),
+      (error) => {
+        assert.match(error.message, /refused|key/i);
+        return true;
+      },
+    );
+    assert.equal(calls.length, 1);
+    assert.equal(calls.some((url) => url.includes(CHAT_GEMINI_FALLBACK_MODEL)), false);
   });
 });
 

@@ -162,6 +162,17 @@ function chatFriendly(status, message, apiKey) {
   return detail || "Gemini didn't answer.";
 }
 
+function geminiAuthRefusal(error) {
+  const status = error?.status;
+  if (status === 401 || status === 403) return true;
+  const text = `${error?.detail || ""} ${error?.message || ""}`;
+  return status === 400 && /api key/i.test(text);
+}
+
+function invalidArgument400(error) {
+  return error?.status === 400 && !geminiAuthRefusal(error);
+}
+
 async function postChatJson(model, apiKey, prompt, signal, withThinking) {
   const body = {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -207,7 +218,7 @@ async function chatWithModel(model, apiKey, prompt, signal) {
   try {
     return await postChatJson(model, apiKey, prompt, signal, true);
   } catch (error) {
-    if (error.status === 400 && /thinking/i.test(error.detail || "")) {
+    if (invalidArgument400(error)) {
       return postChatJson(model, apiKey, prompt, signal, false);
     }
     throw error;
@@ -215,7 +226,9 @@ async function chatWithModel(model, apiKey, prompt, signal) {
 }
 
 function chatShouldFallback(error) {
+  if (geminiAuthRefusal(error)) return false;
   const status = error?.status;
+  if (status === 400) return true;
   if (error?.network || status === 404 || status === 429 || status === 500 || status === 503) return true;
   const text = `${error?.apiStatus || ""} ${error?.detail || ""} ${error?.message || ""}`;
   return /unavailable|overloaded|high demand|resource_exhausted/i.test(text);
@@ -299,7 +312,7 @@ export async function generateWeek(apiKey, goals, signal) {
       try {
         return await callModel(model, key, goals, signal, true);
       } catch (error) {
-        if (error.status === 400 && /thinking/i.test(error.detail || "")) {
+        if (invalidArgument400(error)) {
           return await callModel(model, key, goals, signal, false);
         }
         throw error;

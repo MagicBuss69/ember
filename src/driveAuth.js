@@ -53,7 +53,7 @@ function loadGis() {
 /**
  * Obtain an OAuth token for `drive.appdata`.
  * Pass `prompt = ""` for silent renewal (no consent prompt if already authorized).
- * When `options.silent` is true, never falls back to interactive UI and times out cleanly.
+ * When `options.silent` is true, only a cached unexpired token is used; no GIS popup.
  */
 export async function requestDriveToken(prompt = "", options = {}) {
   const silent = Boolean(options.silent);
@@ -62,23 +62,18 @@ export async function requestDriveToken(prompt = "", options = {}) {
   }
   await hydrateCachedToken();
   if (token && Date.now() < expires && !prompt) return token;
+  if (silent) {
+    throw new Error("Drive token not cached.");
+  }
   if (typeof navigator !== "undefined" && navigator.onLine === false) {
     throw new Error("Offline.");
   }
   await loadGis();
   return new Promise((resolve, reject) => {
     let settled = false;
-    const timer = silent
-      ? setTimeout(() => {
-          if (settled) return;
-          settled = true;
-          reject(new Error("Silent Drive renewal timed out."));
-        }, 12_000)
-      : 0;
     const finish = (fn, arg) => {
       if (settled) return;
       settled = true;
-      if (timer) clearTimeout(timer);
       fn(arg);
     };
     const requestedPrompt = prompt ?? "";
