@@ -1,3 +1,4 @@
+import { Capacitor } from "@capacitor/core";
 import { SLOTS, SLOT_LABEL } from "./constants.js";
 import { kvGet, kvSet } from "./idb.js";
 import { syncPushSchedule } from "./pushClient.js";
@@ -191,6 +192,7 @@ export async function periodicStatus() {
 }
 
 export async function registerServiceWorker() {
+  if (Capacitor.isNativePlatform()) return null;
   if (!navigator.serviceWorker) return null;
   try {
     const registration = await navigator.serviceWorker.register(publicUrl("sw.js"), { scope: BASE });

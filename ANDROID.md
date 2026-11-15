@@ -4,14 +4,14 @@ Ember v3 ships as a Capacitor wrapper around the same Vite build used on the web
 
 ## Prerequisites
 
-- Node 20+ (`npm install`, `npm run build`)
+- Node 20+ (`npm install`, `npm run build:android`)
 - Android SDK (API 34+) and JDK 17
 - `ANDROID_HOME` set; `sdkmanager` / platform tools on `PATH`
 
 ## Debug APK
 
 ```bash
-npm run build
+npm run build:android
 npx cap sync android
 cd android
 ./gradlew assembleDebug

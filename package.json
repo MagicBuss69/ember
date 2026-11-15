@@ -6,9 +6,10 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 43123 --strictPort",
     "build": "vite build",
+    "build:android": "vite build --mode capacitor",
     "preview": "vite preview --host 127.0.0.1 --port 43124 --strictPort",
     "test": "node --test tests/*.test.js",
-    "cap:sync": "npm run build && npx cap sync android"
+    "cap:sync": "npm run build:android && npx cap sync android"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.3",

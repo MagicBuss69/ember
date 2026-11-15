@@ -1,8 +1,8 @@
 import { defineConfig } from "vite";
 
-export default defineConfig({
-  // GitHub Pages project site: https://magicbuss69.github.io/ember/
-  base: "/ember/",
+export default defineConfig(({ mode }) => ({
+  // GitHub Pages: /ember/ — Capacitor WebView: relative ./ (https://localhost/)
+  base: mode === "capacitor" ? "./" : "/ember/",
   appType: "spa",
   server: {
     host: "127.0.0.1",
@@ -19,4 +19,4 @@ export default defineConfig({
     assetsDir: "assets",
     sourcemap: false,
   },
-});
+}));
