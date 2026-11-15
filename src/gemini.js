@@ -221,12 +221,17 @@ function chatShouldFallback(error) {
   return /unavailable|overloaded|high demand|resource_exhausted/i.test(text);
 }
 
+function isTimeoutAbort(signal) {
+  return signal?.reason?.name === "TimeoutError";
+}
+
 async function chatWithFallback(apiKey, prompt, signal) {
   try {
     return await chatWithModel(CHAT_GEMINI_MODEL, apiKey, prompt, signal);
   } catch (error) {
+    if (signal?.aborted && !isTimeoutAbort(signal)) throw error;
     if (!chatShouldFallback(error)) throw error;
-    return chatWithModel(CHAT_GEMINI_FALLBACK_MODEL, apiKey, prompt, signal);
+    return chatWithModel(CHAT_GEMINI_FALLBACK_MODEL, apiKey, prompt, AbortSignal.timeout(30000));
   }
 }
 

@@ -20,10 +20,10 @@ function errBody(status, message, apiStatus = "") {
 async function withFetch(handler, run) {
   const prev = globalThis.fetch;
   const calls = [];
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, init) => {
     const href = String(url);
     calls.push(href);
-    return handler(href, calls);
+    return handler(href, calls, init);
   };
   try {
     return await run(calls);
@@ -74,6 +74,50 @@ test("both models failing surfaces an error without the key", async () => {
       },
     );
     assert.equal(calls.length, 2);
+  });
+});
+
+test("primary timeout then fallback succeeds with a fresh abort signal", async () => {
+  const primaryTimeout = AbortSignal.timeout(1);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(primaryTimeout.aborted, true);
+  assert.equal(primaryTimeout.reason?.name, "TimeoutError");
+  let fallbackSignal;
+  await withFetch((url, _calls, init) => {
+    if (isPrimary(url)) throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    fallbackSignal = init?.signal;
+    return okReply({ reply: "after timeout fallback", actions: [] });
+  }, async (calls) => {
+    const result = await coachChatTurn(FAKE, {}, [], "hello", primaryTimeout);
+    assert.equal(result.reply, "after timeout fallback");
+    assert.equal(calls.length, 2);
+    assert.equal(fallbackSignal?.aborted, false);
+  });
+});
+
+test("the fallback request uses a signal that is not already aborted", async () => {
+  let fallbackSignal;
+  await withFetch((url, _calls, init) => (
+    isPrimary(url)
+      ? errBody(503, "high demand", "UNAVAILABLE")
+      : (fallbackSignal = init?.signal, okReply({ reply: "ok", actions: [] }))
+  ), async (calls) => {
+    await coachChatTurn(FAKE, {}, [], "hello", AbortSignal.timeout(45000));
+    assert.equal(calls.length, 2);
+    assert.equal(fallbackSignal?.aborted, false);
+  });
+});
+
+test("a deliberate user abort does not call the fallback model", async () => {
+  const user = new AbortController();
+  user.abort(new DOMException("cancelled", "AbortError"));
+  await withFetch((url) => {
+    if (isPrimary(url)) throw new DOMException("cancelled", "AbortError");
+    return okReply({ reply: "should not run", actions: [] });
+  }, async (calls) => {
+    await assert.rejects(() => coachChatTurn(FAKE, {}, [], "hello", user.signal));
+    assert.equal(calls.length, 1);
+    assert.ok(isPrimary(calls[0]));
   });
 });
 
