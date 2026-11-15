@@ -241,8 +241,8 @@ export function applyChallengeInbox(state, now = new Date()) {
       if (!state.challenges.processedInbox.includes(key)) {
         resolveChallengeMiss(state, now, key);
       }
-    } else if (event.type === "unlock") {
-      /* native unlock hint — eligibility still quest-only full day */
+    } else if (event.type === "unlock" || event.type === "native-roll") {
+      /* native wake; prepare/processChallenges runs on resume */
     } else {
       rest.push(event);
     }

@@ -59,7 +59,13 @@ import {
   syncReminderSchedule,
   watchReminders,
 } from "./notify.js";
-import { openAccessibilitySettings, pushBlockerSnapshot } from "./blockerBridge.js";
+import {
+  drainNativeInbox,
+  filterInstalledDefaults,
+  listLaunchableApps,
+  openAccessibilitySettings,
+  pushBlockerSnapshot,
+} from "./blockerBridge.js";
 import { processChallenges } from "./challenges.js";
 import { ensureRivalHistory, rivalPromptFacts } from "./rivals.js";
 import { exerciseGroups, isComplete, openTodayCount, totalXp } from "./stats.js";
@@ -1225,6 +1231,32 @@ const actions = {
       { quiet: true },
     );
   },
+  async "pick-blocked-apps"() {
+    const apps = await listLaunchableApps();
+    if (!apps.length) {
+      toast("App list is only available in the Android APK.");
+      return;
+    }
+    let selected = state.settings.blockedPackages || [];
+    if (!selected.length) selected = await filterInstalledDefaults();
+    openSheet({ type: "blocker-picker" }, { apps, selected: [...selected] });
+  },
+  "toggle-blocked-app"(el) {
+    if (!ui.draft?.selected) return;
+    const id = el.dataset.blockedApp;
+    const set = new Set(ui.draft.selected);
+    if (el.checked) set.add(id);
+    else set.delete(id);
+    ui.draft.selected = [...set];
+    ui.keepScroll = true;
+    paint();
+  },
+  async "save-blocked-apps"(event) {
+    event?.preventDefault?.();
+    const packages = ui.draft?.selected || [];
+    await commitAction((current) => patchSettings(current, { blockedPackages: packages }), { quiet: true, close: true });
+    await pushBlockerSnapshot(state, new Date());
+  },
   async "open-accessibility"() {
     const ok = await openAccessibilitySettings();
     if (!ok) toast("Accessibility settings are only available in the Android app.");
@@ -1990,6 +2022,11 @@ function bind() {
     }
   });
   app.addEventListener("change", (event) => {
+    const blockedCheck = event.target.closest("[data-blocked-app]");
+    if (blockedCheck && ui.draft && ui.sheet?.type === "blocker-picker") {
+      actions["toggle-blocked-app"](blockedCheck);
+      return;
+    }
     const copyCheck = event.target.closest("[data-copy-target]");
     if (copyCheck && ui.draft && ui.sheet?.type === "copy-day") {
       const target = copyCheck.dataset.copyTarget;
@@ -2024,6 +2061,7 @@ function bind() {
   });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") flushSettingsInputs();
+    else resumeFromNative().catch(() => {});
   });
   window.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
@@ -2068,6 +2106,24 @@ function bind() {
     setHash("today");
     paint();
   });
+}
+
+async function resumeFromNative() {
+  let next = await drainNativeInbox(state);
+  const prepared = prepare(next, new Date());
+  const merged = prepared.state;
+  const changed = merged !== state || next !== state;
+  state = merged;
+  if (changed) {
+    try {
+      await saveState(state);
+    } catch {
+      /* ignore */
+    }
+    await pushBlockerSnapshot(state, new Date());
+    ui.keepScroll = true;
+    paint();
+  }
 }
 
 function startChallengeClock() {
@@ -2131,6 +2187,7 @@ async function boot() {
   paint();
   startChallengeClock();
   pushBlockerSnapshot(state, new Date()).catch(() => {});
+  resumeFromNative().catch(() => {});
   if (state.lastPenaltyReport) {
     ui.penaltyWindow = state.lastPenaltyReport;
     sfx("penalty");

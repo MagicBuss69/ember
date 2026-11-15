@@ -22,8 +22,23 @@ export function buildBlockerSnapshot(state, now = new Date()) {
     quiet: snap.quiet,
     difficulty: snap.difficulty,
     nextRollAt: snap.nextRollAt || "",
+    challengeId: snap.current?.id || "",
     today: dateKey(now),
   };
+}
+
+export async function drainNativeInbox(state) {
+  if (!Capacitor.isNativePlatform()) return state;
+  try {
+    const result = await EmberBlocker.drainInbox();
+    const events = Array.isArray(result?.events) ? result.events : [];
+    if (!events.length) return state;
+    const next = structuredClone(state);
+    next.challengeInbox = [...(next.challengeInbox || []), ...events];
+    return next;
+  } catch {
+    return state;
+  }
 }
 
 export async function openAccessibilitySettings() {

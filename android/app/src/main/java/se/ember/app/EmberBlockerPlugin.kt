@@ -25,6 +25,7 @@ class EmberBlockerPlugin : Plugin() {
             .edit()
             .putString(KEY_SNAPSHOT, json)
             .apply()
+        EmberAlarmScheduler.reschedule(context)
         call.resolve()
     }
 
@@ -45,6 +46,14 @@ class EmberBlockerPlugin : Plugin() {
         }
         val result = JSObject()
         result.put("apps", out)
+        call.resolve(result)
+    }
+
+    @PluginMethod
+    fun drainInbox(call: PluginCall) {
+        val events = EmberInbox.drain(context)
+        val result = JSObject()
+        result.put("events", events)
         call.resolve(result)
     }
 

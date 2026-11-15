@@ -659,6 +659,7 @@ export function viewSettings(state, ui) {
       <h2 class="section-title">Android blocker</h2>
       <p class="lede">Sideloaded APK: enable Accessibility for Ember. On Android 13+, open App info → ⋮ → <strong>Allow restricted settings</strong> before toggling the service.</p>
       <button type="button" class="ghost" data-action="open-accessibility">Open accessibility settings</button>
+      <button type="button" class="ghost" data-action="pick-blocked-apps">Choose blocked apps</button>
       <p class="footnote">Blocked packages: ${esc((state.settings.blockedPackages || []).join(", ") || "YouTube, TikTok (if installed)")}</p>
       <h2 class="section-title">Gemini</h2>
       <p class="lede">Optional. Ember works with no key. The key stays on this phone.</p>
@@ -821,7 +822,28 @@ export function sheetHtml(state, ui, now = new Date()) {
   if (sheet.type === "copy-day") return copyDaySheet(state, sheet, draft, now);
   if (sheet.type === "coach") return coachSheetHtml(draft);
   if (sheet.type === "rival-chat") return rivalChatSheetHtml(draft);
+  if (sheet.type === "blocker-picker") return blockerPickerSheet(state, draft);
   return "";
+}
+
+function blockerPickerSheet(state, draft) {
+  const apps = draft.apps || [];
+  const selected = new Set((draft.selected || state.settings.blockedPackages || []).map(String));
+  const rows = apps
+    .map((app) => {
+      const on = selected.has(app.id);
+      return `<label class="copy-day-row ${on ? "is-checked" : ""}">
+        <input type="checkbox" data-blocked-app="${esc(app.id)}" ${on ? "checked" : ""} />
+        <span class="copy-day-copy"><strong>${esc(app.label || app.id)}</strong><small>${esc(app.id)}</small></span>
+      </label>`;
+    })
+    .join("");
+  return `<form class="sheet-body" data-action="save-blocked-apps">
+    <div class="sheet-head"><h2>Blocked apps</h2><button type="button" class="icon-btn" data-action="close-sheet">${icon("close")}</button></div>
+    <p class="lede">Checked apps are blocked until every quest is done. Default picks YouTube and TikTok when installed.</p>
+  <div class="copy-day-list">${rows || "<p class=muted>No launchable apps found.</p>"}</div>
+    <button type="submit" class="primary">Save selection</button>
+  </form>`;
 }
 
 function copyDaySheet(state, sheet, draft, now) {
