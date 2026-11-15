@@ -41,6 +41,12 @@ export async function drainNativeInbox(state) {
   }
 }
 
+export async function shareNativeBackup(filename, text) {
+  if (!Capacitor.isNativePlatform()) return false;
+  await EmberBlocker.shareBackup({ filename, text });
+  return true;
+}
+
 export async function openAccessibilitySettings() {
   if (!Capacitor.isNativePlatform()) return false;
   try {

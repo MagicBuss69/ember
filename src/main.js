@@ -1993,14 +1993,18 @@ function bind() {
     scrape();
     actions[form.dataset.form]?.();
   });
+  const filterBlockedApps = (blockedSearch) => {
+    if (!blockedSearch || ui.sheet?.type !== "blocker-picker" || !ui.draft) return;
+    ui.draft.blockedSearch = blockedSearch.value;
+    const q = blockedSearch.value.trim().toLowerCase();
+    blockedSearch.closest(".sheet-blocker")?.querySelectorAll("[data-blocked-row]").forEach((row) => {
+      row.hidden = Boolean(q) && !(row.dataset.blockedSearch || "").includes(q);
+    });
+  };
   app.addEventListener("input", (event) => {
     const blockedSearch = event.target.closest("[data-blocked-search]");
     if (blockedSearch && ui.sheet?.type === "blocker-picker") {
-      ui.draft.blockedSearch = blockedSearch.value;
-      const q = blockedSearch.value.trim().toLowerCase();
-      blockedSearch.closest(".sheet-blocker")?.querySelectorAll("[data-blocked-row]").forEach((row) => {
-        row.hidden = Boolean(q) && !(row.dataset.blockedSearch || "").includes(q);
-      });
+      filterBlockedApps(blockedSearch);
       return;
     }
     const el = event.target.closest("#gemini-key, [data-bind]");
@@ -2035,6 +2039,10 @@ function bind() {
         if (send) send.disabled = Boolean(ui.draft.loading) || !String(el.value || "").trim();
       }
     }
+  });
+  app.addEventListener("search", (event) => {
+    const blockedSearch = event.target?.closest?.("[data-blocked-search]");
+    if (blockedSearch) filterBlockedApps(blockedSearch);
   });
   app.addEventListener("change", (event) => {
     const quietTime = event.target.closest("input[type=time][data-quiet-time]");
@@ -2084,6 +2092,10 @@ function bind() {
     else resumeFromNative().catch(() => {});
   });
   window.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && event.target?.closest?.("[data-blocked-search]")) {
+      event.preventDefault();
+      return;
+    }
     if (event.key !== "Escape") return;
     if (ui.confirm) actions["confirm-no"]();
     else if (ui.levelUp) actions["dismiss-levelup"]();

@@ -1,8 +1,10 @@
 package se.ember.app
 
+import android.content.ClipData
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.provider.Settings
+import androidx.core.content.FileProvider
 import com.getcapacitor.JSArray
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
@@ -63,5 +65,36 @@ class EmberBlockerPlugin : Plugin() {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         activity.startActivity(intent)
         call.resolve()
+    }
+
+    /** WebView download clicks are ignored, so the APK exports through the share sheet. */
+    @PluginMethod
+    fun shareBackup(call: PluginCall) {
+        val rawName = call.getString("filename") ?: "ember-backup.json"
+        val text = call.getString("text") ?: ""
+        val safe = rawName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "ember-backup.json" }
+        val host = activity
+        if (host == null) {
+            call.reject("Ember isn't in the foreground.")
+            return
+        }
+        try {
+            val file = java.io.File(context.cacheDir, safe)
+            file.writeText(text)
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "application/json"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_TITLE, safe)
+                clipData = ClipData.newRawUri(safe, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            val chooser = Intent.createChooser(send, "Export backup")
+            chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            host.startActivity(chooser)
+            call.resolve()
+        } catch (error: Exception) {
+            call.reject("Couldn't share the backup.")
+        }
     }
 }

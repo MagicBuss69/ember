@@ -5,12 +5,29 @@ import {
   formatRestoreSummary,
   parseBackupText,
   sanitizeImport,
+  saveBackupFile,
   summarizeBackup,
 } from "../src/backup.js";
 import { XP_TASK, XP_WORKOUT } from "../src/constants.js";
 import { createInitialState, prepare } from "../src/domain.js";
 import { levelFor } from "../src/economy.js";
 import { streakCount, totalXp } from "../src/stats.js";
+
+test("native export shares the file and does not pretend a download worked", async () => {
+  const shared = await saveBackupFile("{}", "ember-backup.json", {
+    isNative: true,
+    shareNative: async () => true,
+  });
+  assert.deepEqual(shared, { ok: true, method: "share" });
+  const failed = await saveBackupFile("{}", "ember-backup.json", {
+    isNative: true,
+    shareNative: async () => {
+      throw new Error("no activity");
+    },
+  });
+  assert.equal(failed.ok, false);
+  assert.equal(failed.cancelled, false);
+});
 
 test("backupFileShareable follows navigator.canShare for files", () => {
   const file = new File(["{}"], "ember-backup.json", { type: "application/json" });

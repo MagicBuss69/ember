@@ -1409,7 +1409,12 @@ body.dragging-quest, body.dragging-quest * { cursor: grabbing !important; user-s
   background: var(--line-strong);
   margin: 4px auto 8px;
 }
-.sheet.sheet-blocker { display: flex; flex-direction: column; overflow: hidden; }
+.sheet.sheet-blocker {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: min(92dvh, 760px);
+}
 .sheet.sheet-blocker .blocker-search { margin: 0 0 8px; width: 100%; }
 .sheet.sheet-blocker .blocker-app-list { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; margin-bottom: 8px; }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; }
@@ -2154,6 +2159,7 @@ body.today-compact-on main {
     border-radius: 16px 16px 0 0;
     padding: 6px 14px calc(10px + env(safe-area-inset-bottom));
   }
+  .sheet.sheet-blocker { height: min(360px, calc(100dvh - var(--nav-h) - 8px)); }
   .confirm, .levelup, .penalty-window {
     padding: 12px;
     align-items: safe center;

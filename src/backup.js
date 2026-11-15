@@ -1,3 +1,4 @@
+import { shareNativeBackup } from "./blockerBridge.js";
 import { SLOTS, THEMES, XP_TASK, XP_WORKOUT } from "./constants.js";
 import { createInitialState, validTime } from "./domain.js";
 import { levelFor } from "./economy.js";
@@ -428,7 +429,16 @@ export function backupFileShareable(file, nav = globalThis.navigator) {
   }
 }
 
-export async function saveBackupFile(jsonText, filename) {
+export async function saveBackupFile(jsonText, filename, deps = {}) {
+  const shareNative = deps.shareNative || shareNativeBackup;
+  const native = deps.isNative != null ? deps.isNative : undefined;
+  try {
+    const shared = native === false ? false : await shareNative(filename, jsonText);
+    if (shared) return { ok: true, method: "share" };
+  } catch (error) {
+    if (native !== false) return { ok: false, cancelled: error?.name === "AbortError" };
+  }
+  if (typeof document === "undefined") return { ok: false, cancelled: false };
   const blob = new Blob([jsonText], { type: "application/json" });
   const file = new File([blob], filename, { type: "application/json" });
   if (backupFileShareable(file)) {
