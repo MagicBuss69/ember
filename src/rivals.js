@@ -1,4 +1,5 @@
-import { levelFor } from "./economy.js";
+import { XP_WORKOUT } from "./constants.js";
+import { levelFor, questXpForLevel } from "./economy.js";
 import { ago } from "./format.js";
 import { bestWeek, sameDayComparison, streakCount, totalXp, weekPace, xpOnDate } from "./stats.js";
 import { addDays, dateKey, formatWeekSpan, minuteOfDay, weekdayLong, weekStart, zonedTimeToUtc } from "./time.js";
@@ -74,45 +75,89 @@ export function unit(value) {
   return (hashString(value) % 100000) / 100000;
 }
 
-function dayBase(level) {
-  return 28 + level * 6;
+export function tasksForRivalLevel(level) {
+  const l = Math.max(1, Math.min(10, Number(level) || 1));
+  if (l <= 3) return 1;
+  if (l <= 6) return 2;
+  if (l <= 9) return 3;
+  return 4;
 }
 
-export function simRivalDay(rival, date, level) {
+export function simRivalDay(rival, date, rivalLevel) {
   const active = unit(`${rival.id}:${date}:on`) < rival.activity;
   const minute = 7 * 60 + Math.floor(unit(`${rival.id}:${date}:time`) * 14 * 60);
   if (!active) {
-    return { xp: 0, rest: true, workout: false, quest: null, minute };
+    return { xp: 0, rest: true, workout: false, quest: null, minute, tasks: 0 };
   }
-  const swing = 0.55 + unit(`${rival.id}:${date}:swing`) * rival.swing;
-  let xp = Math.round(dayBase(level) * rival.mult * swing);
+  const level = Math.max(1, Math.min(10, Number(rivalLevel) || 1));
+  const tasks = tasksForRivalLevel(level);
+  const perQuest = questXpForLevel(level);
+  const swing = 0.92 + unit(`${rival.id}:${date}:swing`) * 0.16 * rival.swing;
+  let xp = Math.round(tasks * perQuest * rival.mult * swing);
   const workout = unit(`${rival.id}:${date}:wo`) < rival.workoutRate;
-  if (workout) xp += Math.round(16 + unit(`${rival.id}:${date}:wox`) * 24);
+  if (workout) xp += XP_WORKOUT;
   const quest = rival.quests[hashString(`${rival.id}:${date}:q`) % rival.quests.length];
-  return { xp, rest: false, workout, quest, minute };
+  return { xp, rest: false, workout, quest, minute, tasks };
 }
 
-function levelAtStart(state, date) {
-  const xp = (state.xpEvents || [])
-    .filter((event) => event.date < date)
-    .reduce((sum, event) => sum + (Number(event.amount) || 0), 0);
-  return levelFor(xp);
+export function ensureRivalXp(state) {
+  if (!state.rivalXp || typeof state.rivalXp !== "object") state.rivalXp = {};
+  for (const rival of RIVALS) {
+    if (state.rivalXp[rival.id] == null) state.rivalXp[rival.id] = 0;
+  }
+  return state;
+}
+
+export function rivalDayXpSum(state, id, beforeDate = null) {
+  let sum = 0;
+  for (const [date, day] of Object.entries(state.rivalDays || {})) {
+    if (beforeDate && date >= beforeDate) continue;
+    const entry = day?.byId?.[id];
+    if (entry && !entry.rest) sum += Number(entry.xp) || 0;
+  }
+  return sum;
+}
+
+export function rivalTotalXp(state, id) {
+  ensureRivalXp(state);
+  return (Number(state.rivalXp[id]) || 0) + rivalDayXpSum(state, id);
+}
+
+export function rivalXpBeforeDate(state, id, date) {
+  ensureRivalXp(state);
+  return (Number(state.rivalXp[id]) || 0) + rivalDayXpSum(state, id, date);
+}
+
+function pruneRivalDays(state, today) {
+  const cutoff = addDays(today, -100);
+  ensureRivalXp(state);
+  for (const key of Object.keys(state.rivalDays || {})) {
+    if (key >= cutoff) continue;
+    const day = state.rivalDays[key];
+    for (const rival of RIVALS) {
+      const entry = day?.byId?.[rival.id];
+      if (entry && !entry.rest) {
+        state.rivalXp[rival.id] = (Number(state.rivalXp[rival.id]) || 0) + (Number(entry.xp) || 0);
+      }
+    }
+    delete state.rivalDays[key];
+  }
 }
 
 export function ensureRivalHistory(state, today) {
   if (!state.rivalDays) state.rivalDays = {};
+  ensureRivalXp(state);
   for (let i = 90; i >= 0; i -= 1) {
     const date = addDays(today, -i);
     if (state.rivalDays[date]) continue;
-    const level = levelAtStart(state, date);
     const byId = {};
-    for (const rival of RIVALS) byId[rival.id] = simRivalDay(rival, date, level);
-    state.rivalDays[date] = { level, byId };
+    for (const rival of RIVALS) {
+      const level = levelFor(rivalXpBeforeDate(state, rival.id, date));
+      byId[rival.id] = simRivalDay(rival, date, level);
+    }
+    state.rivalDays[date] = { byId };
   }
-  const cutoff = addDays(today, -100);
-  for (const key of Object.keys(state.rivalDays)) {
-    if (key < cutoff) delete state.rivalDays[key];
-  }
+  pruneRivalDays(state, today);
   return state;
 }
 
@@ -257,8 +302,7 @@ export function buildBoard(state, now = new Date()) {
     isThisWeek: best.isThisWeek,
   });
   const partners = RIVALS.map((rival) => {
-    const wobble = rival.id === "maja" && unit(`${weekStart(today)}:maja`) < 0.5 ? 1 : 0;
-    const level = Math.min(10, Math.max(1, userLevel + rival.offset + wobble));
+    const level = levelFor(rivalTotalXp(state, rival.id));
     return {
       id: rival.id,
       name: rival.name,

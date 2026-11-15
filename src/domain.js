@@ -132,6 +132,7 @@ export function createInitialState(now = new Date()) {
     xpEvents: [],
     longest: 0,
     rivalDays: {},
+    rivalXp: {},
   };
 }
 

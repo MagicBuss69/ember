@@ -2,6 +2,7 @@ import { SLOTS } from "./constants.js";
 import { LEVEL_START, legacyLevelFor, levelFor } from "./economy.js";
 import { uid } from "./format.js";
 import { FREEZE_REFUND_CRYSTALS, PENALTY_TAG, firstUseDate, penaltyFloorDate } from "./penalty.js";
+import { ensureRivalXp, RIVALS } from "./rivals.js";
 import { totalXp } from "./stats.js";
 import { dateKey } from "./time.js";
 
@@ -129,6 +130,14 @@ export function migrateStateV2(state, now = new Date()) {
 
   if (!next.grants?.penaltyPhantomV1) {
     migratePhantomPenalties(next, now);
+  }
+
+  ensureRivalXp(next);
+  if (!next.grants?.rivalXpV1) {
+    for (const rival of RIVALS) {
+      if (next.rivalXp[rival.id] == null) next.rivalXp[rival.id] = 0;
+    }
+    next.grants = { ...(next.grants || {}), rivalXpV1: true };
   }
 
   return next;

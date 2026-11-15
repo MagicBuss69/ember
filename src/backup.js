@@ -250,6 +250,15 @@ export function sanitizeImport(raw, current = null) {
       state.rivalDays[key] = value;
     }
   }
+  state.rivalXp = {};
+  if (raw.rivalXp && typeof raw.rivalXp === "object") {
+    for (const [id, amount] of Object.entries(raw.rivalXp)) {
+      const key = clip(id, 24);
+      if (!key) continue;
+      const val = Math.max(0, Math.round(Number(amount) || 0));
+      state.rivalXp[key] = val;
+    }
+  }
   return migrateStateV2(state, new Date());
 }
 

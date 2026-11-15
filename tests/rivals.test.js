@@ -2,7 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { describeSameDay } from "../src/copy.js";
 import { createInitialState } from "../src/domain.js";
-import { activityLine, buildBoard, ensureRivalHistory, unit } from "../src/rivals.js";
+import { XP_WORKOUT } from "../src/constants.js";
+import { levelFor, questXpForLevel } from "../src/economy.js";
+import {
+  activityLine,
+  buildBoard,
+  ensureRivalHistory,
+  rivalTotalXp,
+  simRivalDay,
+  tasksForRivalLevel,
+  unit,
+} from "../src/rivals.js";
 import { addDays } from "../src/time.js";
 
 const NOW = new Date("2026-11-13T20:00:00Z");
@@ -50,6 +60,65 @@ test("activity lines sound like a person, including a fresh workout", () => {
     "Leo just finished a workout",
   );
   assert.match(activityLine("Maja", { workout: false, quest: "Focus block" }, 400), /Maja cleared/);
+});
+
+test("rival level comes from own xp ledger, not user level", () => {
+  const state = createInitialState(NOW);
+  state.rivalXp = { leo: 2000 };
+  ensureRivalHistory(state, "2026-11-13");
+  const board = buildBoard(state, NOW);
+  const leo = board.board.find((row) => row.id === "leo");
+  assert.equal(leo.level, levelFor(rivalTotalXp(state, "leo")));
+  assert.notEqual(leo.level, board.board.find((row) => row.you).level);
+});
+
+test("tasks per active day scale with rival level", () => {
+  assert.equal(tasksForRivalLevel(1), 1);
+  assert.equal(tasksForRivalLevel(3), 1);
+  assert.equal(tasksForRivalLevel(4), 2);
+  assert.equal(tasksForRivalLevel(6), 2);
+  assert.equal(tasksForRivalLevel(7), 3);
+  assert.equal(tasksForRivalLevel(10), 4);
+  const rival = { id: "leo", activity: 1, workoutRate: 0, mult: 1, swing: 1, quests: ["A"] };
+  const l5 = simRivalDay(rival, "2026-01-01", 5);
+  assert.equal(l5.tasks, 2);
+  assert.ok(l5.xp >= 2 * questXpForLevel(5));
+});
+
+test("workout on rival day pays fixed workout xp", () => {
+  let found = false;
+  for (let i = 0; i < 40; i += 1) {
+    const date = `2026-03-${String((i % 28) + 1).padStart(2, "0")}`;
+    const entry = simRivalDay(
+      { id: "noah", activity: 1, workoutRate: 1, mult: 1, swing: 0.5, quests: ["Run"] },
+      date,
+      3,
+    );
+    if (entry.workout) {
+      found = true;
+      assert.ok(entry.xp >= XP_WORKOUT);
+      const without = simRivalDay(
+        { id: "noah", activity: 1, workoutRate: 0, mult: 1, swing: 0.5, quests: ["Run"] },
+        date,
+        3,
+      );
+      assert.equal(entry.xp, without.xp + XP_WORKOUT);
+      break;
+    }
+  }
+  assert.ok(found);
+});
+
+test("pruning rivalDays rolls xp into rivalXp", () => {
+  const state = createInitialState(NOW);
+  ensureRivalHistory(state, "2026-11-13");
+  const totalBefore = rivalTotalXp(state, "leo");
+  state.rivalDays["2026-01-01"] = {
+    byId: { leo: { xp: 77, rest: false, workout: false, quest: "x", minute: 480 } },
+  };
+  const extra = 77;
+  ensureRivalHistory(state, "2026-11-13");
+  assert.equal(rivalTotalXp(state, "leo"), totalBefore + extra);
 });
 
 test("a backfilled history does not invent XP for last Friday's you", () => {
