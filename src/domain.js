@@ -13,6 +13,12 @@ import {
 import { levelFor, questXpForLevel } from "./economy.js";
 import { currencyBlocked } from "./penalty.js";
 import { uid } from "./format.js";
+import {
+  defaultChallengeSettings,
+  foldChallengesIntoPrepare,
+  normalizeQuietNight,
+  normalizeQuietSchool,
+} from "./challenges.js";
 import { migrateStateV2 } from "./migrate.js";
 import { clearPenaltyReport, processPenalties } from "./penalty.js";
 import { isComplete, isFullDay, streakCount, totalXp } from "./stats.js";
@@ -110,6 +116,7 @@ export function createInitialState(now = new Date()) {
       driveLastBackupAt: "",
       workerToken: "",
       pushOn: false,
+      ...defaultChallengeSettings(),
     },
     crystals: 0,
     crystalLog: [],
@@ -133,6 +140,13 @@ export function createInitialState(now = new Date()) {
     longest: 0,
     rivalDays: {},
     rivalXp: {},
+    challenges: {
+      current: null,
+      nextRollAt: null,
+      difficultyStep: 0,
+      processedInbox: [],
+    },
+    challengeInbox: [],
   };
 }
 
@@ -222,7 +236,7 @@ export function prepare(state, now = new Date()) {
   const today = dateKey(now);
   settle(next, { today, touchDate: today, now });
   const penalty = processPenalties(next, today, now);
-  const out = penalty.state;
+  const out = foldChallengesIntoPrepare(penalty.state, now);
   if (totalXp(out) > 0 && isFullDay(out, today)) {
     out.crystalStress = Math.max(0, (Number(out.crystalStress) || 0) - 0.08);
   }
@@ -683,6 +697,19 @@ export function patchSettings(state, patch) {
   if (typeof patch.driveLastBackupAt === "string") next.settings.driveLastBackupAt = patch.driveLastBackupAt.slice(0, 40);
   if (typeof patch.workerToken === "string") next.settings.workerToken = patch.workerToken.trim().slice(0, 200);
   if (typeof patch.pushOn === "boolean") next.settings.pushOn = patch.pushOn;
+  if (typeof patch.challengesOn === "boolean") next.settings.challengesOn = patch.challengesOn;
+  if (patch.quietSchool && typeof patch.quietSchool === "object") {
+    next.settings.quietSchool = normalizeQuietSchool({ ...next.settings.quietSchool, ...patch.quietSchool });
+  }
+  if (patch.quietNight && typeof patch.quietNight === "object") {
+    next.settings.quietNight = normalizeQuietNight({ ...next.settings.quietNight, ...patch.quietNight });
+  }
+  if (Array.isArray(patch.blockedPackages)) {
+    next.settings.blockedPackages = patch.blockedPackages
+      .map((pkg) => String(pkg || "").trim().slice(0, 120))
+      .filter(Boolean)
+      .slice(0, 64);
+  }
   if (patch.doneSlotsOpen && typeof patch.doneSlotsOpen === "object") {
     const clean = {};
     for (const [key, value] of Object.entries(patch.doneSlotsOpen)) {

@@ -2,6 +2,7 @@ import { SLOTS } from "./constants.js";
 import { LEVEL_START, legacyLevelFor, levelFor } from "./economy.js";
 import { uid } from "./format.js";
 import { FREEZE_REFUND_CRYSTALS, PENALTY_TAG, firstUseDate, penaltyFloorDate } from "./penalty.js";
+import { defaultChallengeSettings, ensureChallengeState } from "./challenges.js";
 import { ensureRivalXp, RIVALS } from "./rivals.js";
 import { totalXp } from "./stats.js";
 import { dateKey } from "./time.js";
@@ -138,6 +139,16 @@ export function migrateStateV2(state, now = new Date()) {
       if (next.rivalXp[rival.id] == null) next.rivalXp[rival.id] = 0;
     }
     next.grants = { ...(next.grants || {}), rivalXpV1: true };
+  }
+
+  const chDefaults = defaultChallengeSettings();
+  if (next.settings.challengesOn == null) next.settings.challengesOn = chDefaults.challengesOn;
+  if (!next.settings.quietSchool) next.settings.quietSchool = chDefaults.quietSchool;
+  if (!next.settings.quietNight) next.settings.quietNight = chDefaults.quietNight;
+  if (!Array.isArray(next.settings.blockedPackages)) next.settings.blockedPackages = [];
+  ensureChallengeState(next);
+  if (!next.grants?.challengesV1) {
+    next.grants = { ...(next.grants || {}), challengesV1: true };
   }
 
   return next;

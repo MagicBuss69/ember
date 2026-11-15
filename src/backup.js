@@ -1,6 +1,7 @@
 import { SLOTS, THEMES, XP_TASK, XP_WORKOUT } from "./constants.js";
 import { createInitialState, validTime } from "./domain.js";
 import { levelFor } from "./economy.js";
+import { defaultChallengeSettings, ensureChallengeState, normalizeQuietNight, normalizeQuietSchool } from "./challenges.js";
 import { migrateStateV2 } from "./migrate.js";
 import { totalXp } from "./stats.js";
 
@@ -101,6 +102,17 @@ export function sanitizeImport(raw, current = null) {
       : normalizeIso(prevSettings.driveLastBackupAt),
     workerToken: "workerToken" in rawSettings ? clip(rawSettings.workerToken, 200) : clip(prevSettings.workerToken, 200),
     pushOn: "pushOn" in rawSettings ? Boolean(rawSettings.pushOn) : Boolean(prevSettings.pushOn),
+    challengesOn:
+      "challengesOn" in rawSettings ? rawSettings.challengesOn !== false : prevSettings.challengesOn !== false,
+    quietSchool: normalizeQuietSchool(
+      "quietSchool" in rawSettings ? rawSettings.quietSchool : prevSettings.quietSchool,
+    ),
+    quietNight: normalizeQuietNight("quietNight" in rawSettings ? rawSettings.quietNight : prevSettings.quietNight),
+    blockedPackages: Array.isArray(rawSettings.blockedPackages)
+      ? rawSettings.blockedPackages.map((pkg) => clip(pkg, 120)).filter(Boolean).slice(0, 64)
+      : Array.isArray(prevSettings.blockedPackages)
+        ? prevSettings.blockedPackages
+        : defaultChallengeSettings().blockedPackages,
   };
 
   state.crystals = nonNegInt(raw.crystals);
@@ -250,6 +262,38 @@ export function sanitizeImport(raw, current = null) {
       state.rivalDays[key] = value;
     }
   }
+  state.challenges = {
+    current: null,
+    nextRollAt: null,
+    difficultyStep: 0,
+    processedInbox: [],
+  };
+  state.challengeInbox = [];
+  if (raw.challenges && typeof raw.challenges === "object") {
+    const ch = raw.challenges;
+    if (ch.current && typeof ch.current === "object") {
+      state.challenges.current = {
+        id: clip(ch.current.id, 80) || `ch-${Date.now()}`,
+        typeId: clip(ch.current.typeId, 40) || "pushups",
+        label: clip(ch.current.label, 60) || "Push-ups",
+        reps: Math.max(1, Math.round(Number(ch.current.reps) || 10)),
+        difficulty: Math.max(1, Math.round(Number(ch.current.difficulty) || 1)),
+        openedAt: normalizeIso(ch.current.openedAt),
+        deadlineAt: normalizeIso(ch.current.deadlineAt),
+        isSeconds: Boolean(ch.current.isSeconds),
+      };
+    }
+    state.challenges.nextRollAt = normalizeIso(ch.nextRollAt) || null;
+    state.challenges.difficultyStep = Math.max(0, Math.round(Number(ch.difficultyStep) || 0));
+    state.challenges.processedInbox = Array.isArray(ch.processedInbox)
+      ? ch.processedInbox.map((id) => clip(id, 80)).filter(Boolean).slice(0, 200)
+      : [];
+  }
+  if (Array.isArray(raw.challengeInbox)) {
+    state.challengeInbox = raw.challengeInbox.slice(0, 40);
+  }
+  ensureChallengeState(state);
+
   state.rivalXp = {};
   if (raw.rivalXp && typeof raw.rivalXp === "object") {
     for (const [id, amount] of Object.entries(raw.rivalXp)) {
