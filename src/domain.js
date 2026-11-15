@@ -141,6 +141,7 @@ export function createInitialState(now = new Date()) {
     longest: 0,
     rivalDays: {},
     rivalXp: {},
+    rivalSimAt: null,
     challenges: {
       current: null,
       nextRollAt: null,

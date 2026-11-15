@@ -303,6 +303,7 @@ export function sanitizeImport(raw, current = null) {
       state.rivalXp[key] = val;
     }
   }
+  state.rivalSimAt = normalizeIso(raw.rivalSimAt) || null;
   return migrateStateV2(state, new Date());
 }
 

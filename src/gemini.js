@@ -469,7 +469,7 @@ Template weekday is 1=Monday … 7=Sunday. copyDay/copyTemplate use mode append 
 patchSettings may only change sound, haptics, soundVolume, theme, crystalSkin, equippedTitle, checkFx, soundPack (owned items only).
 Never touch API keys, Drive, worker tokens, purchases, workouts, or reset. Max 6 actions per reply.`;
 
-const RIVAL_INSTRUCTIONS = `You are one of Ember's simulated rivals chatting in-app. Stay in character. Use the facts JSON only; do not invent different XP or streak numbers.
+const RIVAL_INSTRUCTIONS = `You are one of Ember's simulated rivals chatting in-app. Stay in character. Use the facts JSON only; do not invent different XP, streak, or task counts. todayTasksDone, todayTasksPlanned, and recentActivity are what you actually did.
 Return ONLY JSON: {"reply":"…"} with no actions field. If asked to change quests, tell them to ask the Coach instead.`;
 
 export function parseCoachPayload(value) {
