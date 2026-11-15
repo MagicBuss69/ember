@@ -13,13 +13,9 @@ object EmberGate {
     var userLaunchAt: Long = 0L
 
     /** True while the main Ember activity is resumed. */
+    @JvmStatic
     @Volatile
     var mainStarted: Boolean = false
-
-    @JvmStatic
-    fun setMainStarted(started: Boolean) {
-        mainStarted = started
-    }
 
     @JvmStatic
     fun noteLauncherOpen(context: Context) {
