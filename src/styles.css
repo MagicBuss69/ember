@@ -1409,6 +1409,9 @@ body.dragging-quest, body.dragging-quest * { cursor: grabbing !important; user-s
   background: var(--line-strong);
   margin: 4px auto 8px;
 }
+.sheet.sheet-blocker { display: flex; flex-direction: column; overflow: hidden; }
+.sheet.sheet-blocker .blocker-search { margin: 0 0 8px; width: 100%; }
+.sheet.sheet-blocker .blocker-app-list { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; margin-bottom: 8px; }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; }
 .sheet-head h2 { margin: 0; font-size: 20px; letter-spacing: -0.03em; }
 .set-row {

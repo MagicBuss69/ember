@@ -350,6 +350,14 @@ function paint() {
 
   if (ui.sheet?.type === "coach" || ui.sheet?.type === "rival-chat") {
     scrollChatLogToBottom(appEl);
+  } else if (ui.sheet?.type === "blocker-picker" && ui.draft?.blockedSearch) {
+    const search = appEl.querySelector("[data-blocked-search]");
+    const q = search?.value.trim().toLowerCase();
+    if (q) {
+      search.closest(".sheet-blocker")?.querySelectorAll("[data-blocked-row]").forEach((row) => {
+        row.hidden = !(row.dataset.blockedSearch || "").includes(q);
+      });
+    }
   }
 
   ui.enter = false;
@@ -1239,7 +1247,7 @@ const actions = {
     }
     let selected = state.settings.blockedPackages || [];
     if (!selected.length) selected = await filterInstalledDefaults();
-    openSheet({ type: "blocker-picker" }, { apps, selected: [...selected] });
+    openSheet({ type: "blocker-picker" }, { apps, selected: [...selected], blockedSearch: "" });
   },
   "toggle-blocked-app"(el) {
     if (!ui.draft?.selected) return;
@@ -1248,8 +1256,7 @@ const actions = {
     if (el.checked) set.add(id);
     else set.delete(id);
     ui.draft.selected = [...set];
-    ui.keepScroll = true;
-    paint();
+    el.closest("[data-blocked-row]")?.classList.toggle("is-checked", el.checked);
   },
   async "save-blocked-apps"(event) {
     event?.preventDefault?.();
@@ -1986,6 +1993,15 @@ function bind() {
     actions[form.dataset.form]?.();
   });
   app.addEventListener("input", (event) => {
+    const blockedSearch = event.target.closest("[data-blocked-search]");
+    if (blockedSearch && ui.sheet?.type === "blocker-picker") {
+      ui.draft.blockedSearch = blockedSearch.value;
+      const q = blockedSearch.value.trim().toLowerCase();
+      blockedSearch.closest(".sheet-blocker")?.querySelectorAll("[data-blocked-row]").forEach((row) => {
+        row.hidden = Boolean(q) && !(row.dataset.blockedSearch || "").includes(q);
+      });
+      return;
+    }
     const el = event.target.closest("#gemini-key, [data-bind]");
     if (!el) return;
     if (el.id === "gemini-key") {

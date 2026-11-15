@@ -830,23 +830,30 @@ export function sheetHtml(state, ui, now = new Date()) {
 }
 
 function blockerPickerSheet(state, draft) {
-  const apps = draft.apps || [];
+  const apps = [...(draft.apps || [])].sort((a, b) =>
+    String(a.label || a.id).localeCompare(String(b.label || b.id), undefined, { sensitivity: "base" }),
+  );
   const selected = new Set((draft.selected || state.settings.blockedPackages || []).map(String));
+  const q = esc(draft.blockedSearch || "");
   const rows = apps
     .map((app) => {
       const on = selected.has(app.id);
-      return `<label class="copy-day-row ${on ? "is-checked" : ""}">
+      const hay = esc(`${app.label || ""} ${app.id}`.toLowerCase());
+      return `<label class="copy-day-row ${on ? "is-checked" : ""}" data-blocked-row data-blocked-search="${hay}">
         <input type="checkbox" data-blocked-app="${esc(app.id)}" ${on ? "checked" : ""} />
         <span class="copy-day-copy"><strong>${esc(app.label || app.id)}</strong><small>${esc(app.id)}</small></span>
       </label>`;
     })
     .join("");
-  return `<form class="sheet-body" data-form="save-blocked-apps">
-    <div class="sheet-head"><h2>Blocked apps</h2><button type="button" class="icon-btn" data-action="close-sheet">${icon("close")}</button></div>
-    <p class="lede">Checked apps are blocked until every quest is done. Default picks YouTube and TikTok when installed.</p>
-  <div class="copy-day-list">${rows || "<p class=muted>No launchable apps found.</p>"}</div>
-    <button type="submit" class="primary">Save selection</button>
-  </form>`;
+  return `<div class="scrim" data-action="close-sheet"></div>
+    <form class="sheet sheet-blocker" data-form="save-blocked-apps">
+      <div class="handle"></div>
+      <div class="sheet-head"><h2>Blocked apps</h2><button type="button" class="icon-btn" data-action="close-sheet" aria-label="Close">${icon("close")}</button></div>
+      <p class="lede">Checked apps are blocked until every quest is done.</p>
+      <input type="search" class="blocker-search" data-blocked-search placeholder="Search apps" value="${q}" autocomplete="off" />
+      <div class="copy-day-list blocker-app-list" data-blocked-list>${rows || "<p class=muted>No launchable apps found.</p>"}</div>
+      <button type="submit" class="primary">Save selection</button>
+    </form>`;
 }
 
 function copyDaySheet(state, sheet, draft, now) {
