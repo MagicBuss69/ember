@@ -1,4 +1,5 @@
 import { Capacitor } from "@capacitor/core";
+import { LocalNotifications } from "@capacitor/local-notifications";
 import { SLOTS, SLOT_LABEL } from "./constants.js";
 import { kvGet, kvSet } from "./idb.js";
 import { syncPushSchedule } from "./pushClient.js";
@@ -47,6 +48,54 @@ export function triggersAvailable() {
   return typeof TimestampTrigger === "function";
 }
 
+export function isNativeApp() {
+  try {
+    return Capacitor.isNativePlatform();
+  } catch {
+    return false;
+  }
+}
+
+/** Stable Java-int id so the same quest replaces itself instead of stacking. */
+export function nativeNotificationId(tag) {
+  let h = 2166136261;
+  const text = String(tag || "");
+  for (let i = 0; i < text.length; i += 1) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return ((h >>> 0) % 2147483646) + 1;
+}
+
+/** Future reminders to hand to LocalNotifications, plus ones already due and not yet flagged. */
+export function splitNativeReminders(records, now = Date.now(), flagged = []) {
+  const seen = flagged instanceof Set ? flagged : new Set(flagged || []);
+  const future = [];
+  const due = [];
+  for (const record of records || []) {
+    if (!record?.tag || !(record.when > 0) || !(record.expires > now)) continue;
+    if (record.when <= now) {
+      if (!seen.has(record.tag)) due.push(record);
+    } else {
+      future.push(record);
+    }
+  }
+  return { future, due };
+}
+
+export function nativeReminderPayloads(records, now = Date.now()) {
+  return records.map((record) => ({
+    id: nativeNotificationId(record.tag),
+    title: record.title,
+    body: record.body,
+    schedule: {
+      at: new Date(record.when > now ? record.when : now + 1500),
+      allowWhileIdle: true,
+    },
+    extra: { date: record.date, taskId: record.taskId, tag: record.tag },
+  }));
+}
+
 async function showNow(registration, record) {
   await registration.showNotification(record.title, {
     body: record.body,
@@ -58,6 +107,39 @@ async function showNow(registration, record) {
   });
 }
 
+async function syncNativeReminders(records) {
+  const now = Date.now();
+  const flagged = [];
+  for (const record of records) {
+    const hit = await kvGet(`flag:${record.tag}`).catch(() => null);
+    if (hit) flagged.push(record.tag);
+  }
+  const { future, due } = splitNativeReminders(records, now, flagged);
+  const payloads = nativeReminderPayloads([...future, ...due], now);
+  try {
+    const perm = await LocalNotifications.checkPermissions();
+    if (perm.display !== "granted") {
+      armTimer(records);
+      return records;
+    }
+    const previous = (await kvGet("native-reminder-ids").catch(() => null)) || [];
+    if (Array.isArray(previous) && previous.length) {
+      await LocalNotifications.cancel({ notifications: previous.map((id) => ({ id })) });
+    }
+    if (payloads.length) {
+      await LocalNotifications.schedule({ notifications: payloads });
+    }
+    await kvSet("native-reminder-ids", payloads.map((row) => row.id));
+    for (const record of due) {
+      await kvSet(`flag:${record.tag}`, now);
+    }
+  } catch {
+    /* plugin missing or notifications blocked */
+  }
+  armTimer(records);
+  return records;
+}
+
 export async function syncReminderSchedule(state) {
   const records = reminderRecords(state, new Date());
   try {
@@ -65,6 +147,7 @@ export async function syncReminderSchedule(state) {
   } catch {
     /* the open-app timer still runs */
   }
+  if (isNativeApp()) return syncNativeReminders(records);
   if (typeof navigator === "undefined" || !navigator.serviceWorker) return records;
   const permission = globalThis.Notification?.permission;
   let registration = null;
@@ -155,7 +238,32 @@ export function watchReminders(getState) {
   });
 }
 
+export async function readNotifyPermission() {
+  if (isNativeApp()) {
+    try {
+      const perm = await LocalNotifications.checkPermissions();
+      if (perm.display === "granted") return "granted";
+      if (perm.display === "denied") return "denied";
+      return "default";
+    } catch {
+      return "unsupported";
+    }
+  }
+  return globalThis.Notification?.permission || "unsupported";
+}
+
 export async function enableNotifications() {
+  if (isNativeApp()) {
+    try {
+      const result = await LocalNotifications.requestPermissions();
+      if (result.display !== "granted") {
+        return { ok: false, reason: "Notifications are blocked. You can allow them in Android settings." };
+      }
+      return { ok: true, periodic: "native" };
+    } catch {
+      return { ok: false, reason: "This install can't show notifications." };
+    }
+  }
   if (!globalThis.Notification) {
     return { ok: false, reason: "This browser can't show notifications." };
   }
@@ -168,6 +276,7 @@ export async function enableNotifications() {
 }
 
 export async function registerPeriodic() {
+  if (isNativeApp()) return { ok: true, periodic: "native" };
   if (!navigator.serviceWorker) return { ok: false, reason: "unsupported" };
   try {
     const registration = await navigator.serviceWorker.ready;
@@ -180,6 +289,7 @@ export async function registerPeriodic() {
 }
 
 export async function periodicStatus() {
+  if (isNativeApp()) return "native";
   if (!navigator.serviceWorker) return "unsupported";
   try {
     const registration = await navigator.serviceWorker.ready;

@@ -615,11 +615,13 @@ export function viewSettings(state, ui) {
   const standalone = window.matchMedia?.("(display-mode: standalone)")?.matches;
   const perm = ui.notifyState || "default";
   const permLabel = perm === "granted" ? "Allowed" : perm === "denied" ? "Blocked" : perm === "unsupported" ? "Not available" : "Not asked yet";
-  const periodic = ui.periodic === "registered"
-    ? "A background check is registered. Chrome still picks the hour."
-    : ui.periodic === "unsupported"
-      ? "This browser has no background check."
-      : "Background check starts after you install Ember and allow notifications.";
+  const periodic = ui.periodic === "native"
+    ? "Reminders are scheduled on this phone and can fire while Ember is closed."
+    : ui.periodic === "registered"
+      ? "A background check is registered. Chrome still picks the hour."
+      : ui.periodic === "unsupported"
+        ? "This browser has no background check."
+        : "Background check starts after you install Ember and allow notifications.";
   const vol = Math.round((Number(state.settings.soundVolume) || 0.8) * 100);
   const themePick = THEMES.filter((t) => state.ownedThemes.includes(t.id))
     .map((theme) => {
@@ -750,8 +752,12 @@ function geminiCard(state, ui) {
 
 function reminderBlock(state, ui, permLabel, periodic) {
   const pushReady = Boolean(String(WORKER_URL || "").trim() && String(VAPID_PUBLIC_KEY || "").trim());
+  const native = ui.periodic === "native";
+  const blurb = native
+    ? "Today's quests are scheduled on this phone. They can fire even when Ember is closed."
+    : "While Ember is open, a quest notifies you at its time. If the app was closed, you get it the next time you open Ember, unless closed-app reminders are turned on below.";
   const local = `<p class="lede">Status: ${esc(permLabel)}. ${esc(periodic)}</p>
-    <p class="lede">While Ember is open, a quest notifies you at its time. If the app was closed, you get it the next time you open Ember, unless closed-app reminders are turned on below.</p>
+    <p class="lede">${blurb}</p>
     ${ui.notifyState === "granted" ? "" : `<button type="button" class="primary" data-action="enable-notify">Allow notifications</button>`}`;
   if (!pushReady) return local;
   return `${local}

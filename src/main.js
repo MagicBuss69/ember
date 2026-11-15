@@ -55,6 +55,7 @@ import { kvClear, loadState, saveState } from "./idb.js";
 import {
   enableNotifications,
   periodicStatus,
+  readNotifyPermission,
   registerServiceWorker,
   syncReminderSchedule,
   watchReminders,
@@ -1574,7 +1575,7 @@ function readWorkout(draft) {
 }
 
 async function refreshNotify() {
-  ui.notifyState = globalThis.Notification?.permission || "unsupported";
+  ui.notifyState = await readNotifyPermission();
   ui.periodic = await periodicStatus();
 }
 
