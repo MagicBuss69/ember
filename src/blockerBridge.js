@@ -12,8 +12,12 @@ const EmberBlocker = registerPlugin("EmberBlocker");
 export function buildBlockerSnapshot(state, now = new Date()) {
   const snap = challengeSnapshot(state, now);
   const locked = snap.locked;
+  const mode = state.settings?.blockMode === "quests" ? "quests" : "pushups";
   return {
     locked,
+    blockMode: mode,
+    unlockMinutes: Math.max(1, Math.min(180, Math.round(Number(state.settings?.unlockMinutes) || 15))),
+    pushupMax: Math.max(1, Math.min(300, Math.round(Number(state.settings?.pushupMax) || 10))),
     packages: (state.settings?.blockedPackages?.length
       ? state.settings.blockedPackages
       : DEFAULT_BLOCKED_PACKAGES),
@@ -39,6 +43,12 @@ export async function drainNativeInbox(state) {
   } catch {
     return state;
   }
+}
+
+export async function startPushupTest() {
+  if (!Capacitor.isNativePlatform()) return false;
+  await EmberBlocker.startPushupTest();
+  return true;
 }
 
 export async function shareNativeBackup(filename, text) {

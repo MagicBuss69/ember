@@ -9,6 +9,9 @@ test("blocker snapshot carries challenge fields and default packages", () => {
   const state = createInitialState(NOW);
   const snap = buildBlockerSnapshot(state, NOW);
   assert.equal(snap.locked, true);
+  assert.equal(snap.blockMode, "pushups");
+  assert.equal(snap.unlockMinutes, 15);
+  assert.equal(snap.pushupMax, 10);
   assert.deepEqual(snap.packages, DEFAULT_BLOCKED_PACKAGES);
   assert.equal(snap.challengeActive, false);
   assert.equal(typeof snap.quiet, "boolean");

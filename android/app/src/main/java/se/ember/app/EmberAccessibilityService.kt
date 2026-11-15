@@ -11,10 +11,17 @@ class EmberAccessibilityService : AccessibilityService() {
         val pkg = event.packageName?.toString() ?: return
         if (pkg == packageName) return
         val snap = BlockerSnapshot.read(this)
-        if (!snap.shouldBlock(pkg)) return
+        val until = BlockerSnapshot.unlockUntil(this, pkg)
+        if (!snap.shouldBlock(pkg, until)) return
+        if (PushupActivity.showing) return
+        val now = System.currentTimeMillis()
+        if (now - PushupActivity.lastLaunchMs < 1500) return
+        PushupActivity.lastLaunchMs = now
         performGlobalAction(GLOBAL_ACTION_HOME)
-        val block = Intent(this, BlockActivity::class.java)
+        val target = if (snap.blockMode == "quests") BlockActivity::class.java else PushupActivity::class.java
+        val block = Intent(this, target)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            .putExtra(PushupActivity.EXTRA_PACKAGE, pkg)
         startActivity(block)
     }
 

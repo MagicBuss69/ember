@@ -1,4 +1,5 @@
 import { levelFor } from "./economy.js";
+import { DEFAULT_PUSHUP_MAX, DEFAULT_UNLOCK_MINUTES, clampPushupMax, clampUnlockMinutes } from "./pushups.js";
 import { uid } from "./format.js";
 import { applyXpPenalty } from "./penalty.js";
 import { isFullDay, tasksOn } from "./stats.js";
@@ -111,6 +112,9 @@ function addDayKey(key, n) {
 export function defaultChallengeSettings() {
   return {
     challengesOn: true,
+    blockMode: "pushups",
+    unlockMinutes: DEFAULT_UNLOCK_MINUTES,
+    pushupMax: DEFAULT_PUSHUP_MAX,
     quietSchool: { ...DEFAULT_QUIET_SCHOOL },
     quietNight: { ...DEFAULT_QUIET_NIGHT },
     blockedPackages: [],
@@ -240,6 +244,22 @@ export function applyChallengeInbox(state, now = new Date()) {
     if (event.type === "miss" && key) {
       if (!state.challenges.processedInbox.includes(key)) {
         resolveChallengeMiss(state, now, key);
+      }
+    } else if (event.type === "pushup-unlock" || event.type === "pushup-max") {
+      const pkg = String(event.package || "").slice(0, 120);
+      const until = String(event.until || "");
+      if (event.type === "pushup-unlock" && pkg && until) {
+        state.appUnlocks = { ...(state.appUnlocks || {}), [pkg]: until };
+      }
+      const raised = Math.round(Number(event.max));
+      const reps = Math.round(Number(event.reps));
+      const nextMax = Math.max(
+        Number.isFinite(raised) ? raised : 0,
+        Number.isFinite(reps) ? reps : 0,
+      );
+      if (event.type === "pushup-max" && nextMax > (Number(state.settings?.pushupMax) || 0)) {
+        state.settings = state.settings || {};
+        state.settings.pushupMax = clampPushupMax(nextMax);
       }
     } else if (event.type === "unlock" || event.type === "native-roll") {
       /* native wake; prepare/processChallenges runs on resume */

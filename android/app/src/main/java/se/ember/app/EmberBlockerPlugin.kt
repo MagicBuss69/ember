@@ -18,6 +18,7 @@ class EmberBlockerPlugin : Plugin() {
     companion object {
         const val PREFS = "ember_blocker"
         const val KEY_SNAPSHOT = "snapshot_json"
+        const val KEY_UNLOCKS = "unlocks_json"
     }
 
     @PluginMethod
@@ -68,6 +69,19 @@ class EmberBlockerPlugin : Plugin() {
     }
 
     /** WebView download clicks are ignored, so the APK exports through the share sheet. */
+    @PluginMethod
+    fun startPushupTest(call: PluginCall) {
+        val host = activity
+        if (host == null) {
+            call.reject("Ember isn't in the foreground.")
+            return
+        }
+        val intent = Intent(host, PushupActivity::class.java)
+            .putExtra(PushupActivity.EXTRA_PRACTICE, true)
+        host.startActivity(intent)
+        call.resolve()
+    }
+
     @PluginMethod
     fun shareBackup(call: PluginCall) {
         val rawName = call.getString("filename") ?: "ember-backup.json"

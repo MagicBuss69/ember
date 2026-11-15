@@ -9,16 +9,20 @@ object EmberInbox {
     private const val KEY = "events"
 
     fun append(context: Context, type: String, challengeId: String = "") {
+        val row = JSONObject()
+        row.put("type", type)
+        if (challengeId.isNotBlank()) row.put("challengeId", challengeId)
+        appendEvent(context, row)
+    }
+
+    fun appendEvent(context: Context, event: JSONObject) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val arr = try {
             JSONArray(prefs.getString(KEY, "[]") ?: "[]")
         } catch (_: Exception) {
             JSONArray()
         }
-        val row = JSONObject()
-        row.put("type", type)
-        if (challengeId.isNotBlank()) row.put("challengeId", challengeId)
-        arr.put(row)
+        arr.put(event)
         prefs.edit().putString(KEY, arr.toString()).apply()
     }
 

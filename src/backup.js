@@ -1,5 +1,6 @@
 import { shareNativeBackup } from "./blockerBridge.js";
 import { SLOTS, THEMES, XP_TASK, XP_WORKOUT } from "./constants.js";
+import { clampPushupMax, clampUnlockMinutes } from "./pushups.js";
 import { createInitialState, validTime } from "./domain.js";
 import { levelFor } from "./economy.js";
 import { defaultChallengeSettings, ensureChallengeState, normalizeQuietNight, normalizeQuietSchool } from "./challenges.js";
@@ -105,6 +106,15 @@ export function sanitizeImport(raw, current = null) {
     pushOn: "pushOn" in rawSettings ? Boolean(rawSettings.pushOn) : Boolean(prevSettings.pushOn),
     challengesOn:
       "challengesOn" in rawSettings ? rawSettings.challengesOn !== false : prevSettings.challengesOn !== false,
+    blockMode: rawSettings.blockMode === "quests" || rawSettings.blockMode === "pushups"
+      ? rawSettings.blockMode
+      : (prevSettings.blockMode === "quests" ? "quests" : "pushups"),
+    unlockMinutes: clampUnlockMinutes(
+      "unlockMinutes" in rawSettings ? rawSettings.unlockMinutes : prevSettings.unlockMinutes,
+    ),
+    pushupMax: clampPushupMax(
+      "pushupMax" in rawSettings ? rawSettings.pushupMax : prevSettings.pushupMax,
+    ),
     quietSchool: normalizeQuietSchool(
       "quietSchool" in rawSettings ? rawSettings.quietSchool : prevSettings.quietSchool,
     ),
@@ -305,6 +315,14 @@ export function sanitizeImport(raw, current = null) {
     }
   }
   state.rivalSimAt = normalizeIso(raw.rivalSimAt) || null;
+  state.appUnlocks = {};
+  if (raw.appUnlocks && typeof raw.appUnlocks === "object") {
+    for (const [pkg, until] of Object.entries(raw.appUnlocks)) {
+      const key = clip(pkg, 120);
+      const iso = normalizeIso(until);
+      if (key && iso) state.appUnlocks[key] = iso;
+    }
+  }
   return migrateStateV2(state, new Date());
 }
 

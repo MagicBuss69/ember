@@ -11,6 +11,7 @@ import {
   XP_WORKOUT,
 } from "./constants.js";
 import { levelFor, questXpForLevel } from "./economy.js";
+import { clampPushupMax, clampUnlockMinutes } from "./pushups.js";
 import { currencyBlocked } from "./penalty.js";
 import { uid } from "./format.js";
 import {
@@ -142,6 +143,7 @@ export function createInitialState(now = new Date()) {
     rivalDays: {},
     rivalXp: {},
     rivalSimAt: null,
+    appUnlocks: {},
     challenges: {
       current: null,
       nextRollAt: null,
@@ -706,6 +708,9 @@ export function patchSettings(state, patch) {
   if (typeof patch.workerToken === "string") next.settings.workerToken = patch.workerToken.trim().slice(0, 200);
   if (typeof patch.pushOn === "boolean") next.settings.pushOn = patch.pushOn;
   if (typeof patch.challengesOn === "boolean") next.settings.challengesOn = patch.challengesOn;
+  if (patch.blockMode === "pushups" || patch.blockMode === "quests") next.settings.blockMode = patch.blockMode;
+  if (patch.unlockMinutes != null) next.settings.unlockMinutes = clampUnlockMinutes(patch.unlockMinutes);
+  if (patch.pushupMax != null) next.settings.pushupMax = clampPushupMax(patch.pushupMax);
   if (patch.quietSchool && typeof patch.quietSchool === "object") {
     next.settings.quietSchool = normalizeQuietSchool({ ...next.settings.quietSchool, ...patch.quietSchool });
   }

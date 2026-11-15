@@ -5,6 +5,7 @@ import { FREEZE_REFUND_CRYSTALS, PENALTY_TAG, firstUseDate, penaltyFloorDate } f
 import { defaultChallengeSettings, ensureChallengeState } from "./challenges.js";
 import { ensureRivalXp, RIVALS } from "./rivals.js";
 import { totalXp } from "./stats.js";
+import { clampPushupMax, clampUnlockMinutes, DEFAULT_PUSHUP_MAX, DEFAULT_UNLOCK_MINUTES } from "./pushups.js";
 import { dateKey } from "./time.js";
 
 function stripMustDoQuests(state) {
@@ -143,6 +144,14 @@ export function migrateStateV2(state, now = new Date()) {
 
   const chDefaults = defaultChallengeSettings();
   if (next.settings.challengesOn == null) next.settings.challengesOn = chDefaults.challengesOn;
+  if (next.settings.blockMode !== "quests" && next.settings.blockMode !== "pushups") {
+    next.settings.blockMode = "pushups";
+  }
+  if (next.settings.unlockMinutes == null) next.settings.unlockMinutes = DEFAULT_UNLOCK_MINUTES;
+  else next.settings.unlockMinutes = clampUnlockMinutes(next.settings.unlockMinutes);
+  if (next.settings.pushupMax == null) next.settings.pushupMax = DEFAULT_PUSHUP_MAX;
+  else next.settings.pushupMax = clampPushupMax(next.settings.pushupMax);
+  if (!next.appUnlocks || typeof next.appUnlocks !== "object") next.appUnlocks = {};
   if (!next.settings.quietSchool) next.settings.quietSchool = chDefaults.quietSchool;
   if (!next.settings.quietNight) next.settings.quietNight = chDefaults.quietNight;
   if (!Array.isArray(next.settings.blockedPackages)) next.settings.blockedPackages = [];

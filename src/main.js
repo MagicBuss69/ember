@@ -66,6 +66,7 @@ import {
   listLaunchableApps,
   openAccessibilitySettings,
   pushBlockerSnapshot,
+  startPushupTest,
 } from "./blockerBridge.js";
 import { processChallenges } from "./challenges.js";
 import { ensureRivalHistory, rivalPromptFacts } from "./rivals.js";
@@ -1240,6 +1241,14 @@ const actions = {
       { quiet: true },
     );
   },
+  async "toggle-block-mode"() {
+    const next = state.settings.blockMode === "quests" ? "pushups" : "quests";
+    await commitAction((current) => patchSettings(current, { blockMode: next }), { quiet: true });
+  },
+  async "test-pushups"() {
+    const started = await startPushupTest().catch(() => false);
+    if (!started) toast("Push-up counting runs in the Android app.");
+  },
   async "pick-blocked-apps"() {
     const apps = await listLaunchableApps();
     if (!apps.length) {
@@ -2048,6 +2057,16 @@ function bind() {
     const quietTime = event.target.closest("input[type=time][data-quiet-time]");
     if (quietTime) {
       actions["patch-quiet-time"](quietTime);
+      return;
+    }
+    const unlockMinutes = event.target.closest("[data-unlock-minutes]");
+    if (unlockMinutes) {
+      commitAction((current) => patchSettings(current, { unlockMinutes: unlockMinutes.value }), { quiet: true });
+      return;
+    }
+    const pushupMax = event.target.closest("[data-pushup-max]");
+    if (pushupMax) {
+      commitAction((current) => patchSettings(current, { pushupMax: pushupMax.value }), { quiet: true });
       return;
     }
     const blockedCheck = event.target.closest("[data-blocked-app]");

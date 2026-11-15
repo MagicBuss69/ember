@@ -662,10 +662,16 @@ export function viewSettings(state, ui) {
         <label class="field compact"><span>Until</span><input type="time" value="${esc(state.settings.quietNight?.end || "06:20")}" data-quiet-time data-parent="quietNight" data-field="end" /></label>
       </div>
       <h2 class="section-title">Android blocker</h2>
-      <p class="lede">Sideloaded APK: enable Accessibility for Ember. On Android 13+, open App info → ⋮ → <strong>Allow restricted settings</strong> before toggling the service.</p>
+      <p class="lede">Opening a blocked app starts a push-up set on the front camera. Hit your max and that app stays open for a few minutes. The old “locked until every quest is done” mode is off unless you turn it on.</p>
+      <button type="button" class="switch" role="switch" aria-checked="${state.settings.blockMode === "quests" ? "true" : "false"}" data-action="toggle-block-mode"><span>Block until quests are done</span><i></i></button>
+      ${state.settings.blockMode === "quests" ? "" : `<div class="row-fields">
+        <label class="field compact"><span>Unlock minutes</span><input type="number" min="1" max="180" inputmode="numeric" data-unlock-minutes value="${esc(state.settings.unlockMinutes || 15)}" /></label>
+        <label class="field compact"><span>Max push-ups</span><input type="number" min="1" max="300" inputmode="numeric" data-pushup-max value="${esc(state.settings.pushupMax || 10)}" /></label>
+      </div>
+      <button type="button" class="ghost" data-action="test-pushups">Test this max</button>`}
       <button type="button" class="ghost" data-action="open-accessibility">Open accessibility settings</button>
       <button type="button" class="ghost" data-action="pick-blocked-apps">Choose blocked apps</button>
-      <p class="footnote">Blocked packages: ${esc((state.settings.blockedPackages || []).join(", ") || "YouTube, TikTok (if installed)")}</p>
+      <p class="footnote">Sideloaded APK: enable Accessibility for Ember. On Android 13+, App info → ⋮ → Allow restricted settings. Blocked: ${esc((state.settings.blockedPackages || []).join(", ") || "YouTube, TikTok (if installed)")}</p>
       <h2 class="section-title">Gemini</h2>
       <p class="lede">Optional. Ember works with no key. The key stays on this phone.</p>
       ${geminiCard(state, ui)}
@@ -855,7 +861,7 @@ function blockerPickerSheet(state, draft) {
     <form class="sheet sheet-blocker" data-form="save-blocked-apps">
       <div class="handle"></div>
       <div class="sheet-head"><h2>Blocked apps</h2><button type="button" class="icon-btn" data-action="close-sheet" aria-label="Close">${icon("close")}</button></div>
-      <p class="lede">Checked apps are blocked until every quest is done.</p>
+      <p class="lede">${state.settings?.blockMode === "quests" ? "Checked apps stay blocked until every quest is done." : "Checked apps ask for your max push-ups, then open for the unlock length."}</p>
       <input type="search" class="blocker-search" data-blocked-search placeholder="Search apps" value="${q}" autocomplete="off" />
       <div class="copy-day-list blocker-app-list" data-blocked-list>${rows || "<p class=muted>No launchable apps found.</p>"}</div>
       <button type="submit" class="primary">Save selection</button>
