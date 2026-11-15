@@ -50,7 +50,7 @@ Install: `adb install -r app/build/outputs/apk/debug/app-debug.apk`
 
 1. Open Ember once so the web shell loads.
 2. **Settings → Android blocker → Open accessibility settings**, enable **Ember**.
-3. On **Android 13+** sideloads: **App info → ⋮ → Allow restricted settings** before the accessibility toggle will stick.
+3. On **Android 13+** sideloads: **App info → ⋮ → Allow restricted settings** before the accessibility toggle will stick. Rebuild with `./gradlew clean assembleDebug` after `ember-v3` pulls that add Kotlin (`870e424+`) so `EmberAccessibilityService` is in the APK.
 4. Grant **Alarms & reminders** if prompted (exact alarms for challenge rolls and deadlines).
 5. Optional: pick blocked apps in Settings (uses `QUERY_ALL_PACKAGES`).
 
