@@ -418,3 +418,37 @@ function normalizeDate(value) {
   if (month < 1 || month > 12 || day < 1 || day > 31) return "";
   return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
+
+export function backupFileShareable(file, nav = globalThis.navigator) {
+  try {
+    return !!(nav?.share && nav?.canShare?.({ files: [file] }));
+  } catch {
+    return false;
+  }
+}
+
+export async function saveBackupFile(jsonText, filename) {
+  const blob = new Blob([jsonText], { type: "application/json" });
+  const file = new File([blob], filename, { type: "application/json" });
+  if (backupFileShareable(file)) {
+    try {
+      await navigator.share({ files: [file], title: filename });
+      return { ok: true, method: "share" };
+    } catch (error) {
+      if (error?.name === "AbortError") return { ok: false, cancelled: true };
+    }
+  }
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.rel = "noopener";
+  link.style.display = "none";
+  document.body.appendChild(link);
+  link.click();
+  window.setTimeout(() => {
+    link.remove();
+    URL.revokeObjectURL(url);
+  }, 60_000);
+  return { ok: true, method: "download" };
+}

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  backupFileShareable,
   formatRestoreSummary,
   parseBackupText,
   sanitizeImport,
@@ -10,6 +11,16 @@ import { XP_TASK, XP_WORKOUT } from "../src/constants.js";
 import { createInitialState, prepare } from "../src/domain.js";
 import { levelFor } from "../src/economy.js";
 import { streakCount, totalXp } from "../src/stats.js";
+
+test("backupFileShareable follows navigator.canShare for files", () => {
+  const file = new File(["{}"], "ember-backup.json", { type: "application/json" });
+  assert.equal(backupFileShareable(file, {}), false);
+  assert.equal(
+    backupFileShareable(file, { share: () => {}, canShare: ({ files }) => files?.[0] === file }),
+    true,
+  );
+  assert.equal(backupFileShareable(file, { share: () => {}, canShare: () => false }), false);
+});
 
 test("exports in commit a911006 format and imports cleanly into new code without losing any data", () => {
   const exportNow = new Date("2026-11-13T21:15:00Z");

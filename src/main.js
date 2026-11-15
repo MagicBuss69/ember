@@ -5,7 +5,7 @@ import "@fontsource/outfit/latin-700.css";
 import "@fontsource/fraunces/latin-600.css";
 import "./styles.css";
 
-import { formatRestoreSummary, parseBackupText, sanitizeImport, summarizeBackup } from "./backup.js";
+import { formatRestoreSummary, parseBackupText, sanitizeImport, saveBackupFile, summarizeBackup } from "./backup.js";
 import { addMonths, monthKey } from "./calendar.js";
 import { GOOGLE_CLIENT_ID } from "./config.js";
 import { downloadBackup, listBackups, pruneBackups, restoreKeepingSecrets, uploadBackup } from "./drive.js";
@@ -1517,15 +1517,13 @@ const actions = {
   },
   async export() {
     await flushSettingsInputs();
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `ember-backup-${dateKey(new Date())}.json`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+    const name = `ember-backup-${dateKey(new Date())}.json`;
+    const result = await saveBackupFile(JSON.stringify(state, null, 2), name);
+    if (result.ok) {
+      toast(result.method === "share" ? "Backup ready to share or save." : "Backup download started.");
+    } else if (!result.cancelled) {
+      toast("Couldn't export backup.");
+    }
   },
   import() {
     const input = ensureBackupInput();
