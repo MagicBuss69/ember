@@ -2,6 +2,7 @@ package se.ember.app
 
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.provider.Settings
 import com.getcapacitor.JSArray
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
@@ -45,5 +46,13 @@ class EmberBlockerPlugin : Plugin() {
         val result = JSObject()
         result.put("apps", out)
         call.resolve(result)
+    }
+
+    @PluginMethod
+    fun openAccessibilitySettings(call: PluginCall) {
+        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        activity.startActivity(intent)
+        call.resolve()
     }
 }

@@ -59,7 +59,7 @@ import {
   syncReminderSchedule,
   watchReminders,
 } from "./notify.js";
-import { pushBlockerSnapshot } from "./blockerBridge.js";
+import { openAccessibilitySettings, pushBlockerSnapshot } from "./blockerBridge.js";
 import { processChallenges } from "./challenges.js";
 import { ensureRivalHistory, rivalPromptFacts } from "./rivals.js";
 import { exerciseGroups, isComplete, openTodayCount, totalXp } from "./stats.js";
@@ -1224,6 +1224,10 @@ const actions = {
       (current) => patchSettings(current, { [parent]: { ...(current.settings[parent] || {}), [field]: value } }),
       { quiet: true },
     );
+  },
+  async "open-accessibility"() {
+    const ok = await openAccessibilitySettings();
+    if (!ok) toast("Accessibility settings are only available in the Android app.");
   },
   async "confirm-challenge"() {
     const now = new Date();

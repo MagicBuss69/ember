@@ -21,8 +21,19 @@ export function buildBlockerSnapshot(state, now = new Date()) {
     challengeDeadline: snap.challengeDeadline || "",
     quiet: snap.quiet,
     difficulty: snap.difficulty,
+    nextRollAt: snap.nextRollAt || "",
     today: dateKey(now),
   };
+}
+
+export async function openAccessibilitySettings() {
+  if (!Capacitor.isNativePlatform()) return false;
+  try {
+    await EmberBlocker.openAccessibilitySettings();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function pushBlockerSnapshot(state, now = new Date()) {

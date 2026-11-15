@@ -656,6 +656,10 @@ export function viewSettings(state, ui) {
         <label class="field compact"><span>From</span><input type="time" value="${esc(state.settings.quietNight?.start || "22:00")}" data-action="patch-quiet-time" data-parent="quietNight" data-field="start" /></label>
         <label class="field compact"><span>Until</span><input type="time" value="${esc(state.settings.quietNight?.end || "06:20")}" data-action="patch-quiet-time" data-parent="quietNight" data-field="end" /></label>
       </div>
+      <h2 class="section-title">Android blocker</h2>
+      <p class="lede">Sideloaded APK: enable Accessibility for Ember. On Android 13+, open App info → ⋮ → <strong>Allow restricted settings</strong> before toggling the service.</p>
+      <button type="button" class="ghost" data-action="open-accessibility">Open accessibility settings</button>
+      <p class="footnote">Blocked packages: ${esc((state.settings.blockedPackages || []).join(", ") || "YouTube, TikTok (if installed)")}</p>
       <h2 class="section-title">Gemini</h2>
       <p class="lede">Optional. Ember works with no key. The key stays on this phone.</p>
       ${geminiCard(state, ui)}
