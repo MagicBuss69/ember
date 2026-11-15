@@ -64,6 +64,7 @@ import { ensureAudio, playSound } from "./sounds.js";
 import { burstAt, confettiFan, dailyCompleteBanner, shardBurstToCrystal } from "./ui/fx.js";
 import { addDays, dateKey, formatPretty, weekStart } from "./time.js";
 import { render, shellError } from "./ui/render.js";
+import { scrollChatLogToBottom } from "./ui/coachSheet.js";
 import {
   installTodayCompactScroll,
   refreshTodayCompactBarMarkup,
@@ -337,6 +338,11 @@ function paint() {
       }
     }
   }
+
+  if (ui.sheet?.type === "coach" || ui.sheet?.type === "rival-chat") {
+    scrollChatLogToBottom(appEl);
+  }
+
   ui.enter = false;
   updateBadge();
   refreshTodayCompactBarMarkup(state, ui, new Date());

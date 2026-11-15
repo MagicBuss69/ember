@@ -2,6 +2,19 @@ import { esc } from "../format.js";
 import { icon } from "../icons.js";
 import { RIVALS } from "../rivals.js";
 
+export const CHAT_LOG_SELECTOR = ".chat-sheet .chat-log";
+
+export function applyChatLogScrollEnd(el) {
+  if (!el) return;
+  el.scrollTop = el.scrollHeight;
+}
+
+export function scrollChatLogToBottom(root, selector = CHAT_LOG_SELECTOR) {
+  const el = root?.querySelector?.(selector);
+  if (!el) return;
+  requestAnimationFrame(() => applyChatLogScrollEnd(el));
+}
+
 function messageRows(messages) {
   return (messages || [])
     .map(
