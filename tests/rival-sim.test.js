@@ -12,9 +12,16 @@ import {
   rivalPromptFacts,
   rivalWeekXp,
   simRivalDay,
-  templateQuestCount,
+  RIVAL_CATCHUP_CAP,
+  RIVAL_GROWTH_CAP,
+  rivalAttendance,
+  rivalCatchUp,
+  rivalDayTarget,
+  rivalFloorDaily,
+  rivalTotalXp,
 } from "../src/rivals.js";
 import { addDays } from "../src/time.js";
+import { totalXp } from "../src/stats.js";
 
 const NOW = new Date("2026-11-13T20:00:00Z");
 const TODAY = "2026-11-13";
@@ -72,7 +79,7 @@ test("task XP matches the user quest formula and lands in daypart bursts", () =>
         const minutes = entry.completions.map((row) => row.minute);
         if (Math.max(...minutes) - Math.min(...minutes) >= 60) bursts += 1;
       }
-      assert.ok(entry.tasks <= templateQuestCount(date));
+      assert.ok(entry.tasks <= 14);
     }
   }
   assert.ok(spread > 10, "multi-task days should cover more than one part of the day");
@@ -144,47 +151,6 @@ function tasksOnToday(events) {
   return Object.fromEntries(RIVALS.map((rival) => [rival.id, state.rivalDays[TODAY].byId[rival.id].tasks]));
 }
 
-test("a perfect template week still beats every rival, and slacking lets them schedule more", () => {
-  const state = fresh();
-  const board = buildBoard(state, NOW);
-  // Friday night: Mon–Fri of a perfect template, before the weekend exists.
-  const perfectSoFar = 5 * 5 * questXpForLevel(1);
-  for (const row of board.board) {
-    if (row.you) continue;
-    assert.ok(row.weekXp < perfectSoFar, `${row.id} week ${row.weekXp} should be under ${perfectSoFar}`);
-  }
-  const top = Math.max(...board.board.filter((row) => !row.you).map((row) => row.weekXp));
-  assert.ok(top > perfectSoFar * 0.55, `top rival week ${top} should still be a race`);
-
-  const lump = {
-    id: "lump",
-    at: "2026-10-20T12:00:00.000Z",
-    date: "2026-10-20",
-    amount: 900,
-    source: "task",
-    ref: "lump",
-  };
-  const slack = tasksOnToday([lump]);
-  const recent = [];
-  for (let i = 1; i <= 7; i += 1) {
-    recent.push({
-      id: `grind-${i}`,
-      at: `${addDays(TODAY, -i)}T12:00:00.000Z`,
-      date: addDays(TODAY, -i),
-      amount: 100,
-      source: "task",
-      ref: `grind-${i}`,
-    });
-  }
-  const grinding = tasksOnToday([{ ...lump, amount: 200 }, ...recent]);
-  let eased = 0;
-  for (const rival of RIVALS) {
-    assert.ok(slack[rival.id] >= grinding[rival.id], `${rival.id} slack ${slack[rival.id]} grind ${grinding[rival.id]}`);
-    if (slack[rival.id] > grinding[rival.id]) eased += 1;
-  }
-  assert.ok(eased >= 1, "a slacking week should raise at least one rival's task count");
-});
-
 test("rival chat facts use the tasks and streak the board is showing", () => {
   const state = fresh();
   const facts = rivalPromptFacts(state, "leo", NOW);
@@ -196,4 +162,141 @@ test("rival chat facts use the tasks and streak the board is showing", () => {
   assert.ok(Array.isArray(facts.recentActivity));
   assert.ok(facts.recentActivity.length >= 1);
   assert.match(facts.recentActivity[0], /2026-11-13/);
+});
+
+function userWithPace(perDay, days = 30, skipEvery = 0) {
+  const state = createInitialState(new Date(`${addDays(TODAY, -days)}T12:00:00Z`));
+  state.xpEvents = [];
+  for (let i = 0; i <= days; i += 1) {
+    if (skipEvery && i > 0 && i % skipEvery === 0) continue;
+    const date = addDays(TODAY, -i);
+    state.xpEvents.push({ id: `p${i}`, at: `${date}T12:00:00.000Z`, date, amount: perDay, source: "task", ref: `p${i}` });
+  }
+  return state;
+}
+
+function rivalSpan(state, id, from, to) {
+  let sum = 0;
+  for (let i = from; i <= to; i += 1) sum += Number(state.rivalDays[addDays(TODAY, -i)]?.byId?.[id]?.xp) || 0;
+  return sum;
+}
+
+test("rivals keep pace with a hard-working user instead of stalling under a template day", () => {
+  for (const perDay of [100, 250, 400]) {
+    const state = userWithPace(perDay);
+    ensureRivalHistory(state, TODAY, NOW);
+    const mine = perDay * 21;
+    const ratios = RIVALS.map((rival) => rivalSpan(state, rival.id, 1, 21) / mine);
+    const mean = ratios.reduce((a, b) => a + b, 0) / ratios.length;
+    assert.ok(mean >= 0.85, `pace ${perDay}: mean rival ratio ${mean.toFixed(2)} should be near the user`);
+    for (const ratio of ratios) assert.ok(ratio >= 0.55, `pace ${perDay}: weakest ratio ${ratio.toFixed(2)}`);
+    assert.ok(Math.max(...ratios) >= 1, `pace ${perDay}: the strongest rival should be at or ahead of the user`);
+    assert.ok(Math.max(...ratios) <= 1.7, `pace ${perDay}: but not absurdly far ahead (${Math.max(...ratios).toFixed(2)})`);
+  }
+});
+
+test("the strongest rival is slightly ahead of the user and the others sit near", () => {
+  const edges = Object.fromEntries(RIVALS.map((rival) => [rival.id, rival.edge]));
+  assert.equal(Math.max(...Object.values(edges)), edges.noah);
+  assert.ok(edges.noah > 1 && edges.noah <= 1.15);
+  for (const rival of RIVALS) assert.ok(rival.edge >= 0.95 && rival.edge <= 1.15, rival.id);
+  const opts = { userLevel: 5, userAvg: 200, userDays: 7, daysIn: 0 };
+  const noah = RIVALS.find((rival) => rival.id === "noah");
+  const noahAvg = rivalDayTarget(noah, opts) * rivalAttendance(noah);
+  assert.ok(Math.abs(noahAvg - 200 * noah.edge) < 0.01);
+});
+
+test("with little history rivals use a floor tied to a perfect template week", () => {
+  const fresh1 = createInitialState(NOW);
+  ensureRivalHistory(fresh1, TODAY, NOW);
+  for (const rival of RIVALS) {
+    const withNone = rivalDayTarget(rival, { userLevel: 3 });
+    const withTiny = rivalDayTarget(rival, { userLevel: 3, userAvg: 5, userDays: 6 });
+    assert.equal(withNone, withTiny);
+    assert.ok(withNone * rivalAttendance(rival) >= rivalFloorDaily(3) * rival.edge - 0.01);
+  }
+  const lowTotals = RIVALS.map((rival) => rivalTotalXp(fresh1, rival.id));
+  assert.ok(lowTotals.every((total) => total > 0));
+});
+
+test("rivals grow harder over time, with a cap", () => {
+  const leo = RIVALS[0];
+  const opts = { userLevel: 3, userAvg: 120, userDays: 7 };
+  const early = rivalDayTarget(leo, { ...opts, daysIn: 0 });
+  const mid = rivalDayTarget(leo, { ...opts, daysIn: 40 });
+  const late = rivalDayTarget(leo, { ...opts, daysIn: 400 });
+  const capped = rivalDayTarget(leo, { ...opts, daysIn: 4000 });
+  assert.ok(mid > early && late > mid);
+  assert.equal(late, capped);
+  assert.ok(Math.abs(late / early - (1 + RIVAL_GROWTH_CAP)) < 1e-9);
+});
+
+test("a rival who fell behind this past week pushes harder, within the cap", () => {
+  const state = userWithPace(200);
+  ensureRivalHistory(state, TODAY, NOW);
+  const maja = RIVALS.find((rival) => rival.id === "maja");
+  const recent = { avg: 200, days: 7 };
+  const date = addDays(TODAY, 1);
+  for (let i = 1; i <= 7; i += 1) state.rivalDays[addDays(date, -i)].byId.maja.xp = 0;
+  assert.equal(rivalCatchUp(state, maja, date, recent), RIVAL_CATCHUP_CAP);
+  for (let i = 1; i <= 7; i += 1) state.rivalDays[addDays(date, -i)].byId.maja.xp = 400;
+  assert.equal(rivalCatchUp(state, maja, date, recent), 1);
+  assert.equal(rivalCatchUp(state, maja, date, { avg: null, days: 0 }), 1);
+});
+
+test("reopening after days away fills the gap and the rivals earned XP meanwhile", () => {
+  const state = userWithPace(200, 40);
+  const away = addDays(TODAY, -10);
+  ensureRivalHistory(state, away, new Date(`${away}T12:00:00Z`));
+  const before = RIVALS.map((rival) => rivalTotalXp(state, rival.id));
+  ensureRivalHistory(state, TODAY, NOW);
+  RIVALS.forEach((rival, index) => {
+    assert.ok(rivalTotalXp(state, rival.id) > before[index], `${rival.id} gained while the app was closed`);
+  });
+  for (let i = 0; i <= 10; i += 1) assert.ok(state.rivalDays[addDays(TODAY, -i)], `day ${i} filled`);
+});
+
+test("one-time buff: old saves are redone this week and topped up to the user's level", () => {
+  const state = userWithPace(300, 40);
+  // An old save: rivals far behind, a stale plan for today and earlier this week.
+  state.grants = { rivalXpV1: true };
+  state.rivalXp = Object.fromEntries(RIVALS.map((rival) => [rival.id, 10]));
+  state.rivalDays = {};
+  for (let i = 0; i <= 20; i += 1) {
+    const byId = Object.fromEntries(RIVALS.map((rival) => [rival.id, { xp: 20, rest: false, workout: false, quest: "x", minute: 480, tasks: 1 }]));
+    state.rivalDays[addDays(TODAY, -i)] = { byId };
+  }
+  const stale = structuredClone(state.rivalDays[TODAY]);
+  const staleOld = structuredClone(state.rivalDays[addDays(TODAY, -20)]);
+  ensureRivalHistory(state, TODAY, NOW);
+  assert.equal(state.grants.rivalBuffV2, true);
+  assert.notDeepEqual(state.rivalDays[TODAY], stale, "today's stale plan was replanned");
+  assert.deepEqual(state.rivalDays[addDays(TODAY, -20)], staleOld, "older frozen days are kept");
+  const mine = totalXp(state);
+  for (const rival of RIVALS) {
+    assert.ok(rivalTotalXp(state, rival.id) >= Math.round(mine * rival.edge), `${rival.id} caught up to the user`);
+  }
+  const noah = rivalTotalXp(state, "noah");
+  assert.ok(noah >= mine);
+  // Idempotent: a second pass changes nothing.
+  const snapshot = structuredClone({ days: state.rivalDays, xp: state.rivalXp });
+  ensureRivalHistory(state, TODAY, NOW);
+  assert.deepEqual({ days: state.rivalDays, xp: state.rivalXp }, snapshot);
+});
+
+test("one-time buff never takes XP from a rival who is already ahead", () => {
+  const state = createInitialState(NOW);
+  state.xpEvents = [{ id: "a", at: "2026-11-01T12:00:00.000Z", date: "2026-11-01", amount: 50, source: "task", ref: "a" }];
+  state.rivalXp = { leo: 100000, maja: 0, noah: 0, amina: 0 };
+  ensureRivalHistory(state, TODAY, NOW);
+  assert.ok(state.rivalXp.leo >= 100000);
+});
+
+test("the board shows rivals with real week XP once their tasks are done", () => {
+  const state = userWithPace(250);
+  const board = buildBoard(state, NOW);
+  const rivals = board.board.filter((row) => !row.you);
+  const you = board.board.find((row) => row.you);
+  assert.ok(rivals.every((row) => row.weekXp > 0));
+  assert.ok(Math.max(...rivals.map((row) => row.weekXp)) >= you.weekXp * 0.8);
 });

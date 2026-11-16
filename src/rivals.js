@@ -21,6 +21,7 @@ export const RIVAL_WINDOWS = {
 export const RIVALS = [
   {
     id: "leo",
+    edge: 1.02,
     name: "Leo Berg",
     city: "Göteborg",
     offset: 0,
@@ -41,6 +42,7 @@ export const RIVALS = [
   },
   {
     id: "maja",
+    edge: 1,
     name: "Maja Lind",
     city: "Malmö",
     offset: -1,
@@ -61,6 +63,7 @@ export const RIVALS = [
   },
   {
     id: "noah",
+    edge: 1.08,
     name: "Noah Ek",
     city: "Uppsala",
     offset: 1,
@@ -81,6 +84,7 @@ export const RIVALS = [
   },
   {
     id: "amina",
+    edge: 1,
     name: "Amina Adeyemi",
     city: "Stockholm",
     offset: -1,
@@ -197,14 +201,68 @@ function minuteInWindow(rival, date, slot, index, used) {
   return minute;
 }
 
+/** Share of a perfect template week the rivals fall back to when the user has little history. */
+export const RIVAL_FLOOR_SHARE = 0.65;
+/** Rivals grow with time on the app: +0.15% a day, up to +15% after 100 days. */
+export const RIVAL_GROWTH_PER_DAY = 0.0015;
+export const RIVAL_GROWTH_CAP = 0.15;
+const MAX_RIVAL_TASKS = 14;
+
+/** Long-run share of days this rival actually shows up, from the same rules `showsUp` uses. */
+export function rivalAttendance(rival) {
+  const profile = rival.profile || {};
+  const p = clamp(Number(rival.activity) || 0.8, 0.3, 1);
+  const slump = profile.slump && profile.slump < 1 ? profile.slump : 1;
+  const comeback = Number(profile.comeback) || 0;
+  const afterRest = clamp(comeback * Math.max(p, 0.92) + (1 - comeback) * p * slump, 0.05, 1);
+  const stationary = afterRest / (1 - p + afterRest);
+  return clamp(stationary * (1 - (Number(profile.breakRate) || 0)), 0.3, 1);
+}
+
+/** A perfect default week at this level, per day. The floor never drops below a share of it. */
+export function rivalFloorDaily(userLevel) {
+  return RIVAL_FLOOR_SHARE * (31 / 7) * questXpForLevel(userLevel);
+}
+
 /**
- * Personality day. Quest XP matches the user formula at this rival's level.
- * The day's budget stays under a perfect template day at the user's level,
- * and rises toward that ceiling when the user has been slacking.
+ * The XP this rival aims for on a day they show up. It tracks the user's own recent
+ * pace (never below the floor), scales by the rival's edge (the strongest sits just
+ * ahead of the user), grows slowly with time, and is divided by attendance so the
+ * long-run average, rest days included, lands on the target.
+ */
+export function rivalDayTarget(rival, options = {}) {
+  const userLevel = Math.max(1, Math.min(10, Number(options.userLevel) || 1));
+  const floor = rivalFloorDaily(userLevel);
+  const avg = Number(options.userAvg);
+  const hasPace = Number(options.userDays) >= 2 && Number.isFinite(avg);
+  const base = hasPace ? Math.max(floor, avg) : floor;
+  const growth = 1 + Math.min(RIVAL_GROWTH_CAP, Math.max(0, Number(options.daysIn) || 0) * RIVAL_GROWTH_PER_DAY);
+  const edge = Number(rival.edge) || 1;
+  const catchUp = Math.max(1, Math.min(RIVAL_CATCHUP_CAP, Number(options.catchUp) || 1));
+  return (base * growth * edge * catchUp) / rivalAttendance(rival);
+}
+
+/** Streaky rivals that fell behind the user this past week push harder, up to this multiple. */
+export const RIVAL_CATCHUP_CAP = 1.5;
+
+/** How much harder a rival should push, from their last 7 days against the user's pace. */
+export function rivalCatchUp(state, rival, date, recent) {
+  if (!(recent.days >= 2) || !Number.isFinite(recent.avg)) return 1;
+  const want = recent.avg * 7 * (Number(rival.edge) || 1) * 0.95;
+  if (!(want > 0)) return 1;
+  let have = 0;
+  for (let i = 1; i <= 7; i += 1) have += Number(cell(state, addDays(date, -i), rival.id)?.xp) || 0;
+  if (have >= want) return 1;
+  return Math.min(RIVAL_CATCHUP_CAP, want / Math.max(have, want / RIVAL_CATCHUP_CAP));
+}
+
+/**
+ * Personality day. Quest XP matches the user formula at this rival's level. The day's
+ * XP target follows the user's recent pace (see `rivalDayTarget`), so a rival keeps up
+ * however hard the user pushes. There is no per-day ceiling, only a task-count cap.
  */
 function planRivalDay(rival, date, rivalLevel, options) {
   const level = Math.max(1, Math.min(10, Number(rivalLevel) || 1));
-  const userLevel = Math.max(1, Math.min(10, Number(options.userLevel) || 1));
   const minute = 7 * 60 + Math.floor(unit(`${rival.id}:${date}:time`) * 14 * 60);
   const mood = moodShift(rival, date);
   if (!showsUp(rival, date, Boolean(options.yesterdayRest))) {
@@ -220,25 +278,15 @@ function planRivalDay(rival, date, rivalLevel, options) {
       completions: [],
     };
   }
-  const templateTasks = templateQuestCount(date);
-  const userPer = questXpForLevel(userLevel);
   const per = questXpForLevel(level);
-  const hardCap = templateTasks * userPer;
-  let ambition = Number(rival.profile?.ambition) || 0.8;
   const variance = Math.min(1.4, Number(rival.profile?.variance) || 0.5);
-  ambition += mood * (0.06 + 0.05 * variance);
-  if (options.pressure) ambition += 0.14;
-  if (options.ease) ambition -= 0.06;
-  ambition = clamp(ambition, 0.38, options.pressure ? 1 : 0.94);
-  const budget = Math.max(per, Math.round(hardCap * ambition));
-  let tasks = Math.max(1, Math.min(templateTasks, Math.round(budget / per)));
-  // A slacking user lets them schedule one more task, up to a full template day.
-  // A consistent user stays inside a perfect quest day, so the week is still beatable.
-  const ceiling = options.pressure ? Math.min(templateTasks * per, hardCap + per) : Math.min(budget, hardCap);
-  if (options.pressure) tasks = Math.min(templateTasks, tasks + 1);
-  while (tasks > 1 && tasks * per > ceiling) tasks -= 1;
+  const noise = 1 + (unit(`${rival.id}:${date}:pace`) - 0.5) * 0.3 * variance;
+  const moodScale = 1 + mood * (0.08 + 0.06 * variance);
+  const target = rivalDayTarget(rival, options) * noise * moodScale;
   const workoutRoll = unit(`${rival.id}:${date}:wo`) < rival.workoutRate;
-  const workout = workoutRoll && tasks * per <= hardCap;
+  const workout = workoutRoll && target >= XP_WORKOUT + per;
+  const taskXp = Math.max(per, target - (workout ? XP_WORKOUT : 0));
+  const tasks = Math.max(1, Math.min(MAX_RIVAL_TASKS, Math.round(taskXp / per)));
   const slots = assignSlots(rival, date, tasks);
   const used = [];
   const completions = slots.map((slot, index) => ({
@@ -252,7 +300,7 @@ function planRivalDay(rival, date, rivalLevel, options) {
     const slot = rival.profile?.bursts?.includes("evening") ? "evening" : slots[slots.length - 1];
     completions.push({
       slot,
-      minute: minuteInWindow(rival, date, slot, 9, used),
+      minute: minuteInWindow(rival, date, slot, 99, used),
       quest: "Workout",
       xp: XP_WORKOUT,
       kind: "workout",
@@ -345,9 +393,40 @@ function pruneRivalDays(state, today) {
   }
 }
 
-export function ensureRivalHistory(state, today, now = null) {
-  if (!state.rivalDays) state.rivalDays = {};
-  ensureRivalXp(state);
+function daysBetween(from, to) {
+  if (!from || !to || to <= from) return 0;
+  let n = 0;
+  let cursor = from;
+  while (cursor < to && n < 4000) {
+    cursor = addDays(cursor, 1);
+    n += 1;
+  }
+  return n;
+}
+
+/**
+ * One-time catch-up for saves from before the pace-matched rivals. This week's plans
+ * are redone with the new rules, then any rival whose lifetime XP sits below the
+ * user's gets topped up to the user's level times their edge. It never takes XP away.
+ */
+function applyRivalBuff(state, today) {
+  const weekFirst = weekStart(today);
+  for (const key of Object.keys(state.rivalDays || {})) {
+    if (key >= weekFirst) delete state.rivalDays[key];
+  }
+  return weekFirst;
+}
+
+function topUpRivals(state) {
+  const mine = totalXp(state);
+  for (const rival of RIVALS) {
+    const target = Math.round(mine * (Number(rival.edge) || 1));
+    const have = rivalTotalXp(state, rival.id);
+    if (have < target) state.rivalXp[rival.id] = (Number(state.rivalXp[rival.id]) || 0) + (target - have);
+  }
+}
+
+function fillRivalDays(state, today) {
   let wrote = false;
   for (let i = 90; i >= 0; i -= 1) {
     const date = addDays(today, -i);
@@ -355,24 +434,38 @@ export function ensureRivalHistory(state, today, now = null) {
     const byId = {};
     const userLevel = levelFor(userXpBefore(state, date));
     const recent = recentUserPace(state, date);
-    const perfectDaily = (31 / 7) * questXpForLevel(userLevel);
-    const pressure = recent.days >= 2 && recent.avg < perfectDaily * 0.5;
-    const ease = recent.days >= 2 && recent.avg > perfectDaily * 1.05;
+    const daysIn = daysBetween(state.startedOn || date, date);
     for (const rival of RIVALS) {
       const level = levelFor(rivalXpBeforeDate(state, rival.id, date));
       const yesterday = cell(state, addDays(date, -1), rival.id);
       const yesterdayRest = Boolean(yesterday) && (yesterday.rest || !(Number(yesterday.xp) > 0));
       byId[rival.id] = simRivalDay(rival, date, level, {
         userLevel,
-        pressure,
-        ease,
+        userAvg: recent.avg,
+        userDays: recent.days,
+        catchUp: rivalCatchUp(state, rival, date, recent),
+        daysIn,
         yesterdayRest,
       });
     }
     state.rivalDays[date] = { byId };
     wrote = true;
   }
+  return wrote;
+}
+
+export function ensureRivalHistory(state, today, now = null) {
+  if (!state.rivalDays) state.rivalDays = {};
+  ensureRivalXp(state);
+  const buffed = Boolean(state.grants?.rivalBuffV2);
+  if (!buffed && Object.keys(state.rivalDays).length) applyRivalBuff(state, today);
+  let wrote = fillRivalDays(state, today);
   pruneRivalDays(state, today);
+  if (!buffed) {
+    topUpRivals(state);
+    state.grants = { ...(state.grants || {}), rivalBuffV2: true };
+    wrote = true;
+  }
   if (wrote || !state.rivalSimAt) {
     const stamp = now instanceof Date ? now : new Date();
     state.rivalSimAt = stamp.toISOString();
