@@ -7,7 +7,7 @@
 const BASE = "/ember/";
 const ICON_URL = `${BASE}icons/icon-192.png`;
 const BADGE_URL = `${BASE}icons/badge-96.png`;
-const CACHE = "ember-shell-v27";
+const CACHE = "ember-shell-v34";
 const ART_WEBP = [
   "badge-fullday",
   "badge-streak7",
