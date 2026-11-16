@@ -51,7 +51,7 @@ export function gemIcon(opts = {}) {
 }
 
 /** Shop / settings item thumbnail (fills `.item-thumb` when className is `item-art-fill`). */
-export function itemThumb(artId, { alt = "", fill = true, size = 44, eager = false } = {}) {
+export function itemThumb(artId, { alt = "", fill = true, size = 44, eager = false, hue = 0 } = {}) {
   const d = Math.round(size);
   const px = d * 2;
   const src = artUrl(artId);
@@ -61,5 +61,7 @@ export function itemThumb(artId, { alt = "", fill = true, size = 44, eager = fal
   const inner = fill
     ? `<img class="${cls}" src="${src}"${altAttr} width="${px}" height="${px}" loading="${load}" decoding="async" />`
     : imgTag({ src, className: cls, alt: alt || "", displaySize: d, eager });
+  const shift = Math.round(Number(hue) || 0) % 360;
+  if (shift) return `<span class="item-thumb is-tinted" style="--art-hue:${shift}deg">${inner}</span>`;
   return `<span class="item-thumb">${inner}</span>`;
 }

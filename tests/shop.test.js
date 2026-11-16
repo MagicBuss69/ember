@@ -64,3 +64,35 @@ test("cannot buy twice", () => {
   const again = buyItem(state, item.id, new Date());
   assert.equal(again.ok, false);
 });
+test("store is about 2.5x bigger and every item has real art", async () => {
+  const { ART_WEBP, catalogArtId } = await import("../src/art.js");
+  const { itemArt, catalogName } = await import("../src/shop.js");
+  const counts = {};
+  for (const item of SHOP_CATALOG) counts[item.category] = (counts[item.category] || 0) + 1;
+  assert.deepEqual(counts, { themes: 9, crystal: 8, titles: 8, badges: 5, fx: 5, sound: 5 });
+  assert.equal(SHOP_CATALOG.length, 40);
+  const ids = new Set(SHOP_CATALOG.map((item) => item.id));
+  assert.equal(ids.size, SHOP_CATALOG.length);
+  for (const item of SHOP_CATALOG) {
+    assert.ok(ART_WEBP.includes(catalogArtId(itemArt(item).art)), item.id);
+    assert.ok(item.price >= 6 && item.price <= 30, item.id);
+  }
+  assert.equal(catalogName("title", "ironwill"), "Iron Will");
+  assert.equal(catalogName("badge", "rivalslayer"), "Rival slayer");
+});
+
+test("old owned items stay owned and equippable after the store grew", () => {
+  let state = createInitialState(new Date());
+  state.ownedThemes.push("pine");
+  state.ownedSkins.push("void");
+  state.ownedTitles.push("monarch");
+  assert.ok(isOwned(state, SHOP_CATALOG.find((i) => i.id === "theme-pine")));
+  assert.ok(isOwned(state, SHOP_CATALOG.find((i) => i.id === "skin-void")));
+  assert.ok(isOwned(state, SHOP_CATALOG.find((i) => i.id === "title-monarch")));
+  state.crystals = 100;
+  const bought = buyItem(state, "fx-supernova", new Date());
+  assert.equal(bought.ok, true);
+  const eq = equipCosmetic(bought.state, { checkFx: "supernova" });
+  assert.equal(eq.settings.checkFx, "supernova");
+  assert.ok(eq.ownedSkins.includes("void"));
+});

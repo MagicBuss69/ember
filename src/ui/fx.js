@@ -30,22 +30,31 @@ export function shardBurstToCrystal(fromX, fromY, reduced = false) {
   }
 }
 
+/** Check FX variants bought in the shop. Unknown ids fall back to the default burst. */
+export const FX_STYLES = {
+  nova: { count: 10, min: 28, max: 62, colors: PARTICLE_COLORS },
+  embers: { count: 14, min: 20, max: 54, colors: ["#ff6a1a", "#ffb347", "#ff3d00", "#ffe0a0"] },
+  frostbite: { count: 12, min: 24, max: 70, colors: ["#7ee8ff", "#c8f4ff", "#4ab8ff", "#ffffff"] },
+  supernova: { count: 22, min: 40, max: 110, colors: ["#ffd24a", "#fff1c8", "#ff9a3d", "var(--accent)"] },
+};
+
 /** Lightweight GPU-only burst at a screen point (quest check-off). */
-export function burstAt(x, y, reduced = false) {
+export function burstAt(x, y, reduced = false, style = "nova") {
   if (reduced) return;
   const root = document.getElementById("fx");
   if (!root) return;
-  const count = 10;
+  const look = FX_STYLES[style] || FX_STYLES.nova;
+  const count = look.count;
   for (let i = 0; i < count; i += 1) {
     const p = document.createElement("i");
     p.className = "particle";
     p.style.left = `${Math.round(x)}px`;
     p.style.top = `${Math.round(y)}px`;
     const angle = (Math.PI * 2 * i) / count + rand(-0.2, 0.2);
-    const dist = rand(28, 62);
+    const dist = rand(look.min, look.max);
     p.style.setProperty("--px", `${Math.cos(angle) * dist}px`);
     p.style.setProperty("--py", `${Math.sin(angle) * dist}px`);
-    p.style.background = PARTICLE_COLORS[i % PARTICLE_COLORS.length];
+    p.style.background = look.colors[i % look.colors.length];
     root.appendChild(p);
     p.addEventListener("animationend", () => p.remove(), { once: true });
     setTimeout(() => p.remove(), 520);

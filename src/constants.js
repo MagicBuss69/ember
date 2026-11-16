@@ -26,6 +26,11 @@ export const THEMES = [
   { id: "ink", name: "Ink", price: 14, blurb: "Black vault with gold seams." },
   { id: "aurora", name: "Aurora", price: 18, blurb: "Teal-violet sky shimmer." },
   { id: "blood", name: "Blood", price: 22, blurb: "Crimson penalty glow. Hard mode vibes." },
+  { id: "dusk", name: "Dusk", price: 16, blurb: "Violet sky with a sunset edge.", art: "theme-ember", hue: 290 },
+  { id: "ocean", name: "Ocean", price: 20, blurb: "Deep navy, cyan foam.", art: "theme-frost", hue: 340 },
+  { id: "sakura", name: "Sakura", price: 24, blurb: "Night bloom, soft pink.", art: "theme-blood", hue: 320 },
+  { id: "toxic", name: "Toxic", price: 26, blurb: "Acid green terminal glow.", art: "theme-pine", hue: 30 },
+  { id: "royal", name: "Royal", price: 30, blurb: "Monarch purple and gold.", art: "theme-ink", hue: 230 },
 ];
 
 export const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-flash-latest"];

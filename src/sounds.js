@@ -73,6 +73,35 @@ export function playSound(kind, { volume = 0.8, pack = "system" } = {}) {
     const now = audio.currentTime;
     const vol = Math.max(0, Math.min(1, Number(volume) ?? 0.8));
 
+    if (kind === "check" && pack === "bell") {
+      const out = masterGain(audio, vol, now, 1, 1.1);
+      tone(audio, 392, "sine", now, 1.0, out, 0.6);
+      tone(audio, 784, "sine", now + 0.01, 0.7, out, 0.3);
+      tone(audio, 1176, "triangle", now + 0.02, 0.4, out, 0.18);
+      return;
+    }
+    if (kind === "check" && pack === "laser") {
+      const out = masterGain(audio, vol, now, 0.8, 0.22);
+      const osc = audio.createOscillator();
+      const g = audio.createGain();
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(1800, now);
+      osc.frequency.exponentialRampToValueAtTime(220, now + 0.18);
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(0.4, now + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
+      osc.connect(g);
+      g.connect(out);
+      osc.start(now);
+      osc.stop(now + 0.22);
+      return;
+    }
+    if (kind === "check" && pack === "marimba") {
+      const out = masterGain(audio, vol, now, 1, 0.4);
+      [523, 659, 784].forEach((f, i) => tone(audio, f, "triangle", now + i * 0.06, 0.16, out, 0.7));
+      tone(audio, 1046, "sine", now + 0.12, 0.08, out, 0.25);
+      return;
+    }
     if (kind === "check") {
       const out = masterGain(audio, vol, now, 1, 0.32);
       const base = pack === "arcade" ? [659, 988, 1572] : pack === "chime" ? [2093, 2637, 3136] : [988, 1319, 1760];
@@ -82,7 +111,11 @@ export function playSound(kind, { volume = 0.8, pack = "system" } = {}) {
     }
     if (kind === "combo") {
       const out = masterGain(audio, vol, now, 0.95, 0.45);
-      const arp = pack === "arcade" ? [440, 554, 659, 880, 988, 1319] : [523, 659, 784, 988, 1175, 1568];
+      const arp = pack === "arcade" ? [440, 554, 659, 880, 988, 1319]
+        : pack === "bell" ? [196, 262, 330, 392]
+          : pack === "laser" ? [1760, 1319, 988, 740, 554]
+            : pack === "marimba" ? [392, 523, 659, 784, 1046]
+              : [523, 659, 784, 988, 1175, 1568];
       arp.forEach((f, i) => tone(audio, f, "triangle", now + i * 0.045, 0.1, out, 0.5));
       return;
     }
