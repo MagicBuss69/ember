@@ -661,7 +661,7 @@ export function viewSettings(state, ui) {
       </label>
       <button type="button" class="switch" role="switch" aria-checked="${state.settings.haptics ? "true" : "false"}" data-action="toggle-setting" data-key="haptics"><span>Vibration</span><i></i></button>
       <h2 class="section-title">Challenges</h2>
-      <p class="lede">Hourly movement rolls with 10 minutes to confirm. Quiet hours pause rolls; open challenges cancel without punishment.</p>
+      <p class="lede">Hourly movement rolls with 30 minutes to confirm. Quiet hours pause rolls; open challenges cancel without punishment.</p>
       <button type="button" class="switch" role="switch" aria-checked="${state.settings.challengesOn !== false ? "true" : "false"}" data-action="toggle-setting" data-key="challengesOn"><span>Hourly challenges</span><i></i></button>
       <h3 class="subsection-title">School quiet (Mon–Fri)</h3>
       <button type="button" class="switch" role="switch" aria-checked="${state.settings.quietSchool?.on !== false ? "true" : "false"}" data-action="toggle-setting" data-key="quietSchool" data-field="on"><span>School quiet hours</span><i></i></button>

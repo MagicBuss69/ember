@@ -1,5 +1,5 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
-import { challengeSnapshot, isQuietHour } from "./challenges.js";
+import { CHALLENGE_DEADLINE_MS, challengeSnapshot, isQuietHour } from "./challenges.js";
 import { dateKey } from "./time.js";
 
 export const DEFAULT_BLOCKED_PACKAGES = [
@@ -66,7 +66,7 @@ export function restoreChallengeFromSnapshot(state, raw, now = new Date()) {
     reps: Math.max(1, Math.round(Number(snap.challengeReps) || 10)),
     isSeconds: Boolean(snap.challengeIsSeconds),
     difficulty: Math.max(1, Math.round(Number(snap.difficulty) || 1)),
-    openedAt: new Date(deadlineMs - 10 * 60 * 1000).toISOString(),
+    openedAt: new Date(deadlineMs - CHALLENGE_DEADLINE_MS).toISOString(),
     deadlineAt: new Date(deadlineMs).toISOString(),
   };
   return next;

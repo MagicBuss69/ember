@@ -7,7 +7,7 @@ import { totalXp } from "./stats.js";
 import { dateKey, minuteOfDay, weekdayIso, zonedTimeToUtc } from "./time.js";
 import { unit } from "./rivals.js";
 
-export const CHALLENGE_DEADLINE_MS = 10 * 60 * 1000;
+export const CHALLENGE_DEADLINE_MS = 30 * 60 * 1000;
 export const CHALLENGE_MISS_XP = 25;
 export const ROLL_MIN_MS = 45 * 60 * 1000;
 export const ROLL_MAX_MS = 75 * 60 * 1000;
