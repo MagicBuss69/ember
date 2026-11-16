@@ -4,7 +4,11 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
 import com.capacitorjs.plugins.localnotifications.LocalNotificationsPlugin;
+import android.view.ViewGroup;
+import android.webkit.RenderProcessGoneDetail;
+import android.webkit.WebView;
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.WebViewListener;
 
 public class MainActivity extends BridgeActivity {
     @Override
@@ -15,6 +19,18 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(EmberBlockerPlugin.class);
         registerPlugin(LocalNotificationsPlugin.class);
         super.onCreate(savedInstanceState);
+        // Swiping Ember out of recents kills the WebView renderer while the blocker keeps this
+        // process alive. Unhandled, WebView then kills the whole process a moment later, which
+        // closed Ember right after it was reopened. Handle it and reload with a fresh WebView.
+        if (bridge != null) {
+            bridge.addWebViewListener(new WebViewListener() {
+                @Override
+                public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                    handleRendererGone(view, detail);
+                    return true;
+                }
+            });
+        }
         lifecycle("onCreate");
     }
 
@@ -89,6 +105,30 @@ public class MainActivity extends BridgeActivity {
     public boolean moveTaskToBack(boolean nonRoot) {
         EmberBlockLog.moveToBack("MainActivity", "nonRoot=" + nonRoot);
         return super.moveTaskToBack(nonRoot);
+    }
+
+    private void handleRendererGone(WebView view, RenderProcessGoneDetail detail) {
+        Log.w("EmberBlock", "WebView renderer gone crashed=" + (detail != null && detail.didCrash())
+            + " finishing=" + isFinishing());
+        try {
+            ViewGroup parent = (ViewGroup) view.getParent();
+            if (parent != null) parent.removeView(view);
+            view.destroy();
+        } catch (Throwable t) {
+            Log.w("EmberBlock", "destroy dead WebView failed", t);
+        }
+        if (isFinishing() || isDestroyed()) return;
+        try {
+            Intent restart = new Intent(this, MainActivity.class);
+            restart.setAction(Intent.ACTION_MAIN);
+            restart.addCategory(Intent.CATEGORY_LAUNCHER);
+            restart.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+            boolean visible = hasWindowFocus() || getLifecycle().getCurrentState().isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED);
+            finish();
+            if (visible) startActivity(restart);
+        } catch (Throwable t) {
+            Log.w("EmberBlock", "restart after renderer gone failed", t);
+        }
     }
 
     private void lifecycle(String name) {
