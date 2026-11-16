@@ -40,7 +40,16 @@ class EmberChallengeForegroundService : Service() {
         val left = snap.challengeDeadlineMs - System.currentTimeMillis()
         val live = snap.challengeActive && !snap.quiet && left > 0
         val notification = buildNotification(snap, left)
-        if (fromStart) startInForeground(notification)
+        if (fromStart) {
+            try {
+                startInForeground(notification)
+            } catch (error: Exception) {
+                // Android refuses a foreground start from the background; that must never crash Ember.
+                android.util.Log.i(EmberBlockLog.TAG, "foreground start refused: ${error.javaClass.simpleName}")
+                stopSelf()
+                return START_NOT_STICKY
+            }
+        }
         if (!live) {
             if (!fromStart) {
                 val mgr = getSystemService(NotificationManager::class.java)
@@ -107,15 +116,23 @@ class EmberChallengeForegroundService : Service() {
 
         fun start(context: Context) {
             val intent = Intent(context, EmberChallengeForegroundService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (error: Exception) {
+                android.util.Log.i(EmberBlockLog.TAG, "challenge service start refused: ${error.javaClass.simpleName}")
             }
         }
 
         fun stop(context: Context) {
-            context.stopService(Intent(context, EmberChallengeForegroundService::class.java))
+            try {
+                context.stopService(Intent(context, EmberChallengeForegroundService::class.java))
+            } catch (error: Exception) {
+                android.util.Log.i(EmberBlockLog.TAG, "challenge service stop failed: ${error.javaClass.simpleName}")
+            }
         }
     }
 

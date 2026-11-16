@@ -47,7 +47,7 @@ import {
   updateTask,
   updateTemplateTask,
 } from "./domain.js";
-import { levelFor, questXpForLevel } from "./economy.js";
+import { levelFor, questXpForLevel, workoutXpForLevel } from "./economy.js";
 import { rankForLevel } from "./rank.js";
 import { parseNum, reasonLabel } from "./format.js";
 import { generateWeek } from "./gemini.js";
@@ -1076,7 +1076,7 @@ const actions = {
     const at = button ? pointOf(button) : { x: window.innerWidth / 2, y: window.innerHeight * 0.7 };
     await commitAction((current) => addWorkout(current, parsed, new Date()), {
       close: true,
-      pop: { text: "+40 XP", ...at, kind: "xp" },
+      pop: { text: `+${workoutXpForLevel(levelFor(totalXp(state)))} XP`, ...at, kind: "xp" },
     });
   },
   "open-exercise"(el) {

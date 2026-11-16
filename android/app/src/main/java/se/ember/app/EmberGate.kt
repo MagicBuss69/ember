@@ -17,6 +17,18 @@ object EmberGate {
     @Volatile
     var mainStarted: Boolean = false
 
+    /** Ember is coming to the front by any route: launcher, unlock, recents, notification. */
+    @JvmStatic
+    fun noteEmberFront() {
+        userLaunchAt = System.currentTimeMillis()
+    }
+
+    /** Ember left the front. The open grace ends so a blocked app is gated right away. */
+    @JvmStatic
+    fun noteEmberAway() {
+        userLaunchAt = 0L
+    }
+
     @JvmStatic
     fun noteLauncherOpen(context: Context) {
         userLaunchAt = System.currentTimeMillis()

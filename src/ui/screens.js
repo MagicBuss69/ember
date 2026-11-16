@@ -6,7 +6,7 @@ import { SHOP_CATEGORIES, catalogForCategory, isOwned } from "../shop.js";
 import { templateTaskCount } from "../domain.js";
 import { formatLastBackupTime } from "../driveSchedule.js";
 import { geminiKeyEnding } from "../gemini.js";
-import { levelProgress, questXpForLevel } from "../economy.js";
+import { levelProgress, questXpForLevel, workoutXpForLevel } from "../economy.js";
 import { currencyBlocked, openPenaltyQuests } from "../penalty.js";
 import { esc, formatMaybe, formatNum, reasonLabel } from "../format.js";
 import { currencyIcon, gemIcon, itemThumb } from "../art.js";
@@ -432,7 +432,7 @@ export function viewTrain(state, ui, now) {
         .join("")
     : emptyState({
         title: "No sessions yet",
-        body: "Log a lift or a run. It lands in this week’s volume and pays 40 XP.",
+        body: `Log a lift or some cardio. It lands in this week’s volume and pays ${workoutXpForLevel(levelProgress(totalXp(state)).level)} XP.`,
         actions: `<button type="button" class="primary" data-action="open-workout">Log a session</button>`,
       });
   return `
@@ -1019,6 +1019,7 @@ function taskSheet(sheet, draft) {
 }
 
 function workoutSheet(state, draft) {
+  const workoutXp = workoutXpForLevel(levelProgress(totalXp(state)).level);
   const names = [...new Set([...SUGGESTED_EXERCISES, ...state.workouts.map((item) => item.name)])];
   const error = draft.error ? `<p class="form-error">${esc(draft.error)}</p>` : "";
   const sets = (draft.sets || [{ reps: "", weight: "" }])
@@ -1038,18 +1039,18 @@ function workoutSheet(state, draft) {
         <button type="button" class="icon-btn" data-action="close-sheet" aria-label="Close">${icon("close")}</button>
       </div>
       ${error}
-      ${field("Exercise", `<input data-bind="name" maxlength="60" required placeholder="Bench press, run…" list="exercise-names" value="${esc(draft.name || "")}"><datalist id="exercise-names">${names.map((name) => `<option value="${esc(name)}"></option>`).join("")}</datalist>`)}
+      ${field("Exercise", `<input data-bind="name" maxlength="60" required placeholder="Bench press, cardio…" list="exercise-names" value="${esc(draft.name || "")}"><datalist id="exercise-names">${names.map((name) => `<option value="${esc(name)}"></option>`).join("")}</datalist>`)}
       ${field("Date", `<input data-bind="date" type="date" max="${dateKey(new Date())}" value="${esc(draft.date || "")}">`)}
       <div class="segment">
         <button type="button" data-action="set-kind" data-kind="strength" aria-pressed="${draft.kind !== "cardio"}">Lift</button>
-        <button type="button" data-action="set-kind" data-kind="cardio" aria-pressed="${draft.kind === "cardio"}">Run</button>
+        <button type="button" data-action="set-kind" data-kind="cardio" aria-pressed="${draft.kind === "cardio"}">Cardio</button>
       </div>
       ${draft.kind === "cardio"
         ? `${field("Minutes", `<input data-bind="minutes" inputmode="decimal" placeholder="25" value="${esc(draft.minutes || "")}">`)}
            ${field("Kilometres", `<input data-bind="km" inputmode="decimal" placeholder="5 or 5,2" value="${esc(draft.km || "")}">`)}`
         : `<div class="sets-editor">${sets}<button type="button" class="add" data-action="add-set">${icon("plus")} Add a set</button></div>`}
       ${field("Note", `<input data-bind="notes" maxlength="160" placeholder="Optional" value="${esc(draft.notes || "")}">`)}
-      <button type="submit" class="primary">Save session · 40 XP</button>
+      <button type="submit" class="primary">Save session · ${workoutXp} XP</button>
     </form>`;
 }
 

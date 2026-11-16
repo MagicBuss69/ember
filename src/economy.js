@@ -1,4 +1,4 @@
-import { LEVEL_START as LEGACY_LEVEL_START, XP_TASK } from "./constants.js";
+import { LEVEL_START as LEGACY_LEVEL_START, XP_TASK, XP_WORKOUT } from "./constants.js";
 
 export { LEGACY_LEVEL_START };
 
@@ -52,6 +52,12 @@ export function legacyLevelFor(xp) {
 export function questXpForLevel(level) {
   const l = Math.max(1, Math.min(10, Number(level) || 1));
   return Math.round(XP_TASK * (1 + 0.1 * (l - 1)));
+}
+
+/** Workout XP scales with level exactly like quest XP (+10% of base per level above 1). */
+export function workoutXpForLevel(level) {
+  const l = Math.max(1, Math.min(10, Number(level) || 1));
+  return Math.round(XP_WORKOUT * (1 + 0.1 * (l - 1)));
 }
 
 export function levelProgress(xp) {

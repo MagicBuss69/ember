@@ -13,7 +13,7 @@ import {
   setTaskDone,
   stepTask,
 } from "../src/domain.js";
-import { levelFor, levelProgress } from "../src/economy.js";
+import { levelFor, levelProgress, workoutXpForLevel } from "../src/economy.js";
 import { isFullDay, rawGap, streakCount, summarizeWeek, totalXp, weekPace } from "../src/stats.js";
 import { dateKey } from "../src/time.js";
 
@@ -133,6 +133,18 @@ test("workouts pay XP once and count weekly volume", () => {
   state = deleteWorkout(state, id, NOW);
   assert.equal(state.workouts.length, 1);
   assert.equal(totalXp(state), XP_WORKOUT);
+});
+
+test("workout XP scales with level like quest XP, and cardio keeps its saved kind", () => {
+  let state = createInitialState(NOW);
+  state.xpEvents.push({ id: "seed", at: NOW.toISOString(), date: "2026-11-13", amount: 700, source: "task", ref: "seed" });
+  const level = levelFor(totalXp(state));
+  assert.ok(level >= 5);
+  const before = totalXp(state);
+  state = addWorkout(state, { name: "Cardio", kind: "cardio", date: "2026-11-13", durationMin: 30, sets: [] }, NOW);
+  assert.equal(state.workouts[0].kind, "cardio");
+  assert.equal(totalXp(state) - before, workoutXpForLevel(level));
+  assert.ok(workoutXpForLevel(level) > XP_WORKOUT);
 });
 
 test("backfilled last-Friday XP counts toward last week's pace", () => {

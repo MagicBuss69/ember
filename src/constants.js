@@ -96,7 +96,7 @@ export const SUGGESTED_EXERCISES = [
   "Squat",
   "Deadlift",
   "Pull-up",
-  "Run",
+  "Cardio",
   "Walk",
   "Bike",
 ];

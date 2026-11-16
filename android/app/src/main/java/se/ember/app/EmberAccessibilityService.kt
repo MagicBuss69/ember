@@ -74,7 +74,12 @@ class EmberAccessibilityService : AccessibilityService() {
         } else if (pkg == watchPackage) {
             clearWatch()
         }
-        if (!EmberGate.allowInterception()) return
+        if (!EmberGate.allowInterception()) {
+            if (snap.shouldBlock(pkg, until, now)) {
+                android.util.Log.i(EmberBlockLog.TAG, "skip gate for $pkg; Ember is open or just opened")
+            }
+            return
+        }
         if (!snap.shouldBlock(pkg, until, now)) return
         if (!confirmedBlocked(pkg)) return
         launchGate(pkg, snap.blockMode == "quests", now)
@@ -171,6 +176,7 @@ class EmberAccessibilityService : AccessibilityService() {
             android.util.Log.i(EmberBlockLog.TAG, "skip gate for $pkg; Ember or system UI is in front")
             return
         }
+        android.util.Log.i(EmberBlockLog.TAG, "launch gate for $pkg quests=$questsMode")
         val cls = if (questsMode) BlockActivity::class.java else PushupActivity::class.java
         val launch = Intent(this, cls).apply {
             addFlags(EmberGate.gateFlags())

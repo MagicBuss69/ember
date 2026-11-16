@@ -1,5 +1,4 @@
-import { XP_WORKOUT } from "./constants.js";
-import { levelFor, questXpForLevel } from "./economy.js";
+import { levelFor, questXpForLevel, workoutXpForLevel } from "./economy.js";
 import { ago } from "./format.js";
 import { bestWeek, sameDayComparison, streakCount, totalXp, weekPace, xpOnDate } from "./stats.js";
 import { addDays, dateKey, formatWeekSpan, isWeekend, minuteOfDay, weekdayLong, weekStart, zonedTimeToUtc } from "./time.js";
@@ -148,7 +147,7 @@ function legacySimRivalDay(rival, date, rivalLevel) {
   const swing = 0.92 + unit(`${rival.id}:${date}:swing`) * 0.16 * rival.swing;
   let xp = Math.round(tasks * perQuest * rival.mult * swing);
   const workout = unit(`${rival.id}:${date}:wo`) < rival.workoutRate;
-  if (workout) xp += XP_WORKOUT;
+  if (workout) xp += workoutXpForLevel(level);
   const quest = rival.quests[hashString(`${rival.id}:${date}:q`) % rival.quests.length];
   return { xp, rest: false, workout, quest, minute, tasks };
 }
@@ -284,8 +283,9 @@ function planRivalDay(rival, date, rivalLevel, options) {
   const moodScale = 1 + mood * (0.08 + 0.06 * variance);
   const target = rivalDayTarget(rival, options) * noise * moodScale;
   const workoutRoll = unit(`${rival.id}:${date}:wo`) < rival.workoutRate;
-  const workout = workoutRoll && target >= XP_WORKOUT + per;
-  const taskXp = Math.max(per, target - (workout ? XP_WORKOUT : 0));
+  const workoutXp = workoutXpForLevel(level);
+  const workout = workoutRoll && target >= workoutXp + per;
+  const taskXp = Math.max(per, target - (workout ? workoutXp : 0));
   const tasks = Math.max(1, Math.min(MAX_RIVAL_TASKS, Math.round(taskXp / per)));
   const slots = assignSlots(rival, date, tasks);
   const used = [];
@@ -302,7 +302,7 @@ function planRivalDay(rival, date, rivalLevel, options) {
       slot,
       minute: minuteInWindow(rival, date, slot, 99, used),
       quest: "Workout",
-      xp: XP_WORKOUT,
+      xp: workoutXp,
       kind: "workout",
       workout: true,
     });

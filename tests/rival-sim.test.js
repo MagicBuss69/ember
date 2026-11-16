@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { XP_WORKOUT } from "../src/constants.js";
 import { createInitialState } from "../src/domain.js";
-import { questXpForLevel } from "../src/economy.js";
+import { questXpForLevel, workoutXpForLevel } from "../src/economy.js";
 import {
   RIVAL_WINDOWS,
   RIVALS,
@@ -71,7 +71,7 @@ test("task XP matches the user quest formula and lands in daypart bursts", () =>
         const [start, end] = RIVAL_WINDOWS[row.slot];
         assert.ok(row.minute >= start && row.minute <= end, `${row.slot} ${row.minute}`);
         slots.add(row.slot);
-        if (row.kind === "workout") assert.equal(row.xp, XP_WORKOUT);
+        if (row.kind === "workout") assert.equal(row.xp, workoutXpForLevel(entry.level));
         else assert.equal(row.xp, questXpForLevel(entry.level));
       }
       if (entry.tasks >= 3 && slots.size >= 2) spread += 1;

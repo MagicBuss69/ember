@@ -3,7 +3,7 @@ import test from "node:test";
 import { describeSameDay } from "../src/copy.js";
 import { createInitialState } from "../src/domain.js";
 import { XP_WORKOUT } from "../src/constants.js";
-import { levelFor, questXpForLevel } from "../src/economy.js";
+import { levelFor, questXpForLevel, workoutXpForLevel } from "../src/economy.js";
 import {
   activityLine,
   buildBoard,
@@ -85,7 +85,7 @@ test("tasks per active day scale with rival level", () => {
   assert.ok(l5.xp >= 2 * questXpForLevel(5));
 });
 
-test("workout on rival day pays fixed workout xp", () => {
+test("workout on rival day pays level-scaled workout xp", () => {
   let found = false;
   for (let i = 0; i < 40; i += 1) {
     const date = `2026-03-${String((i % 28) + 1).padStart(2, "0")}`;
@@ -96,13 +96,13 @@ test("workout on rival day pays fixed workout xp", () => {
     );
     if (entry.workout) {
       found = true;
-      assert.ok(entry.xp >= XP_WORKOUT);
+      assert.ok(entry.xp >= workoutXpForLevel(3));
       const without = simRivalDay(
         { id: "noah", activity: 1, workoutRate: 0, mult: 1, swing: 0.5, quests: ["Run"] },
         date,
         3,
       );
-      assert.equal(entry.xp, without.xp + XP_WORKOUT);
+      assert.equal(entry.xp, without.xp + workoutXpForLevel(3));
       break;
     }
   }

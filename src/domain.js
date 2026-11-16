@@ -10,7 +10,7 @@ import {
   WEEKEND_QUESTS,
   XP_WORKOUT,
 } from "./constants.js";
-import { levelFor, questXpForLevel } from "./economy.js";
+import { levelFor, questXpForLevel, workoutXpForLevel } from "./economy.js";
 import { clampPushupMax, clampUnlockMinutes } from "./pushups.js";
 import { currencyBlocked } from "./penalty.js";
 import { uid } from "./format.js";
@@ -629,8 +629,9 @@ export function addWorkout(state, input, now = new Date()) {
   };
   if (kind === "strength" && workout.sets.length === 0) return next;
   if (kind === "cardio" && !workout.durationMin && !workout.distanceKm) return next;
+  const reward = workoutXpForLevel(levelFor(totalXp(next)));
   next.workouts.push(workout);
-  pushXp(next, { date: workout.date, amount: XP_WORKOUT, source: "workout", ref: id, now });
+  pushXp(next, { date: workout.date, amount: reward, source: "workout", ref: id, now });
   settle(next, { today: dateKey(now), touchDate: workout.date, now });
   return next;
 }

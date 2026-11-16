@@ -7,6 +7,14 @@ import android.content.Intent
 class EmberAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         val action = intent?.action ?: return
+        try {
+            handle(context, intent, action)
+        } catch (error: Exception) {
+            android.util.Log.i(EmberBlockLog.TAG, "alarm $action failed: ${error.javaClass.simpleName}")
+        }
+    }
+
+    private fun handle(context: Context, intent: Intent, action: String) {
         when (action) {
             EmberAlarmScheduler.ACTION_ROLL -> {
                 EmberInbox.append(context, "native-roll")
@@ -41,6 +49,10 @@ class EmberAlarmReceiver : BroadcastReceiver() {
         val main = Intent(context, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             .putExtra("ember_open_challenge", true)
-        context.startActivity(main)
+        try {
+            context.startActivity(main)
+        } catch (error: Exception) {
+            android.util.Log.i(EmberBlockLog.TAG, "open Ember refused: ${error.javaClass.simpleName}")
+        }
     }
 }
