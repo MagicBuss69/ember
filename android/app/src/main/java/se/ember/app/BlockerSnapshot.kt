@@ -23,8 +23,10 @@ data class BlockerSnapshotData(
 ) {
     fun shouldBlock(packageName: String, unlockedUntilMs: Long = 0L, now: Long = System.currentTimeMillis()): Boolean {
         if (!packages.contains(packageName)) return false
+        // A running unlock (push-ups or a redeemed reward) opens the app in both modes.
+        if (now < unlockedUntilMs) return false
         if (blockMode == "quests") return locked
-        return now >= unlockedUntilMs
+        return true
     }
 
     companion object {
@@ -113,6 +115,41 @@ data class BlockerSnapshotData(
                 prefs.edit().putString(EmberBlockerPlugin.KEY_UNLOCKS, keep.toString()).commit()
             }
             EmberAlarmScheduler.reschedule(context)
+        }
+
+        /**
+         * Opens every package for `durationMs`, extending each app's running window.
+         * Returns the latest end time written.
+         */
+        fun grantRewardUnlock(context: Context, packages: List<String>, durationMs: Long, now: Long): Long {
+            var latest = now + durationMs
+            synchronized(LOCK) {
+                val prefs = context.getSharedPreferences(EmberBlockerPlugin.PREFS, Context.MODE_PRIVATE)
+                val raw = prefs.getString(EmberBlockerPlugin.KEY_UNLOCKS, "{}") ?: "{}"
+                val json = try {
+                    JSONObject(raw)
+                } catch (_: Exception) {
+                    JSONObject()
+                }
+                val keep = JSONObject()
+                val keys = json.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    val until = json.optLong(key, 0L)
+                    if (key.isNotBlank() && until > now) keep.put(key, until)
+                }
+                for (pkg in packages) {
+                    if (pkg.isBlank()) continue
+                    val current = keep.optLong(pkg, 0L)
+                    val base = if (current > now) current else now
+                    val until = base + durationMs
+                    keep.put(pkg, until)
+                    if (until > latest) latest = until
+                }
+                prefs.edit().putString(EmberBlockerPlugin.KEY_UNLOCKS, keep.toString()).commit()
+            }
+            EmberAlarmScheduler.reschedule(context)
+            return latest
         }
 
         /** Drops windows that have ended so the app is blocked again. */

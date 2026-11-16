@@ -7,6 +7,7 @@ import { ensureRivalXp, RIVALS } from "./rivals.js";
 import { totalXp } from "./stats.js";
 import { clampPushupMax, clampUnlockMinutes, DEFAULT_PUSHUP_MAX, DEFAULT_UNLOCK_MINUTES } from "./pushups.js";
 import { dateKey } from "./time.js";
+import { normalizeLifeReward, restockLifeOffers } from "./lifeRewards.js";
 
 function stripMustDoQuests(state) {
   let removed = 0;
@@ -83,7 +84,11 @@ export function migrateStateV2(state, now = new Date()) {
   next.ownedBadges = Array.isArray(next.ownedBadges) ? next.ownedBadges : [];
   next.ownedFx = Array.isArray(next.ownedFx) ? next.ownedFx : ["shards"];
   next.ownedSoundPacks = Array.isArray(next.ownedSoundPacks) ? next.ownedSoundPacks : ["system"];
-  next.customRewards = Array.isArray(next.customRewards) ? next.customRewards : [];
+  next.customRewards = Array.isArray(next.customRewards)
+    ? next.customRewards.map(normalizeLifeReward).filter(Boolean)
+    : [];
+  next.lifeOffers = restockLifeOffers(next, now).lifeOffers;
+  if (next.rewardUnlock && !(Date.parse(next.rewardUnlock.until) > now.getTime())) next.rewardUnlock = null;
   next.penaltyProcessed = Array.isArray(next.penaltyProcessed) ? next.penaltyProcessed : [];
   next.penaltyReports = Array.isArray(next.penaltyReports) ? next.penaltyReports : [];
   next.crystalStress = Math.max(0, Math.min(1, Number(next.crystalStress) || 0));

@@ -261,6 +261,16 @@ export function applyChallengeInbox(state, now = new Date()) {
         state.settings = state.settings || {};
         state.settings.pushupMax = clampPushupMax(nextMax);
       }
+    } else if (event.type === "reward-unlock") {
+      const until = String(event.until || "");
+      if (Date.parse(until) > now.getTime()) {
+        state.rewardUnlock = {
+          title: String(state.rewardUnlock?.title || "").slice(0, 60),
+          minutes: Math.max(0, Math.round(Number(event.minutes) || 0)),
+          ...(state.rewardUnlock || {}),
+          until,
+        };
+      }
     } else if (event.type === "unlock" || event.type === "native-roll") {
       /* native wake; prepare/processChallenges runs on resume */
     } else {

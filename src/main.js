@@ -69,6 +69,8 @@ import {
   openAccessibilitySettings,
   openFullScreenSettings,
   openOverlaySettings,
+  grantRewardUnlock,
+  isNativeBlocker,
   pushBlockerSnapshot,
   startPushupTest,
 } from "./blockerBridge.js";
@@ -76,6 +78,7 @@ import { processChallenges } from "./challenges.js";
 import { ensureRivalHistory, rivalPromptFacts } from "./rivals.js";
 import { exerciseGroups, isComplete, openTodayCount, totalXp } from "./stats.js";
 import { addCustomReward, buyItem, equipCosmetic, redeemCustomReward, removeCustomReward, SHOP_CATALOG } from "./shop.js";
+import { extendUnlockUntil, parseUnlockMinutes } from "./lifeRewards.js";
 import { ensureAudio, playSound } from "./sounds.js";
 import { burstAt, confettiFan, dailyCompleteBanner, shardBurstToCrystal } from "./ui/fx.js";
 import { addDays, dateKey, formatCountdown, formatPretty, weekStart } from "./time.js";
@@ -94,6 +97,11 @@ const THEME_BG = {
   ink: "#070708",
   aurora: "#0a1018",
   blood: "#140808",
+  dusk: "#110c18",
+  ocean: "#06121a",
+  sakura: "#150b10",
+  toxic: "#070f07",
+  royal: "#0e0916",
 };
 
 let state = createInitialState();
@@ -598,7 +606,7 @@ const actions = {
     if (done) {
       const fxPack = state.settings?.checkFx || "shards";
       if (fxPack === "shards") shardBurstToCrystal(at.x, at.y, reduced);
-      else burstAt(at.x, at.y, reduced);
+      else burstAt(at.x, at.y, reduced, fxPack);
       if (ui.comboCount >= 2) {
         sfx("combo");
         haptic("combo");
@@ -1164,12 +1172,15 @@ const actions = {
     sfx("tick");
   },
   "add-life-reward"() {
-    openSheet({ type: "life-reward" }, { title: "", price: "20", error: "" });
+    openSheet({ type: "life-reward" }, { title: "", price: "20", unlockMinutes: "", oneTime: false, error: "" });
     ui.focusSheet = true;
   },
   async "save-life-reward"() {
     const title = String(ui.draft?.title || "").trim();
     const price = Math.max(1, Math.min(9999, Math.round(Number(ui.draft?.price) || 0)));
+    const rawMinutes = String(ui.draft?.unlockMinutes ?? "").trim();
+    const unlockMinutes = rawMinutes === "" ? 0 : Math.max(0, Math.min(240, Math.round(Number(rawMinutes) || 0)));
+    const oneTime = ui.draft?.oneTime === true;
     if (!title) {
       ui.draft = { ...ui.draft, error: "Name the reward." };
       ui.keepScroll = true;
@@ -1178,7 +1189,7 @@ const actions = {
     }
     await commitAction(
       (current) => {
-        const result = addCustomReward(current, { title, price }, new Date());
+        const result = addCustomReward(current, { title, price, unlockMinutes, oneTime }, new Date());
         return result.ok ? result.state : current;
       },
       { close: true, quiet: true },
@@ -1188,12 +1199,38 @@ const actions = {
     toast("Life reward added.");
     paint();
   },
-  "redeem-life"(el) {
-    commitAction((current) => {
-      const result = redeemCustomReward(current, el.dataset.reward, new Date());
-      return result.ok ? result.state : current;
+  async "redeem-life"(el) {
+    const now = new Date();
+    let redeemed = null;
+    await commitAction((current) => {
+      const result = redeemCustomReward(current, el.dataset.reward, now);
+      if (!result.ok) return current;
+      redeemed = result;
+      return result.state;
     });
-    toast("Redeemed. Go enjoy it.");
+    if (!redeemed) {
+      toast("Not enough shards for that one yet.");
+      return;
+    }
+    const minutes = redeemed.unlockMinutes || 0;
+    const reward = redeemed.reward;
+    const once = reward.offer ? " One-time offer used." : reward.oneTime ? " It comes back in 7 days." : "";
+    if (minutes <= 0) {
+      toast(`Redeemed. Go enjoy it.${once}`);
+      return;
+    }
+    if (!isNativeBlocker()) {
+      toast(`Redeemed.${once} The ${minutes} min app unlock only works in the Android app.`);
+      return;
+    }
+    const nativeUntil = await grantRewardUnlock(minutes, reward.title);
+    const until = nativeUntil || extendUnlockUntil(state.rewardUnlock?.until, minutes, now);
+    await commitAction(
+      (current) => ({ ...current, rewardUnlock: { until, title: String(reward.title || "").slice(0, 60), minutes } }),
+      { quiet: true },
+    );
+    const end = new Date(until).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    toast(nativeUntil ? `Apps open until ${end}. Enjoy.${once}` : `Redeemed, but the phone didn't confirm the unlock.${once}`);
   },
   "ask-remove-life-reward"(el) {
     const reward = (state.customRewards || []).find((item) => item.id === el.dataset.reward);
@@ -2053,6 +2090,16 @@ function bind() {
     }
     if (ui.draft) {
       assign(ui.draft, el.dataset.bind, el.type === "checkbox" ? el.checked : el.value);
+      // Life reward: "30 min YouTube" suggests 30 unlock minutes until the field is edited by hand.
+      if (el.dataset.bind === "unlockMinutes") ui.draft.unlockTouched = true;
+      if (el.dataset.bind === "title" && ui.sheet?.type === "life-reward" && !ui.draft.unlockTouched && el.form) {
+        const minutesEl = el.form.querySelector('[data-bind="unlockMinutes"]');
+        const guess = parseUnlockMinutes(el.value);
+        if (minutesEl) {
+          minutesEl.value = guess ? String(guess) : "";
+          ui.draft.unlockMinutes = minutesEl.value;
+        }
+      }
       // Send is disabled in the sheet HTML until there is text. Typing does not
       // repaint (that would drop the caret), so the disabled flag has to move here.
       if (el.dataset.bind === "draft" && el.form) {

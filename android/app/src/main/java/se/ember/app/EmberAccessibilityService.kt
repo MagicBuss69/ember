@@ -19,6 +19,10 @@ class EmberAccessibilityService : AccessibilityService() {
     private var warnedUntil: Long = 0L
     private val expireRunnable = Runnable { onWatchFired() }
     private val warnRunnable = Runnable { onWarnFired() }
+    private val tickRunnable = Runnable { onTick() }
+    private var ticking = false
+    /** Last blocked app seen in front; kept while the shade or keyguard covers it. */
+    private var lastBlockedFront: String = ""
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -31,12 +35,14 @@ class EmberAccessibilityService : AccessibilityService() {
     override fun onUnbind(intent: Intent): Boolean {
         if (instance == this) instance = null
         clearWatch()
+        stopTick()
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
         if (instance == this) instance = null
         clearWatch()
+        stopTick()
         super.onDestroy()
     }
 
@@ -63,13 +69,22 @@ class EmberAccessibilityService : AccessibilityService() {
 
     private fun evaluate(pkg: String) {
         if (EmberGate.isIgnoredPackage(pkg, packageName)) {
-            clearWatch()
+            // The shade, keyguard, or Ember over a blocked app must not drop its expiry
+            // watch: closing the shade often sends no new window event for the app.
+            // The watch and the tick both re-check the live foreground before kicking.
+            if (pkg == packageName || pkg.lowercase().contains("launcher")) lastBlockedFront = ""
             return
         }
         val snap = BlockerSnapshot.read(this)
         val until = BlockerSnapshot.unlockUntil(this, pkg)
         val now = System.currentTimeMillis()
-        if (snap.blockMode != "quests" && snap.packages.contains(pkg) && until > now) {
+        if (snap.packages.contains(pkg)) {
+            lastBlockedFront = pkg
+            startTick()
+        } else {
+            lastBlockedFront = ""
+        }
+        if (snap.packages.contains(pkg) && until > now) {
             armWatch(pkg, until, now)
         } else if (pkg == watchPackage) {
             clearWatch()
@@ -132,6 +147,64 @@ class EmberAccessibilityService : AccessibilityService() {
         BlockerSnapshot.revokeExpired(this, now)
         EmberAlarmScheduler.reschedule(this)
         kickIfForeground(listOf(pkg))
+    }
+
+    private fun startTick() {
+        if (ticking) return
+        ticking = true
+        handler.postDelayed(tickRunnable, TICK_MS)
+    }
+
+    private fun stopTick() {
+        ticking = false
+        handler.removeCallbacks(tickRunnable)
+    }
+
+    /**
+     * Safety net while a blocked app is in front: every TICK_MS re-check its unlock
+     * against the wall clock, so it relocks even if the Handler watch or the exact
+     * alarm was missed (no window event, inexact alarm, shade was open at expiry).
+     */
+    private fun onTick() {
+        ticking = false
+        val tracked = lastBlockedFront
+        if (tracked.isBlank()) return
+        if (EmberGate.mainStarted) return
+        val live = liveForeground()
+        if (live.isBlank()) {
+            // Screen off or no window info: never launch a gate blind, check again later.
+            startTick()
+            return
+        }
+        if (live != tracked) {
+            if (EmberGate.isSystemChrome(live) && !live.lowercase().contains("launcher")) {
+                startTick()
+            } else {
+                lastBlockedFront = ""
+            }
+            return
+        }
+        val snap = BlockerSnapshot.read(this)
+        if (!snap.packages.contains(tracked)) {
+            lastBlockedFront = ""
+            return
+        }
+        val now = System.currentTimeMillis()
+        val until = BlockerSnapshot.unlockUntil(this, tracked)
+        if (until > now) {
+            armWatch(tracked, until, now)
+            startTick()
+            return
+        }
+        if (until > 0L) {
+            BlockerSnapshot.revokeExpired(this, now)
+            EmberAlarmScheduler.reschedule(this)
+        }
+        if (snap.shouldBlock(tracked, 0L, now) && EmberGate.allowInterception()) {
+            android.util.Log.i(EmberBlockLog.TAG, "tick relock for $tracked")
+            launchGate(tracked, snap.blockMode == "quests", now)
+        }
+        startTick()
     }
 
     private fun onWarnFired() {
@@ -223,6 +296,7 @@ class EmberAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val CHANNEL = "ember_pushup_launch"
+        private const val TICK_MS = 15_000L
         private const val NOTIF_ID = EmberGate.PUSHUP_NOTIF_ID
         @Volatile private var lastPackage: String = ""
         @Volatile private var instance: EmberAccessibilityService? = null

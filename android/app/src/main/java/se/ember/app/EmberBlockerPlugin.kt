@@ -35,6 +35,34 @@ class EmberBlockerPlugin : Plugin() {
         call.resolve()
     }
 
+    /**
+     * Real-life reward unlock: opens every blocked app for `minutes`, on top of any
+     * unlock still running. Same per-app windows as the push-up unlock, so the
+     * accessibility watch, the expiry alarm, and the relock all apply.
+     */
+    @PluginMethod
+    fun grantUnlock(call: PluginCall) {
+        val minutes = (call.getInt("minutes") ?: 0).coerceIn(0, 240)
+        if (minutes <= 0) {
+            call.reject("No unlock minutes.")
+            return
+        }
+        val reason = call.getString("reason") ?: "reward"
+        val snap = BlockerSnapshot.read(context)
+        val now = System.currentTimeMillis()
+        val until = BlockerSnapshot.grantRewardUnlock(context, snap.packages, minutes * 60_000L, now)
+        android.util.Log.i(EmberBlockLog.TAG, "reward unlock ${minutes}m for ${snap.packages.size} apps ($reason)")
+        val event = org.json.JSONObject()
+        event.put("type", "reward-unlock")
+        event.put("until", java.time.Instant.ofEpochMilli(until).toString())
+        event.put("minutes", minutes)
+        EmberInbox.appendEvent(context, event)
+        val result = JSObject()
+        result.put("until", java.time.Instant.ofEpochMilli(until).toString())
+        result.put("packages", snap.packages.size)
+        call.resolve(result)
+    }
+
     @PluginMethod
     fun listLaunchableApps(call: PluginCall) {
         val pm = context.packageManager

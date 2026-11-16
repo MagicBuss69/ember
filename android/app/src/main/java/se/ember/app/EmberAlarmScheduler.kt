@@ -38,9 +38,8 @@ object EmberAlarmScheduler {
         }
     }
 
-    /** The soonest push-up unlock is an exact alarm, with a heads-up one minute before. */
+    /** The soonest unlock (push-ups or reward) is an exact alarm, with a heads-up one minute before. */
     private fun scheduleNextUnlock(context: Context, am: AlarmManager, snap: BlockerSnapshotData, now: Long) {
-        if (snap.blockMode != "pushups") return
         var nextAt = 0L
         var nextPkg = ""
         for ((pkg, until) in BlockerSnapshot.readUnlocks(context)) {

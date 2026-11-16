@@ -24,7 +24,7 @@ object EmberUnlockLoop {
         val left = until - System.currentTimeMillis()
         if (left <= 0L || left > WARN_MS + 15_000L) return
         val snap = BlockerSnapshot.read(context)
-        if (snap.blockMode != "pushups" || !snap.packages.contains(packageName)) return
+        if (!snap.packages.contains(packageName)) return
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(CHANNEL, "Unlock ending", NotificationManager.IMPORTANCE_HIGH)
@@ -35,7 +35,10 @@ object EmberUnlockLoop {
         val notification = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("$label locks again in about a minute")
-            .setContentText("Another set of push-ups opens it again.")
+            .setContentText(
+                if (snap.blockMode == "quests") "Finish today's quests or redeem a reward to open it again."
+                else "Another set of push-ups opens it again.",
+            )
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)

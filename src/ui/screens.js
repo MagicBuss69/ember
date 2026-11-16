@@ -2,7 +2,8 @@ import { buildMonthGrid, daySummary, monthKey } from "../calendar.js";
 import { GOOGLE_CLIENT_ID, VAPID_PUBLIC_KEY, WORKER_URL } from "../config.js";
 import { SLOTS, SLOT_LABEL, SUGGESTED_EXERCISES, THEMES } from "../constants.js";
 import { rankForXp, rankMeta } from "../rank.js";
-import { SHOP_CATEGORIES, catalogForCategory, isOwned } from "../shop.js";
+import { SHOP_CATEGORIES, catalogForCategory, catalogName, isOwned, itemArt } from "../shop.js";
+import { daysUntilRestock, parseUnlockMinutes, returningLifeRewards, unlockMinutesLeft, visibleLifeRewards } from "../lifeRewards.js";
 import { templateTaskCount } from "../domain.js";
 import { formatLastBackupTime } from "../driveSchedule.js";
 import { geminiKeyEnding } from "../gemini.js";
@@ -529,29 +530,53 @@ function shopSection(state, ui) {
       ? equipButtonForItem(state, item)
       : `<button type="button" class="ghost tiny shop-price-btn" data-action="ask-buy-item" data-item="${item.id}" ${afford ? "" : "disabled"}><span class="num">${item.price}</span> ${currencyIcon({ size: 16 })}</button>`;
     return `<article class="theme shop-item">
-      ${itemThumb(item.id, { alt: item.name })}
+      ${itemThumb(itemArt(item).art, { alt: item.name, hue: itemArt(item).hue })}
       <span><strong>${esc(item.name)}</strong><small>${esc(item.blurb)}</small></span>
       ${action}
     </article>`;
   }).join("");
-  const life = (state.customRewards || [])
-    .map(
-      (reward) => `<article class="theme shop-item life-reward-item">
+  const now = new Date();
+  const shelf = visibleLifeRewards(state, now);
+  const lifeRow = (reward) => {
+    const tags = [
+      reward.offer ? `<span class="reward-tag is-offer">One-time offer</span>` : reward.oneTime ? `<span class="reward-tag">One time</span>` : "",
+      reward.unlockMinutes > 0 ? `<span class="reward-tag">Opens apps ${reward.unlockMinutes} min</span>` : "",
+    ].join("");
+    const remove = reward.offer
+      ? ""
+      : `<button type="button" class="icon-btn danger-ghost" data-action="ask-remove-life-reward" data-reward="${esc(reward.id)}" aria-label="Remove ${esc(reward.title)}">${icon("trash")}</button>`;
+    return `<article class="theme shop-item life-reward-item">
       ${itemThumb("life-reward", { alt: reward.title })}
-      <span class="life-reward-copy"><strong>${esc(reward.title)}</strong><small>${reward.price} shards to redeem</small></span>
+      <span class="life-reward-copy"><strong>${esc(reward.title)}</strong><small>${reward.price} shards to redeem</small>${tags ? `<span class="reward-tags">${tags}</span>` : ""}</span>
       <div class="shop-item-actions">
-        <button type="button" class="ghost tiny shop-price-btn" data-action="redeem-life" data-reward="${reward.id}" ${state.crystals >= reward.price ? "" : "disabled"}">Redeem <span class="num">${reward.price}</span> ${currencyIcon({ size: 16 })}</button>
-        <button type="button" class="icon-btn danger-ghost" data-action="ask-remove-life-reward" data-reward="${reward.id}" aria-label="Remove ${esc(reward.title)}">${icon("trash")}</button>
+        <button type="button" class="ghost tiny shop-price-btn" data-action="redeem-life" data-reward="${esc(reward.id)}" ${state.crystals >= reward.price ? "" : "disabled"}>Redeem <span class="num">${reward.price}</span> ${currencyIcon({ size: 16 })}</button>
+        ${remove}
       </div>
-    </article>`,
-    )
-    .join("");
+    </article>`;
+  };
+  const restockIn = daysUntilRestock(now);
+  const returning = returningLifeRewards(state, now);
+  const life = [
+    rewardUnlockBanner(state, now),
+    shelf.custom.map(lifeRow).join(""),
+    shelf.offers.length ? `<h3 class="section-title">One-time offers</h3>${shelf.offers.map(lifeRow).join("")}` : "",
+    `<p class="footnote">New offers in ${restockIn} ${restockIn === 1 ? "day" : "days"}.${returning.length ? ` ${returning.map((r) => `“${esc(r.title)}” is back in ${r.days} ${r.days === 1 ? "day" : "days"}.`).join(" ")}` : ""}</p>`,
+  ].join("");
   return `
     <h2 class="section-title" id="shop">Shop</h2>
     <p class="lede">Spend shards on cosmetics, FX, sounds, and things you actually want IRL.</p>
     <div class="shop-tabs">${tabs}</div>
-  ${activeCat === "life" ? life || `<p class="slot-empty">No real-life rewards yet.</p>` : items || `<p class="slot-empty">Nothing here yet.</p>`}
+  ${activeCat === "life" ? life : items || `<p class="slot-empty">Nothing here yet.</p>`}
     ${activeCat === "life" ? `<button type="button" class="ghost slim" data-action="add-life-reward">+ Add life reward token</button>` : ""}`;
+}
+
+/** Remaining reward unlock, shown in the shop and the blocker settings. */
+export function rewardUnlockBanner(state, now = new Date()) {
+  const unlock = state.rewardUnlock;
+  const left = unlockMinutesLeft(unlock?.until, now);
+  if (!left) return "";
+  const end = new Date(unlock.until).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return `<div class="unlock-banner" data-reward-unlock>Apps open until <strong>${esc(end)}</strong> · ${left} min left${unlock.title ? ` (${esc(unlock.title)})` : ""}</div>`;
 }
 
 function equipButtonForItem(state, item) {
@@ -583,14 +608,14 @@ export function viewYou(state, ui) {
   const progress = levelProgress(xp);
   const meta = rankMeta(progress.level);
   const streak = streakCount(state, dateKey(new Date()));
-  const title = state.settings.equippedTitle ? ` · ${state.settings.equippedTitle}` : "";
+  const title = state.settings.equippedTitle ? ` · ${catalogName("title", state.settings.equippedTitle)}` : "";
   const log = state.crystalLog.length
     ? `<ul class="log">${state.crystalLog
         .slice(0, 8)
         .map((entry) => `<li><span>${esc(reasonLabel(entry.reason))}</span><span class="num ${entry.delta < 0 ? "neg" : ""}">${entry.delta > 0 ? "+" : ""}${entry.delta}</span></li>`)
         .join("")}</ul>`
     : `<p class="slot-empty">Shards you earn and spend show up here.</p>`;
-  const badges = (state.ownedBadges || []).map((id) => `<span class="badge-pill">${esc(id)}</span>`).join("");
+  const badges = (state.ownedBadges || []).map((id) => `<span class="badge-pill">${esc(catalogName("badge", id))}</span>`).join("");
   return `
     <section class="you-page">
       <h1 class="page-title">You</h1>
@@ -641,7 +666,7 @@ export function viewSettings(state, ui) {
     .map((theme) => {
       const active = state.settings.theme === theme.id;
       return `<button type="button" class="theme-art-btn ${active ? "is-on" : ""}" data-action="equip-theme" data-theme="${theme.id}" aria-pressed="${active ? "true" : "false"}">
-        ${itemThumb(`theme-${theme.id}`, { alt: theme.name, size: 52 })}
+        ${itemThumb(theme.art || `theme-${theme.id}`, { alt: theme.name, size: 52, hue: theme.hue || 0 })}
         <span>${esc(theme.name)}</span>
       </button>`;
     })
@@ -676,6 +701,7 @@ export function viewSettings(state, ui) {
         <label class="field compact"><span>Until</span><input type="time" value="${esc(state.settings.quietNight?.end || "06:20")}" data-quiet-time data-parent="quietNight" data-field="end" /></label>
       </div>
       <h2 class="section-title">Android blocker</h2>
+      ${rewardUnlockBanner(state)}
       <p class="lede">Opening a blocked app starts a push-up set on the front camera. Hit your max and that app stays open for a few minutes. The old “locked until every quest is done” mode is off unless you turn it on.</p>
       <button type="button" class="switch" role="switch" aria-checked="${state.settings.blockMode === "quests" ? "true" : "false"}" data-action="toggle-block-mode"><span>Block until quests are done</span><i></i></button>
       ${state.settings.blockMode === "quests" ? "" : `<div class="row-fields">
@@ -839,6 +865,9 @@ function lifeRewardSheet(draft) {
       ${error}
       ${field("Reward", `<input type="text" data-bind="title" maxlength="80" placeholder="30 min gaming" value="${esc(draft.title || "")}" required />`)}
       ${field("Shard price", `<input type="number" inputmode="numeric" min="1" max="9999" data-bind="price" value="${esc(String(draft.price ?? 20))}" />`)}
+      ${field("Unlock minutes (optional)", `<input type="number" inputmode="numeric" min="0" max="240" data-bind="unlockMinutes" placeholder="${esc(parseUnlockMinutes(draft.title) ? String(parseUnlockMinutes(draft.title)) : "0 = no unlock")}" value="${esc(draft.unlockMinutes == null ? "" : String(draft.unlockMinutes))}" />`)}
+      <p class="footnote">Redeeming opens your blocked apps for this many minutes in the Android app, like 30 for “30 min YouTube”. Blank or 0 is a plain reward.</p>
+      <label class="checkline"><input type="checkbox" data-bind="oneTime" ${draft.oneTime ? "checked" : ""}> One time only (comes back after 7 days)</label>
       <button type="submit" class="primary">Save reward</button>
     </form>`;
 }

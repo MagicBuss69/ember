@@ -109,6 +109,22 @@ export async function consumeChallengeIntent() {
   }
 }
 
+/**
+ * Opens every blocked app for `minutes` (extends a running unlock). Native only.
+ * Resolves the ISO end time, or "" on web / failure.
+ */
+export async function grantRewardUnlock(minutes, reason = "reward") {
+  if (!Capacitor.isNativePlatform()) return "";
+  const mins = Math.max(0, Math.min(240, Math.round(Number(minutes) || 0)));
+  if (!mins) return "";
+  try {
+    const result = await EmberBlocker.grantUnlock({ minutes: mins, reason: String(reason || "reward").slice(0, 60) });
+    return typeof result?.until === "string" ? result.until : "";
+  } catch {
+    return "";
+  }
+}
+
 export async function startPushupTest() {
   if (!Capacitor.isNativePlatform()) return false;
   await EmberBlocker.startPushupTest();

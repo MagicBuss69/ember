@@ -183,6 +183,9 @@ export function sanitizeImport(raw, current = null) {
           title: clip(item?.title, 60),
           price: Math.max(1, Math.min(999, Math.round(Number(item?.price) || 0))),
           createdAt: normalizeIso(item?.createdAt) || new Date().toISOString(),
+          unlockMinutes: Math.max(0, Math.min(240, Math.round(Number(item?.unlockMinutes) || 0))),
+          oneTime: item?.oneTime === true,
+          ...(normalizeIso(item?.hiddenUntil) ? { hiddenUntil: normalizeIso(item.hiddenUntil) } : {}),
         }))
         .filter((item) => item.title)
     : [];
@@ -322,6 +325,31 @@ export function sanitizeImport(raw, current = null) {
       const iso = normalizeIso(until);
       if (key && iso) state.appUnlocks[key] = iso;
     }
+  }
+  if (raw.lifeOffers && typeof raw.lifeOffers === "object") {
+    const offers = Array.isArray(raw.lifeOffers.offers) ? raw.lifeOffers.offers : [];
+    const recent = Array.isArray(raw.lifeOffers.recent) ? raw.lifeOffers.recent : [];
+    state.lifeOffers = {
+      period: Math.round(Number(raw.lifeOffers.period)) || -1,
+      offers: offers
+        .filter((o) => o && typeof o === "object" && o.id && o.poolId)
+        .slice(0, 8)
+        .map((o) => ({
+          id: clip(o.id, 80),
+          poolId: clip(o.poolId, 40),
+          title: clip(o.title, 60),
+          price: Math.max(1, Math.min(999, Math.round(Number(o.price) || 0))),
+          unlockMinutes: Math.max(0, Math.min(240, Math.round(Number(o.unlockMinutes) || 0))),
+          oneTime: true,
+          offer: true,
+          addedPeriod: Math.round(Number(o.addedPeriod)) || 0,
+        }))
+        .filter((o) => o.title),
+      recent: recent
+        .filter((r) => r && r.poolId)
+        .slice(0, 20)
+        .map((r) => ({ poolId: clip(r.poolId, 40), period: Math.round(Number(r.period)) || 0 })),
+    };
   }
   return migrateStateV2(state, new Date());
 }
