@@ -603,41 +603,29 @@ function countSlots(slots) {
   return SLOTS.reduce((sum, slot) => sum + slots[slot].length, 0);
 }
 
+/**
+ * Log a session: date, Lift or Cardio, the split ("Push", "Legs", "Run"…) and a note.
+ * Sets and reps live in Hevy, so Ember doesn't track them. Pays level-scaled workout XP.
+ */
 export function addWorkout(state, input, now = new Date()) {
   const next = clone(state);
-  const name = String(input.name || "").trim().slice(0, 60);
+  const name = String(input.split ?? input.name ?? "").trim().slice(0, 60);
   if (!name) return next;
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(input.date || "")) ? input.date : dateKey(now);
   const id = uid();
-  const kind = input.kind === "cardio" ? "cardio" : "strength";
   const workout = {
     id,
-    date: input.date,
+    date,
     name,
-    kind,
-    sets: kind === "strength"
-      ? (input.sets || [])
-          .map((set) => ({
-            reps: Math.max(0, Math.round(Number(set.reps) || 0)),
-            weightKg: Math.max(0, round1(Number(set.weightKg) || 0)),
-          }))
-          .filter((set) => set.reps > 0)
-      : [],
-    durationMin: kind === "cardio" ? Math.max(0, round1(Number(input.durationMin) || 0)) : null,
-    distanceKm: kind === "cardio" ? Math.max(0, round1(Number(input.distanceKm) || 0)) : null,
-    notes: String(input.notes || "").trim().slice(0, 160),
+    kind: input.kind === "cardio" ? "cardio" : "strength",
+    notes: String(input.notes || "").trim().slice(0, 300),
     createdAt: now.toISOString(),
   };
-  if (kind === "strength" && workout.sets.length === 0) return next;
-  if (kind === "cardio" && !workout.durationMin && !workout.distanceKm) return next;
   const reward = workoutXpForLevel(levelFor(totalXp(next)));
   next.workouts.push(workout);
   pushXp(next, { date: workout.date, amount: reward, source: "workout", ref: id, now });
   settle(next, { today: dateKey(now), touchDate: workout.date, now });
   return next;
-}
-
-function round1(n) {
-  return Math.round(n * 10) / 10;
 }
 
 export function deleteWorkout(state, id, now = new Date()) {

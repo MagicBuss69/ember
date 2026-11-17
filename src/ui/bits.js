@@ -1,7 +1,7 @@
 import { SLOTS, SLOT_LABEL } from "../constants.js";
 import { formatNum, esc } from "../format.js";
 import { crystalGemSvg, icon } from "../icons.js";
-import { rankForLevel } from "../rank.js";
+import { rankBadgeHtml, rankMeta } from "../rank.js";
 
 const RADIUS = 36;
 export const RING_CIRC = 2 * Math.PI * RADIUS;
@@ -34,9 +34,7 @@ export function ringHtml(done, total, pulse, { compact = false } = {}) {
 
 export function levelBar(progress, total, pulse) {
   const scale = Math.max(0, Math.min(1, Number(progress.pct) || 0)).toFixed(4);
-  const right = progress.maxed
-    ? `${formatNum(total)} XP`
-    : `${formatNum(progress.into)} / ${formatNum(progress.span)}`;
+  const right = `${formatNum(progress.into)} / ${formatNum(progress.span)}`;
   return `
     <div class="level-block">
       <div class="level-row">
@@ -49,21 +47,22 @@ export function levelBar(progress, total, pulse) {
     </div>`;
 }
 
-export function crystalMeterHtml({ progress, rank, stress = 0, pulse = false, skin = "default", compact = false }) {
+export function crystalMeterHtml({ progress, stress = 0, pulse = false, skin = "default", compact = false }) {
   const fill = Math.max(0, Math.min(1, Number(progress.pct) || 0));
   const gemFill = Math.max(0.35, fill);
   const stressCl = stress > 0.55 ? "is-cracked" : stress > 0.25 ? "is-dim" : "";
-  const rankLetter = rank || rankForLevel(progress.level);
-    const gemSize = compact ? 44 : 56;
+  const meta = rankMeta(progress.level);
+  const gemSize = compact ? 44 : 56;
   return `
-    <div class="crystal-meter ${compact ? "is-compact" : ""} ${stressCl} skin-${esc(skin)}" data-crystal-meter>
-      <div class="rank-chip" aria-label="Rank ${rankLetter}"><span class="display">${esc(rankLetter)}</span></div>
+    <div class="crystal-meter ${compact ? "is-compact" : ""} ${stressCl} skin-${esc(skin || "default")}" data-crystal-meter>
+      <div class="rank-chip" aria-label="Rank ${esc(meta.name)}">${rankBadgeHtml(progress.level, { size: compact ? 34 : 40 })}</div>
       <div class="crystal-gem-wrap ${pulse ? "pulse" : ""}" aria-hidden="true">
         ${crystalGemSvg({ size: gemSize, fillPct: gemFill, className: "crystal-svg hero-gem", compact: false })}
       </div>
       <div class="crystal-copy">
         <strong class="display">Lv ${progress.level}</strong>
-        <span class="num crystal-xp">${progress.maxed ? "MAX" : `${Math.round(progress.pct * 100)}%`}</span>
+        <span class="rank-name" style="--rank-light:${meta.colors[0]};--rank-glow:${meta.glow}">${esc(meta.name)}</span>
+        <span class="num crystal-xp">${Math.round(progress.pct * 100)}%</span>
       </div>
     </div>`;
 }

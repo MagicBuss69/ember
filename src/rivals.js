@@ -119,7 +119,7 @@ export function unit(value) {
 }
 
 export function tasksForRivalLevel(level) {
-  const l = Math.max(1, Math.min(10, Number(level) || 1));
+  const l = Math.max(1, Math.floor(Number(level) || 1));
   if (l <= 3) return 1;
   if (l <= 6) return 2;
   if (l <= 9) return 3;
@@ -141,7 +141,7 @@ function legacySimRivalDay(rival, date, rivalLevel) {
   if (!active) {
     return { xp: 0, rest: true, workout: false, quest: null, minute, tasks: 0 };
   }
-  const level = Math.max(1, Math.min(10, Number(rivalLevel) || 1));
+  const level = Math.max(1, Math.floor(Number(rivalLevel) || 1));
   const tasks = tasksForRivalLevel(level);
   const perQuest = questXpForLevel(level);
   const swing = 0.92 + unit(`${rival.id}:${date}:swing`) * 0.16 * rival.swing;
@@ -230,7 +230,7 @@ export function rivalFloorDaily(userLevel) {
  * long-run average, rest days included, lands on the target.
  */
 export function rivalDayTarget(rival, options = {}) {
-  const userLevel = Math.max(1, Math.min(10, Number(options.userLevel) || 1));
+  const userLevel = Math.max(1, Math.floor(Number(options.userLevel) || 1));
   const floor = rivalFloorDaily(userLevel);
   const avg = Number(options.userAvg);
   const hasPace = Number(options.userDays) >= 2 && Number.isFinite(avg);
@@ -261,7 +261,7 @@ export function rivalCatchUp(state, rival, date, recent) {
  * however hard the user pushes. There is no per-day ceiling, only a task-count cap.
  */
 function planRivalDay(rival, date, rivalLevel, options) {
-  const level = Math.max(1, Math.min(10, Number(rivalLevel) || 1));
+  const level = Math.max(1, Math.floor(Number(rivalLevel) || 1));
   const minute = 7 * 60 + Math.floor(unit(`${rival.id}:${date}:time`) * 14 * 60);
   const mood = moodShift(rival, date);
   if (!showsUp(rival, date, Boolean(options.yesterdayRest))) {

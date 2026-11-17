@@ -14,7 +14,7 @@ import {
   stepTask,
 } from "../src/domain.js";
 import { levelFor, levelProgress, workoutXpForLevel } from "../src/economy.js";
-import { isFullDay, rawGap, streakCount, summarizeWeek, totalXp, weekPace } from "../src/stats.js";
+import { isFullDay, rawGap, streakCount, summarizeWeek, totalXp, weekPace, workoutHistory } from "../src/stats.js";
 import { dateKey } from "../src/time.js";
 
 const NOW = new Date("2026-11-13T18:00:00Z");
@@ -103,36 +103,38 @@ test("themes spend crystals and cannot be equipped before purchase", () => {
   assert.equal(poor.state.settings.theme, "pine");
 });
 
-test("workouts pay XP once and count weekly volume", () => {
+test("workouts are date, type, split and note; pay XP once and count weekly", () => {
   let state = createInitialState(NOW);
-  state = addWorkout(
-    state,
-    {
-      name: "Bench press",
-      kind: "strength",
-      date: "2026-11-13",
-      sets: [
-        { reps: 8, weightKg: 40 },
-        { reps: 6, weightKg: 42.5 },
-      ],
-    },
-    NOW,
-  );
-  state = addWorkout(
-    state,
-    { name: "Run", kind: "cardio", date: "2026-11-12", durationMin: 20, distanceKm: 3.2, sets: [] },
-    NOW,
-  );
+  state = addWorkout(state, { name: "Push", kind: "strength", date: "2026-11-13", notes: "bench PR" }, NOW);
+  state = addWorkout(state, { split: "Run", kind: "cardio", date: "2026-11-12" }, NOW);
   assert.equal(totalXp(state), XP_WORKOUT * 2);
+  const saved = state.workouts.find((item) => item.name === "Push");
+  assert.deepEqual(Object.keys(saved).sort(), ["createdAt", "date", "id", "kind", "name", "notes"]);
+  assert.equal(saved.notes, "bench PR");
   const summary = summarizeWeek(state, "2026-11-13");
   assert.equal(summary.sessions, 2);
-  assert.equal(summary.sets, 2);
-  assert.equal(summary.volume, 8 * 40 + 6 * 42.5);
-  assert.equal(summary.km, 3.2);
+  assert.equal(summary.lifts, 1);
+  assert.equal(summary.cardio, 1);
+  const none = addWorkout(state, { name: "  ", kind: "strength", date: "2026-11-13" }, NOW);
+  assert.equal(none.workouts.length, 2);
   const id = state.workouts[0].id;
   state = deleteWorkout(state, id, NOW);
   assert.equal(state.workouts.length, 1);
   assert.equal(totalXp(state), XP_WORKOUT);
+});
+
+test("old workouts with sets or minutes still load and show their name and note", () => {
+  const state = createInitialState(NOW);
+  state.workouts = [
+    { id: "old1", date: "2026-11-10", name: "Bench press", kind: "strength", sets: [{ reps: 8, weightKg: 40 }], durationMin: null, distanceKm: null, notes: "felt strong", createdAt: "2026-11-10T12:00:00Z" },
+    { id: "old2", date: "2026-11-11", name: "Run", kind: "cardio", sets: [], durationMin: 20, distanceKm: 3.2, notes: "", createdAt: "2026-11-11T12:00:00Z" },
+  ];
+  const ready = prepare(state, NOW).state;
+  const history = workoutHistory(ready);
+  assert.deepEqual(history.map((item) => item.split), ["Run", "Bench press"]);
+  assert.equal(history[1].notes, "felt strong");
+  assert.equal(history[1].kind, "strength");
+  assert.equal(summarizeWeek(ready, "2026-11-13").sessions, 2);
 });
 
 test("workout XP scales with level like quest XP, and cardio keeps its saved kind", () => {
@@ -141,7 +143,7 @@ test("workout XP scales with level like quest XP, and cardio keeps its saved kin
   const level = levelFor(totalXp(state));
   assert.ok(level >= 5);
   const before = totalXp(state);
-  state = addWorkout(state, { name: "Cardio", kind: "cardio", date: "2026-11-13", durationMin: 30, sets: [] }, NOW);
+  state = addWorkout(state, { name: "Cardio", kind: "cardio", date: "2026-11-13", durationMin: 30 }, NOW);
   assert.equal(state.workouts[0].kind, "cardio");
   assert.equal(totalXp(state) - before, workoutXpForLevel(level));
   assert.ok(workoutXpForLevel(level) > XP_WORKOUT);

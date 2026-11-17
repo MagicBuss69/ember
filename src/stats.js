@@ -39,6 +39,15 @@ export function isFullDay(state, date) {
 }
 
 /**
+ * True when this change finished the whole day: every quest on `date` is done now
+ * and was not before. One checked quest on a fresh day (which is enough for the
+ * streak) is not a finished day.
+ */
+export function dayJustFinished(before, after, date) {
+  return !isFullDay(before, date) && isFullDay(after, date);
+}
+
+/**
  * Consecutive completed days ending today, or yesterday if today has none yet.
  */
 export function streakCount(state, today) {
@@ -155,27 +164,33 @@ export function summarizeWeek(state, today) {
   const start = weekStart(today);
   const end = addDays(start, 6);
   const bars = [0, 0, 0, 0, 0, 0, 0];
-  let sets = 0;
-  let volume = 0;
-  let km = 0;
-  let minutes = 0;
+  let lifts = 0;
+  let cardio = 0;
   let sessions = 0;
   for (const workout of state.workouts || []) {
-    if (workout.date < start || workout.date > end) continue;
+    if (!workout?.date || workout.date < start || workout.date > end) continue;
     sessions += 1;
     const index = Math.min(6, Math.max(0, daysBetween(start, workout.date)));
     bars[index] += 1;
-    if (workout.kind === "cardio") {
-      km += Number(workout.distanceKm) || 0;
-      minutes += Number(workout.durationMin) || 0;
-    } else {
-      for (const set of workout.sets || []) {
-        sets += 1;
-        volume += (Number(set.reps) || 0) * (Number(set.weightKg) || 0);
-      }
-    }
+    if (workout.kind === "cardio") cardio += 1;
+    else lifts += 1;
   }
-  return { start, end, sets, volume, km, minutes, sessions, bars };
+  return { start, end, sessions, lifts, cardio, bars };
+}
+
+/** Logged sessions, newest first. Old saves (with sets or minutes) still show by name and note. */
+export function workoutHistory(state, limit = 60) {
+  return [...(state.workouts || [])]
+    .filter((item) => item && item.date)
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : String(b.createdAt || "").localeCompare(String(a.createdAt || ""))))
+    .slice(0, limit)
+    .map((item) => ({
+      id: item.id,
+      date: item.date,
+      kind: item.kind === "cardio" ? "cardio" : "strength",
+      split: String(item.split || item.name || (item.kind === "cardio" ? "Cardio" : "Lift")),
+      notes: String(item.notes || ""),
+    }));
 }
 
 export function daysBetween(start, end) {
@@ -221,50 +236,6 @@ export function weekCompare(state, today) {
     sameDayDelta,
     weekDelta: totalThis - totalLast,
   };
-}
-
-export function exerciseGroups(state) {
-  const groups = new Map();
-  const workouts = [...(state.workouts || [])].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-  for (const workout of workouts) {
-    const key = workout.name.trim().toLowerCase();
-    if (!groups.has(key)) {
-      groups.set(key, {
-        key,
-        name: workout.name.trim(),
-        kind: workout.kind,
-        sessions: [],
-        best: null,
-      });
-    }
-    const group = groups.get(key);
-    group.sessions.push(workout);
-    group.best = betterMark(group.best, workout);
-  }
-  return [...groups.values()];
-}
-
-function betterMark(current, workout) {
-  if (workout.kind === "cardio") {
-    const distance = Number(workout.distanceKm) || 0;
-    if (!current || distance > current.distance) {
-      return { distance, label: distance ? `${distance} km` : `${workout.durationMin || 0} min` };
-    }
-    return current;
-  }
-  let best = current;
-  for (const set of workout.sets || []) {
-    const weight = Number(set.weightKg) || 0;
-    const reps = Number(set.reps) || 0;
-    const score = weight * 1000 + reps;
-    if (!best || score > best.score) {
-      best = {
-        score,
-        label: weight > 0 ? `${weight} kg × ${reps}` : `${reps} reps`,
-      };
-    }
-  }
-  return best;
 }
 
 export function openTodayCount(state, today) {

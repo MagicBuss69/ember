@@ -49,7 +49,7 @@ import {
 } from "./domain.js";
 import { levelFor, questXpForLevel, workoutXpForLevel } from "./economy.js";
 import { rankForLevel } from "./rank.js";
-import { parseNum, reasonLabel } from "./format.js";
+import { reasonLabel } from "./format.js";
 import { generateWeek } from "./gemini.js";
 import { kvClear, loadState, saveState } from "./idb.js";
 import {
@@ -76,7 +76,7 @@ import {
 } from "./blockerBridge.js";
 import { processChallenges } from "./challenges.js";
 import { ensureRivalHistory, rivalPromptFacts } from "./rivals.js";
-import { exerciseGroups, isComplete, openTodayCount, totalXp } from "./stats.js";
+import { dayJustFinished, openTodayCount, totalXp } from "./stats.js";
 import { addCustomReward, buyItem, equipCosmetic, redeemCustomReward, removeCustomReward, SHOP_CATALOG } from "./shop.js";
 import { extendUnlockUntil, parseUnlockMinutes } from "./lifeRewards.js";
 import { ensureAudio, playSound } from "./sounds.js";
@@ -119,7 +119,6 @@ const ui = {
   draft: null,
   confirm: null,
   levelUp: null,
-  exercise: null,
   enter: true,
   keepScroll: false,
   barPulse: false,
@@ -473,7 +472,6 @@ async function commitWrapped(mutator, fx = {}) {
   const prepared = prepare(state, new Date());
   state = prepared.state;
   ensureRivalHistory(state, prepared.today);
-  if (ui.exercise && !exerciseGroups(state).some((group) => group.key === ui.exercise)) ui.exercise = null;
   if (fx.close) {
     genToken += 1;
     ui.sheet = null;
@@ -519,7 +517,7 @@ async function commitWrapped(mutator, fx = {}) {
     const paid = fresh.filter((entry) => entry.reason === "level" && entry.delta > 0).reduce((sum, entry) => sum + entry.delta, 0);
     clearTimeout(levelTimer);
     levelTimer = setTimeout(() => {
-      ui.levelUp = { level, crystals: paid };
+      ui.levelUp = { level, crystals: paid, rankUp: newRank !== prevRank };
       ui.keepScroll = true;
       ui.enter = false;
       paint();
@@ -546,7 +544,6 @@ const actions = {
     ui.tab = el.dataset.tab;
     ui.enter = true;
     ui.keepScroll = false;
-    ui.exercise = null;
     setHash(ui.tab);
     if (ui.tab === "you" || ui.tab === "settings") refreshNotify().then(() => paint());
     paint();
@@ -577,7 +574,7 @@ const actions = {
     const at = pointOf(el);
     const date = el.dataset.date;
     const taskId = el.dataset.id;
-    const wasDayComplete = isComplete(state, date);
+    const before = state;
     const reduced = prefersReducedMotion();
     ui.justDoneId = taskId;
     if (done) {
@@ -623,7 +620,9 @@ const actions = {
       ui.collapsingId = null;
       ui.keepScroll = true;
       paint();
-      if (!wasDayComplete && isComplete(state, date)) {
+      ui.celebratedDays = ui.celebratedDays || new Set();
+      if (dayJustFinished(before, state, date) && !ui.celebratedDays.has(date)) {
+        ui.celebratedDays.add(date);
         dailyCompleteBanner(reduced);
         confettiFan(reduced);
         haptic("day");
@@ -1051,24 +1050,16 @@ const actions = {
     toast(filled ? `Applied to ${filled} open day${filled === 1 ? "" : "s"}.` : "The template updated. Started days were left alone.");
   },
   "open-workout"() {
-    openSheet(
-      { type: "workout" },
-      { name: "", kind: "strength", date: dateKey(new Date()), sets: [{ reps: "", weight: "" }], minutes: "", km: "", notes: "", error: "" },
-    );
+    openSheet({ type: "workout" }, { name: "", kind: "strength", date: dateKey(new Date()), notes: "", error: "" });
   },
   "set-kind"(el) {
-    ui.draft.kind = el.dataset.kind;
+    ui.draft.kind = el.dataset.kind === "cardio" ? "cardio" : "strength";
     ui.keepScroll = true;
     paint();
   },
-  "add-set"() {
-    ui.draft.sets.push({ reps: "", weight: "" });
-    ui.keepScroll = true;
-    paint();
-  },
-  "remove-set"(el) {
-    if ((ui.draft.sets || []).length < 2) return;
-    ui.draft.sets.splice(Number(el.dataset.index), 1);
+  "pick-split"(el) {
+    ui.draft.name = el.dataset.split || "";
+    ui.draft.error = "";
     ui.keepScroll = true;
     paint();
   },
@@ -1087,22 +1078,10 @@ const actions = {
       pop: { text: `+${workoutXpForLevel(levelFor(totalXp(state)))} XP`, ...at, kind: "xp" },
     });
   },
-  "open-exercise"(el) {
-    ui.exercise = el.dataset.name;
-    ui.keepScroll = false;
-    ui.enter = true;
-    paint();
-  },
-  "close-exercise"() {
-    ui.exercise = null;
-    ui.enter = true;
-    ui.keepScroll = false;
-    paint();
-  },
   "delete-workout"(el) {
     ui.confirm = {
       title: "Delete this session?",
-      body: "The 40 XP comes off with it.",
+      body: "The XP it paid comes off with it.",
       label: "Delete",
       action: "delete-workout",
       id: el.dataset.id,
@@ -1565,7 +1544,6 @@ const actions = {
       ui.lookDate = null;
       ui.calDate = null;
       ui.calMonth = null;
-      ui.exercise = null;
       setHash("today");
       paint();
       toast("Ember is empty again.");
@@ -1617,19 +1595,9 @@ const actions = {
 function readWorkout(draft) {
   const kind = draft.kind === "cardio" ? "cardio" : "strength";
   const name = (draft.name || "").trim();
-  if (!name) return { error: "Name the exercise." };
+  if (!name) return { error: kind === "cardio" ? "Say what cardio it was." : "Say which split it was." };
   const date = draft.date || dateKey(new Date());
-  if (kind === "cardio") {
-    const durationMin = parseNum(draft.minutes) || 0;
-    const distanceKm = parseNum(draft.km) || 0;
-    if (durationMin <= 0 && distanceKm <= 0) return { error: "Add minutes, kilometres, or both." };
-    return { name, kind, date, durationMin, distanceKm, notes: draft.notes || "", sets: [] };
-  }
-  const sets = (draft.sets || [])
-    .map((set) => ({ reps: parseNum(set.reps), weightKg: parseNum(set.weight) ?? 0 }))
-    .filter((set) => set.reps > 0);
-  if (!sets.length) return { error: "Add at least one set with reps. Weight can be 0." };
-  return { name, kind, date, sets, notes: draft.notes || "" };
+  return { name, kind, date, notes: draft.notes || "" };
 }
 
 async function refreshNotify() {
@@ -1723,7 +1691,6 @@ async function applyRestoredState(imported, options = {}) {
   ui.selectedWeekday = null;
   ui.calDate = null;
   ui.calMonth = null;
-  ui.exercise = null;
   ui.keepScroll = false;
   try {
     await saveState(state);

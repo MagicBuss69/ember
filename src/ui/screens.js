@@ -1,7 +1,7 @@
 import { buildMonthGrid, daySummary, monthKey } from "../calendar.js";
 import { GOOGLE_CLIENT_ID, VAPID_PUBLIC_KEY, WORKER_URL } from "../config.js";
-import { SLOTS, SLOT_LABEL, SUGGESTED_EXERCISES, THEMES } from "../constants.js";
-import { rankForXp, rankMeta } from "../rank.js";
+import { SLOTS, SLOT_LABEL, SPLIT_CHIPS, THEMES } from "../constants.js";
+import { nextRankLevel, rankEmblemSvg, rankMeta } from "../rank.js";
 import { SHOP_CATEGORIES, catalogForCategory, catalogName, isOwned, itemArt } from "../shop.js";
 import { daysUntilRestock, parseUnlockMinutes, returningLifeRewards, unlockMinutesLeft, visibleLifeRewards } from "../lifeRewards.js";
 import { templateTaskCount } from "../domain.js";
@@ -9,12 +9,12 @@ import { formatLastBackupTime } from "../driveSchedule.js";
 import { geminiKeyEnding } from "../gemini.js";
 import { levelProgress, questXpForLevel, workoutXpForLevel } from "../economy.js";
 import { currencyBlocked, openPenaltyQuests } from "../penalty.js";
-import { esc, formatMaybe, formatNum, reasonLabel } from "../format.js";
+import { esc, formatNum, reasonLabel } from "../format.js";
 import { currencyIcon, gemIcon, itemThumb } from "../art.js";
 import { avatar, icon } from "../icons.js";
 import { challengeSnapshot } from "../challenges.js";
 import { buildBoard } from "../rivals.js";
-import { exerciseGroups, rawGap, ringNumbers, streakCount, summarizeWeek, taskCount, totalXp, weekCompare } from "../stats.js";
+import { rawGap, ringNumbers, streakCount, summarizeWeek, taskCount, totalXp, weekCompare, workoutHistory } from "../stats.js";
 import {
   addDays,
   currentSlot,
@@ -109,7 +109,6 @@ export function viewToday(state, ui, now) {
   const nowSlot = currentSlot(now);
   const xp = totalXp(state);
   const progress = levelProgress(xp);
-  const rank = rankForXp(xp);
   const skin = state.settings?.crystalSkin || "default";
   const questXp = questXpForLevel(progress.level);
   let body = "";
@@ -171,7 +170,6 @@ export function viewToday(state, ui, now) {
           </div>
           ${crystalMeterHtml({
             progress,
-            rank,
             stress: state.crystalStress,
             pulse: ui.barPulse,
             skin,
@@ -388,52 +386,28 @@ export function viewTrain(state, ui, now) {
   const today = dateKey(now);
   const summary = summarizeWeek(state, today);
   const max = Math.max(1, ...summary.bars);
-  const groups = exerciseGroups(state);
+  const history = workoutHistory(state);
+  const xp = workoutXpForLevel(levelProgress(totalXp(state)).level);
   const bars = summary.bars
     .map((count, i) => {
       const h = count / max;
       return `<div class="bar-col"><span class="${count ? "" : "is-zero"}" style="--h:${h.toFixed(3)}"></span><small>${DOW[i]}</small></div>`;
     })
     .join("");
-  if (ui.exercise) {
-    const group = groups.find((item) => item.key === ui.exercise);
-    if (!group) ui.exercise = null;
-  }
-  if (ui.exercise) {
-    const group = groups.find((item) => item.key === ui.exercise);
-    return `
-      <section>
-        <button type="button" class="back" data-action="close-exercise">${icon("back")} Exercises</button>
-        <h1 class="page-title">${esc(group.name)}</h1>
-        <p class="lede">${group.sessions.length} session${group.sessions.length === 1 ? "" : "s"}${group.best ? ` · best ${esc(group.best.label)}` : ""}</p>
-        ${group.sessions
-          .map((session) => {
-            const detail = session.kind === "cardio"
-              ? `<p>${formatMaybe(session.distanceKm)} km · ${formatMaybe(session.durationMin)} min</p>`
-              : `<ul class="sets">${(session.sets || [])
-                  .map((set, index) => `<li><span>Set ${index + 1}</span><span class="num">${set.reps} × ${formatMaybe(set.weightKg)} kg</span></li>`)
-                  .join("")}</ul>`;
-            return `<article class="session">
-              <header><strong>${esc(formatPretty(session.date))}</strong>
-                <button type="button" class="icon-btn" data-action="delete-workout" data-id="${esc(session.id)}" aria-label="Delete session">${icon("trash")}</button>
-              </header>
-              ${detail}
-              ${session.notes ? `<p class="quest-meta">${esc(session.notes)}</p>` : ""}
-            </article>`;
-          })
-          .join("")}
-      </section>`;
-  }
-  const list = groups.length
-    ? groups
-        .map((group) => `<button type="button" class="ex-row" data-action="open-exercise" data-name="${esc(group.key)}">
-            <span><strong>${esc(group.name)}</strong><small>${group.sessions.length} session${group.sessions.length === 1 ? "" : "s"}${group.best ? ` · best ${esc(group.best.label)}` : ""}</small></span>
-            ${icon("chevR")}
-          </button>`)
+  const list = history.length
+    ? history
+        .map((item) => `<article class="session wo-row">
+            <div class="wo-main">
+              <span class="wo-head"><strong>${esc(item.split)}</strong><span class="event-pill wo-kind ${item.kind === "cardio" ? "is-cardio" : ""}">${item.kind === "cardio" ? "Cardio" : "Lift"}</span></span>
+              <small>${esc(formatPretty(item.date))}</small>
+              ${item.notes ? `<p class="wo-note">${esc(item.notes)}</p>` : ""}
+            </div>
+            <button type="button" class="icon-btn" data-action="delete-workout" data-id="${esc(item.id)}" aria-label="Delete session">${icon("trash")}</button>
+          </article>`)
         .join("")
     : emptyState({
         title: "No sessions yet",
-        body: `Log a lift or some cardio. It lands in this week’s volume and pays ${workoutXpForLevel(levelProgress(totalXp(state)).level)} XP.`,
+        body: `Done a session? Log the split here. Sets and reps stay in Hevy. Each one pays ${xp} XP.`,
         actions: `<button type="button" class="primary" data-action="open-workout">Log a session</button>`,
       });
   return `
@@ -442,13 +416,13 @@ export function viewTrain(state, ui, now) {
       <p class="lede">${esc(formatWeekSpan(summary.start))}</p>
       <div class="stat-grid">
         <div class="stat"><strong class="num">${summary.sessions}</strong><span>sessions</span></div>
-        <div class="stat"><strong class="num">${formatMaybe(summary.volume)}</strong><span>kg volume</span></div>
-        <div class="stat"><strong class="num">${formatMaybe(summary.km)}</strong><span>kilometres</span></div>
-        <div class="stat"><strong class="num">${formatMaybe(summary.minutes)}</strong><span>minutes</span></div>
+        <div class="stat"><strong class="num">${summary.lifts}</strong><span>lift</span></div>
+        <div class="stat"><strong class="num">${summary.cardio}</strong><span>cardio</span></div>
+        <div class="stat"><strong class="num">${(state.workouts || []).length}</strong><span>all time</span></div>
       </div>
       <div class="bars" aria-hidden="true">${bars}</div>
-      ${groups.length ? `<button type="button" class="primary" data-action="open-workout">Log a session</button>` : ""}
-      <h2 class="section-title">Exercises</h2>
+      ${history.length ? `<button type="button" class="primary" data-action="open-workout">Log a session · ${xp} XP</button>` : ""}
+      <h2 class="section-title">History</h2>
       <div class="list">${list}</div>
     </section>`;
 }
@@ -622,20 +596,20 @@ export function viewYou(state, ui) {
       <div class="you-hero system-glass">
         ${crystalMeterHtml({
           progress,
-          rank: meta.rank,
           stress: state.crystalStress,
           pulse: ui.barPulse,
           skin: state.settings?.crystalSkin,
         })}
-        <p class="kicker">${esc(meta.label)}${esc(title)}</p>
-        <h2>${progress.maxed ? "The top of the scale." : `${formatNum(progress.span - progress.into)} XP to level ${progress.level + 1}`}</h2>
+        <p class="kicker">${esc(meta.motto)}${esc(title)}</p>
+        <h2>${formatNum(progress.span - progress.into)} XP to level ${progress.level + 1}</h2>
+        <p class="rank-next">${esc(rankMeta(nextRankLevel(progress.level)).name)} at level ${nextRankLevel(progress.level)}</p>
         ${levelBar(progress, xp, ui.barPulse)}
       </div>
       <div class="stat-grid">
         <div class="stat"><strong class="num">${streak}</strong><span>day streak</span></div>
         <div class="stat"><strong class="num">${state.longest || 0}</strong><span>longest</span></div>
         <div class="stat"><strong class="num">${formatNum(state.crystals)}</strong><span>shards</span></div>
-        <div class="stat"><strong class="display">${meta.rank}</strong><span>rank</span></div>
+        <div class="stat stat-rank"><strong class="display">${esc(meta.name)}</strong><span>rank</span></div>
       </div>
       ${badges ? `<div class="badge-row">${badges}</div>` : ""}
       ${shopSection(state, ui)}
@@ -1049,16 +1023,16 @@ function taskSheet(sheet, draft) {
 
 function workoutSheet(state, draft) {
   const workoutXp = workoutXpForLevel(levelProgress(totalXp(state)).level);
-  const names = [...new Set([...SUGGESTED_EXERCISES, ...state.workouts.map((item) => item.name)])];
+  const kind = draft.kind === "cardio" ? "cardio" : "strength";
   const error = draft.error ? `<p class="form-error">${esc(draft.error)}</p>` : "";
-  const sets = (draft.sets || [{ reps: "", weight: "" }])
-    .map((set, index) => `<div class="set-row">
-        <span class="set-n num">${index + 1}</span>
-        <label><span>Reps</span><input data-bind="sets.${index}.reps" inputmode="numeric" value="${esc(set.reps)}"></label>
-        <label><span>kg</span><input data-bind="sets.${index}.weight" inputmode="decimal" value="${esc(set.weight)}"></label>
-        <button type="button" class="icon-btn" data-action="remove-set" data-index="${index}" aria-label="Remove set" ${(draft.sets || []).length < 2 ? "disabled" : ""}>${icon("close")}</button>
-      </div>`)
-    .join("");
+  const recent = [...(state.workouts || [])]
+    .filter((item) => item && (item.kind === "cardio" ? "cardio" : "strength") === kind && !(item.sets || []).length && !item.durationMin && !item.distanceKm)
+    .sort((a, b) => (a.date < b.date ? 1 : -1))
+    .slice(0, 20)
+    .map((item) => String(item.name || "").trim())
+    .filter(Boolean);
+  const chips = [...new Set([...SPLIT_CHIPS[kind], ...recent])].slice(0, 10);
+  const current = (draft.name || "").trim().toLowerCase();
   return `
     <div class="scrim" data-action="close-sheet"></div>
     <form class="sheet" data-form="save-workout">
@@ -1068,17 +1042,14 @@ function workoutSheet(state, draft) {
         <button type="button" class="icon-btn" data-action="close-sheet" aria-label="Close">${icon("close")}</button>
       </div>
       ${error}
-      ${field("Exercise", `<input data-bind="name" maxlength="60" required placeholder="Bench press, cardio…" list="exercise-names" value="${esc(draft.name || "")}"><datalist id="exercise-names">${names.map((name) => `<option value="${esc(name)}"></option>`).join("")}</datalist>`)}
       ${field("Date", `<input data-bind="date" type="date" max="${dateKey(new Date())}" value="${esc(draft.date || "")}">`)}
       <div class="segment">
-        <button type="button" data-action="set-kind" data-kind="strength" aria-pressed="${draft.kind !== "cardio"}">Lift</button>
-        <button type="button" data-action="set-kind" data-kind="cardio" aria-pressed="${draft.kind === "cardio"}">Cardio</button>
+        <button type="button" data-action="set-kind" data-kind="strength" aria-pressed="${kind !== "cardio"}">Lift</button>
+        <button type="button" data-action="set-kind" data-kind="cardio" aria-pressed="${kind === "cardio"}">Cardio</button>
       </div>
-      ${draft.kind === "cardio"
-        ? `${field("Minutes", `<input data-bind="minutes" inputmode="decimal" placeholder="25" value="${esc(draft.minutes || "")}">`)}
-           ${field("Kilometres", `<input data-bind="km" inputmode="decimal" placeholder="5 or 5,2" value="${esc(draft.km || "")}">`)}`
-        : `<div class="sets-editor">${sets}<button type="button" class="add" data-action="add-set">${icon("plus")} Add a set</button></div>`}
-      ${field("Note", `<input data-bind="notes" maxlength="160" placeholder="Optional" value="${esc(draft.notes || "")}">`)}
+      ${field(kind === "cardio" ? "What cardio" : "Split", `<input data-bind="name" maxlength="60" required placeholder="${kind === "cardio" ? "Run, bike…" : "Push, Legs…"}" value="${esc(draft.name || "")}">`)}
+      <div class="split-chips">${chips.map((name) => `<button type="button" class="split-chip ${name.toLowerCase() === current ? "is-on" : ""}" data-action="pick-split" data-split="${esc(name)}">${esc(name)}</button>`).join("")}</div>
+      ${field("Note", `<textarea data-bind="notes" rows="2" maxlength="300" placeholder="Optional. PRs, how it felt…">${esc(draft.notes || "")}</textarea>`)}
       <button type="submit" class="primary">Save session · ${workoutXp} XP</button>
     </form>`;
 }
@@ -1130,20 +1101,24 @@ export function confirmHtml(ui) {
 
 export function levelUpHtml(ui) {
   if (!ui.levelUp) return "";
-  const { level, crystals } = ui.levelUp;
+  const { level, crystals, rankUp } = ui.levelUp;
+  const meta = rankMeta(level);
   const sparks = [
     [40, -70], [-50, -40], [60, 20], [-30, 60], [10, -90], [-70, 10], [80, -20], [-10, 80],
   ]
     .map(([x, y]) => `<i class="spark" style="--x:${x}px;--y:${y}px"></i>`)
     .join("");
   return `
-    <div class="levelup" role="dialog" aria-modal="true" aria-labelledby="levelup-title">
+    <div class="levelup ${rankUp ? "is-rankup" : ""}" role="dialog" aria-modal="true" aria-labelledby="levelup-title" style="--rank-glow:${meta.glow};--rank-light:${meta.colors[0]}">
       <div class="levelup-card">
         ${sparks}
-        <div class="medallion lg"><span class="display">${level}</span></div>
-        <p class="kicker">Level up</p>
-        <h2 id="levelup-title">Level ${level}</h2>
-        <p>The bar filled.</p>
+        <div class="levelup-emblem">
+          ${rankEmblemSvg(meta, { size: 112, className: "lg" })}
+          <span class="levelup-num display">${level}</span>
+        </div>
+        <p class="kicker">${rankUp ? "Rank up" : "Level up"}</p>
+        <h2 id="levelup-title">${rankUp ? esc(meta.name) : `Level ${level}`}</h2>
+        <p>${rankUp ? `Level ${level}. ${esc(meta.motto)}.` : `${esc(meta.name)} · ${meta.step} of ${meta.span}`}</p>
         ${crystals ? `<p class="award">${currencyIcon({ size: 20 })} +${crystals}</p>` : ""}
         <button type="button" class="primary" data-action="dismiss-levelup">Keep going</button>
       </div>

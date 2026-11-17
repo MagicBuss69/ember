@@ -129,3 +129,15 @@ test("a backfilled history does not invent XP for last Friday's you", () => {
   assert.equal(board.same.mode, "empty");
   assert.equal(addDays("2026-11-13", -7), board.same.thenDate);
 });
+
+test("rivals keep working when the user is past level 10", async () => {
+  const { createInitialState } = await import("../src/domain.js");
+  const { buildBoard } = await import("../src/rivals.js");
+  const { levelStart } = await import("../src/economy.js");
+  const now = new Date("2026-11-17T12:00:00+01:00");
+  const state = createInitialState(new Date("2026-11-03T12:00:00+01:00"));
+  state.xpEvents.push({ id: "big", at: now.toISOString(), date: "2026-11-10", amount: levelStart(18), source: "task", ref: "big" });
+  const board = buildBoard(state, now);
+  assert.ok(board.board.length >= 2);
+  for (const row of board.board) assert.ok(Number.isFinite(row.weekXp));
+});

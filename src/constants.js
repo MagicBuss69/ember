@@ -96,12 +96,8 @@ export const WEEKEND_QUESTS = [
   },
 ];
 
-export const SUGGESTED_EXERCISES = [
-  "Bench press",
-  "Squat",
-  "Deadlift",
-  "Pull-up",
-  "Cardio",
-  "Walk",
-  "Bike",
-];
+/** Quick-pick chips for a session's split. Lifts are tracked in Hevy; Ember only logs the day. */
+export const SPLIT_CHIPS = {
+  strength: ["Push", "Pull", "Legs", "Upper", "Lower", "Full body"],
+  cardio: ["Run", "Bike", "Walk", "Swim", "Intervals"],
+};

@@ -1,5 +1,5 @@
 import { SLOTS } from "./constants.js";
-import { LEVEL_START, levelFor } from "./economy.js";
+import { levelFor, levelStart } from "./economy.js";
 import { uid } from "./format.js";
 import { addDays, dateKey } from "./time.js";
 import { doneCount, isComplete, isFullDay, taskCount, totalXp } from "./stats.js";
@@ -90,8 +90,7 @@ export function missedDatesBefore(state, today) {
 }
 
 function xpFloorForLevel(level) {
-  const idx = Math.max(0, Math.min(LEVEL_START.length - 1, level - 1));
-  return LEVEL_START[idx] || 0;
+  return levelStart(Math.max(1, level)) || 0;
 }
 
 /** Remove XP down to floor for current level and 0 minimum total display logic. */
