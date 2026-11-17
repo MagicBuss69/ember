@@ -20,6 +20,8 @@ export const RIVAL_WINDOWS = {
 export const RIVALS = [
   {
     id: "leo",
+    /** Pace multiplier on top of edge (Nov 2026: the strong ones get 2x). */
+    boost: 2,
     edge: 1.02,
     name: "Leo Berg",
     city: "Göteborg",
@@ -41,6 +43,8 @@ export const RIVALS = [
   },
   {
     id: "maja",
+    /** Pace multiplier on top of edge (Nov 2026: middle-low gets 2.5x). */
+    boost: 2.5,
     edge: 1,
     name: "Maja Lind",
     city: "Malmö",
@@ -62,6 +66,8 @@ export const RIVALS = [
   },
   {
     id: "noah",
+    /** Pace multiplier on top of edge (Nov 2026: the strong ones get 2x). */
+    boost: 2,
     edge: 1.08,
     name: "Noah Ek",
     city: "Uppsala",
@@ -83,6 +89,8 @@ export const RIVALS = [
   },
   {
     id: "amina",
+    /** Pace multiplier on top of edge (Nov 2026: the lowest gets 3x). */
+    boost: 3,
     edge: 1,
     name: "Amina Adeyemi",
     city: "Stockholm",
@@ -205,7 +213,7 @@ export const RIVAL_FLOOR_SHARE = 0.65;
 /** Rivals grow with time on the app: +0.15% a day, up to +15% after 100 days. */
 export const RIVAL_GROWTH_PER_DAY = 0.0015;
 export const RIVAL_GROWTH_CAP = 0.15;
-const MAX_RIVAL_TASKS = 14;
+const MAX_RIVAL_TASKS = 40;
 
 /** Long-run share of days this rival actually shows up, from the same rules `showsUp` uses. */
 export function rivalAttendance(rival) {
@@ -216,6 +224,11 @@ export function rivalAttendance(rival) {
   const afterRest = clamp(comeback * Math.max(p, 0.92) + (1 - comeback) * p * slump, 0.05, 1);
   const stationary = afterRest / (1 - p + afterRest);
   return clamp(stationary * (1 - (Number(profile.breakRate) || 0)), 0.3, 1);
+}
+
+/** How hard a rival pushes against the user's pace: their edge times their boost. */
+export function rivalStrength(rival) {
+  return (Number(rival?.edge) || 1) * (Number(rival?.boost) || 1);
 }
 
 /** A perfect default week at this level, per day. The floor never drops below a share of it. */
@@ -236,7 +249,7 @@ export function rivalDayTarget(rival, options = {}) {
   const hasPace = Number(options.userDays) >= 2 && Number.isFinite(avg);
   const base = hasPace ? Math.max(floor, avg) : floor;
   const growth = 1 + Math.min(RIVAL_GROWTH_CAP, Math.max(0, Number(options.daysIn) || 0) * RIVAL_GROWTH_PER_DAY);
-  const edge = Number(rival.edge) || 1;
+  const edge = rivalStrength(rival);
   const catchUp = Math.max(1, Math.min(RIVAL_CATCHUP_CAP, Number(options.catchUp) || 1));
   return (base * growth * edge * catchUp) / rivalAttendance(rival);
 }
@@ -247,7 +260,7 @@ export const RIVAL_CATCHUP_CAP = 1.5;
 /** How much harder a rival should push, from their last 7 days against the user's pace. */
 export function rivalCatchUp(state, rival, date, recent) {
   if (!(recent.days >= 2) || !Number.isFinite(recent.avg)) return 1;
-  const want = recent.avg * 7 * (Number(rival.edge) || 1) * 0.95;
+  const want = recent.avg * 7 * rivalStrength(rival) * 0.95;
   if (!(want > 0)) return 1;
   let have = 0;
   for (let i = 1; i <= 7; i += 1) have += Number(cell(state, addDays(date, -i), rival.id)?.xp) || 0;
@@ -464,6 +477,15 @@ export function ensureRivalHistory(state, today, now = null) {
   if (!buffed) {
     topUpRivals(state);
     state.grants = { ...(state.grants || {}), rivalBuffV2: true };
+    wrote = true;
+  }
+  if (!state.grants?.rivalBoostV3) {
+    // One time: replan today and later with the boosted pace. Past days and saved XP stay.
+    for (const key of Object.keys(state.rivalDays)) {
+      if (key >= today) delete state.rivalDays[key];
+    }
+    fillRivalDays(state, today);
+    state.grants = { ...(state.grants || {}), rivalBoostV3: true };
     wrote = true;
   }
   if (wrote || !state.rivalSimAt) {

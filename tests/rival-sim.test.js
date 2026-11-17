@@ -19,6 +19,7 @@ import {
   rivalDayTarget,
   rivalFloorDaily,
   rivalTotalXp,
+  rivalStrength,
 } from "../src/rivals.js";
 import { addDays } from "../src/time.js";
 import { totalXp } from "../src/stats.js";
@@ -188,22 +189,44 @@ test("rivals keep pace with a hard-working user instead of stalling under a temp
     const mine = perDay * 21;
     const ratios = RIVALS.map((rival) => rivalSpan(state, rival.id, 1, 21) / mine);
     const mean = ratios.reduce((a, b) => a + b, 0) / ratios.length;
-    assert.ok(mean >= 0.85, `pace ${perDay}: mean rival ratio ${mean.toFixed(2)} should be near the user`);
-    for (const ratio of ratios) assert.ok(ratio >= 0.55, `pace ${perDay}: weakest ratio ${ratio.toFixed(2)}`);
-    assert.ok(Math.max(...ratios) >= 1, `pace ${perDay}: the strongest rival should be at or ahead of the user`);
-    assert.ok(Math.max(...ratios) <= 1.7, `pace ${perDay}: but not absurdly far ahead (${Math.max(...ratios).toFixed(2)})`);
+    assert.ok(mean >= 1.8, `pace ${perDay}: mean rival ratio ${mean.toFixed(2)} should be about 2-3x the user`);
+    RIVALS.forEach((rival, i) => {
+      const want = rivalStrength(rival);
+      assert.ok(ratios[i] >= want * 0.7, `pace ${perDay}: ${rival.id} ratio ${ratios[i].toFixed(2)} vs ${want}`);
+      if (perDay >= 250) assert.ok(ratios[i] <= want * 1.45, `pace ${perDay}: ${rival.id} not absurdly far ahead (${ratios[i].toFixed(2)})`);
+    });
   }
 });
 
-test("the strongest rival is slightly ahead of the user and the others sit near", () => {
-  const edges = Object.fromEntries(RIVALS.map((rival) => [rival.id, rival.edge]));
-  assert.equal(Math.max(...Object.values(edges)), edges.noah);
-  assert.ok(edges.noah > 1 && edges.noah <= 1.15);
+test("rival boosts: everyone 2x, the middle-low 2.5x, the lowest 3x", () => {
+  const boosts = Object.fromEntries(RIVALS.map((rival) => [rival.id, rival.boost]));
+  assert.deepEqual(boosts, { leo: 2, maja: 2.5, noah: 2, amina: 3 });
   for (const rival of RIVALS) assert.ok(rival.edge >= 0.95 && rival.edge <= 1.15, rival.id);
   const opts = { userLevel: 5, userAvg: 200, userDays: 7, daysIn: 0 };
-  const noah = RIVALS.find((rival) => rival.id === "noah");
-  const noahAvg = rivalDayTarget(noah, opts) * rivalAttendance(noah);
-  assert.ok(Math.abs(noahAvg - 200 * noah.edge) < 0.01);
+  for (const rival of RIVALS) {
+    const avg = rivalDayTarget(rival, opts) * rivalAttendance(rival);
+    assert.ok(Math.abs(avg - 200 * rival.edge * rival.boost) < 0.01, rival.id);
+    assert.equal(rivalStrength(rival), rival.edge * rival.boost);
+  }
+});
+
+test("the boost replans today onward once, keeping past days and saved rival XP", () => {
+  const state = userWithPace(200);
+  delete state.grants.rivalBoostV3;
+  ensureRivalHistory(state, TODAY, NOW);
+  const pastKey = addDays(TODAY, -3);
+  const past = structuredClone(state.rivalDays[pastKey]);
+  const saved = structuredClone(state.rivalXp);
+  delete state.grants.rivalBoostV3;
+  state.rivalDays[TODAY].byId.amina = { xp: 1, rest: false, workout: false, quest: "x", minute: 480, tasks: 1 };
+  ensureRivalHistory(state, TODAY, NOW);
+  assert.equal(state.grants.rivalBoostV3, true);
+  assert.deepEqual(state.rivalDays[pastKey], past);
+  assert.deepEqual(state.rivalXp, saved);
+  assert.notEqual(state.rivalDays[TODAY].byId.amina.xp, 1, "today was replanned with the boost");
+  const again = structuredClone(state.rivalDays[TODAY]);
+  ensureRivalHistory(state, TODAY, NOW);
+  assert.deepEqual(state.rivalDays[TODAY], again, "only once, and deterministic");
 });
 
 test("with little history rivals use a floor tied to a perfect template week", () => {
@@ -239,7 +262,7 @@ test("a rival who fell behind this past week pushes harder, within the cap", () 
   const date = addDays(TODAY, 1);
   for (let i = 1; i <= 7; i += 1) state.rivalDays[addDays(date, -i)].byId.maja.xp = 0;
   assert.equal(rivalCatchUp(state, maja, date, recent), RIVAL_CATCHUP_CAP);
-  for (let i = 1; i <= 7; i += 1) state.rivalDays[addDays(date, -i)].byId.maja.xp = 400;
+  for (let i = 1; i <= 7; i += 1) state.rivalDays[addDays(date, -i)].byId.maja.xp = 1000;
   assert.equal(rivalCatchUp(state, maja, date, recent), 1);
   assert.equal(rivalCatchUp(state, maja, date, { avg: null, days: 0 }), 1);
 });
