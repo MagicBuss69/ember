@@ -2324,29 +2324,10 @@ body.today-compact-on main {
   background: radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--rank-glow, var(--accent)) 26%, transparent), transparent 70%), rgba(0, 0, 0, 0.28);
   border: 1px solid rgba(255, 255, 255, 0.09);
 }
-.rank-badge {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  line-height: 0;
-}
 .rank-emblem {
   display: block;
   overflow: visible;
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.55)) drop-shadow(0 0 7px color-mix(in srgb, var(--rank-glow) 55%, transparent));
-}
-.rank-pips { display: flex; gap: 3px; }
-.rank-pips i {
-  width: 5px;
-  height: 5px;
-  border-radius: 2px;
-  transform: rotate(45deg);
-  background: rgba(255, 255, 255, 0.16);
-}
-.rank-pips i.on {
-  background: var(--rank-light);
-  box-shadow: 0 0 5px var(--rank-glow);
 }
 .crystal-copy .rank-name {
   display: block;
@@ -2401,36 +2382,6 @@ body.today-compact-on main {
   .levelup-emblem { animation: none; }
 }
 
-/* Crystal gem polish: brighter default facets, a glow and a specular glint on every skin. */
-.crystal-meter.skin-default .hero-gem .cg-body { fill: color-mix(in srgb, var(--crystal) 48%, #05070c); }
-.crystal-meter.skin-default .hero-gem .cg-f1 { fill: color-mix(in srgb, var(--crystal) 72%, #ffffff); }
-.crystal-meter.skin-default .hero-gem .cg-f2 { fill: var(--crystal); }
-.crystal-meter.skin-default .hero-gem .cg-f3 { fill: color-mix(in srgb, var(--crystal) 70%, #05070c); }
-.crystal-meter.skin-default .crystal-gem-wrap { filter: drop-shadow(0 0 10px color-mix(in srgb, var(--crystal) 70%, transparent)) drop-shadow(0 0 3px color-mix(in srgb, var(--crystal) 45%, transparent)); }
-.crystal-meter .hero-gem .cg-shine { fill: #fff; opacity: 0.55; mix-blend-mode: screen; }
-.crystal-meter .crystal-gem-wrap { position: relative; }
-.crystal-meter .crystal-gem-wrap::after {
-  content: "";
-  position: absolute;
-  top: 16%;
-  left: 30%;
-  width: 7px;
-  height: 7px;
-  background: radial-gradient(circle, #fff 0 22%, rgba(255, 255, 255, 0.55) 30%, transparent 70%);
-  clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%);
-  animation: gem-glint 4.6s ease-in-out infinite;
-  pointer-events: none;
-}
-@keyframes gem-glint {
-  0%, 70%, 100% { opacity: 0; transform: scale(0.4) rotate(0deg); }
-  80% { opacity: 1; transform: scale(1.5) rotate(45deg); }
-  90% { opacity: 0; transform: scale(0.6) rotate(90deg); }
-}
-.crystal-meter.is-compact .crystal-gem-wrap::after { display: none; }
-@media (prefers-reduced-motion: reduce) {
-  .crystal-meter .crystal-gem-wrap::after { animation: none; opacity: 0; }
-}
-
 /* Train: simple session log (lifts tracked in Hevy) */
 .wo-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .wo-main { min-width: 0; flex: 1; }
@@ -2452,3 +2403,66 @@ body.today-compact-on main {
   font-size: 14px;
 }
 .split-chip.is-on { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); font-weight: 650; }
+
+/* Level card: one rank emblem, tinted by the equipped emblem skin. */
+.crystal-meter { --aura: var(--crystal); }
+.crystal-meter.skin-default { --aura: var(--rank-glow, var(--crystal)); }
+.crystal-meter .rank-chip {
+  position: relative;
+  flex: none;
+  min-width: 0;
+  padding: 7px;
+  border-radius: 20px;
+  line-height: 0;
+  background:
+    radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--aura) 34%, transparent), transparent 72%),
+    rgba(0, 0, 0, 0.3);
+  border: 1px solid color-mix(in srgb, var(--aura) 48%, transparent);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--aura) 26%, transparent), inset 0 0 12px color-mix(in srgb, var(--aura) 16%, transparent);
+}
+.crystal-meter .hero-emblem {
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6)) drop-shadow(0 0 9px color-mix(in srgb, var(--aura) 75%, transparent));
+}
+.crystal-meter.skin-void .rank-chip {
+  background: radial-gradient(circle at 50% 40%, rgba(212, 175, 55, 0.18), transparent 70%), #07070c;
+  border-color: #d4af37;
+  box-shadow: 0 0 10px rgba(212, 175, 55, 0.35), inset 0 0 0 1px rgba(212, 175, 55, 0.25);
+}
+.crystal-meter.skin-amethyst .rank-chip { animation: aura-breathe 3.2s ease-in-out infinite; }
+.crystal-meter.skin-solar .hero-emblem { filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6)) drop-shadow(0 0 14px color-mix(in srgb, var(--aura) 90%, transparent)); }
+@keyframes aura-breathe {
+  50% { box-shadow: 0 0 26px color-mix(in srgb, var(--aura) 45%, transparent), inset 0 0 14px color-mix(in srgb, var(--aura) 24%, transparent); }
+}
+.crystal-meter .rank-chip.pulse { animation: crystal-pulse 400ms var(--ease); }
+.crystal-meter.is-dim .rank-chip { opacity: 0.6; filter: grayscale(0.35); }
+.crystal-meter.is-cracked .rank-chip::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(135deg, transparent 45%, var(--danger) 46%, transparent 48%);
+  opacity: 0.75;
+  pointer-events: none;
+}
+.crystal-meter .rank-chip::after {
+  content: "";
+  position: absolute;
+  top: 18%;
+  left: 26%;
+  width: 8px;
+  height: 8px;
+  background: radial-gradient(circle, #fff 0 22%, rgba(255, 255, 255, 0.55) 30%, transparent 70%);
+  clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%);
+  animation: gem-glint 4.6s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes gem-glint {
+  0%, 70%, 100% { opacity: 0; transform: scale(0.4) rotate(0deg); }
+  80% { opacity: 1; transform: scale(1.5) rotate(45deg); }
+  90% { opacity: 0; transform: scale(0.6) rotate(90deg); }
+}
+.crystal-meter.is-compact .rank-chip::after { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .crystal-meter .rank-chip::after { animation: none; opacity: 0; }
+  .crystal-meter.skin-amethyst .rank-chip { animation: none; }
+}

@@ -1,7 +1,7 @@
 import { SLOTS, SLOT_LABEL } from "../constants.js";
 import { formatNum, esc } from "../format.js";
-import { crystalGemSvg, icon } from "../icons.js";
-import { rankBadgeHtml, rankMeta } from "../rank.js";
+import { icon } from "../icons.js";
+import { rankEmblemSvg, rankMeta } from "../rank.js";
 
 const RADIUS = 36;
 export const RING_CIRC = 2 * Math.PI * RADIUS;
@@ -47,22 +47,18 @@ export function levelBar(progress, total, pulse) {
     </div>`;
 }
 
+/** Level card: the rank emblem (tinted by the equipped skin) with level, rank name and progress. */
 export function crystalMeterHtml({ progress, stress = 0, pulse = false, skin = "default", compact = false }) {
-  const fill = Math.max(0, Math.min(1, Number(progress.pct) || 0));
-  const gemFill = Math.max(0.35, fill);
   const stressCl = stress > 0.55 ? "is-cracked" : stress > 0.25 ? "is-dim" : "";
   const meta = rankMeta(progress.level);
-  const gemSize = compact ? 44 : 56;
+  const size = compact ? 40 : 58;
   return `
     <div class="crystal-meter ${compact ? "is-compact" : ""} ${stressCl} skin-${esc(skin || "default")}" data-crystal-meter>
-      <div class="rank-chip" aria-label="Rank ${esc(meta.name)}">${rankBadgeHtml(progress.level, { size: compact ? 34 : 40 })}</div>
-      <div class="crystal-gem-wrap ${pulse ? "pulse" : ""}" aria-hidden="true">
-        ${crystalGemSvg({ size: gemSize, fillPct: gemFill, className: "crystal-svg hero-gem", compact: false })}
-      </div>
+      <div class="rank-chip ${pulse ? "pulse" : ""}" style="--rank-glow:${meta.glow}" aria-label="Rank ${esc(meta.name)}">${rankEmblemSvg(meta, { size, className: "hero-emblem" })}</div>
       <div class="crystal-copy">
         <strong class="display">Lv ${progress.level}</strong>
         <span class="rank-name" style="--rank-light:${meta.colors[0]};--rank-glow:${meta.glow}">${esc(meta.name)}</span>
-        <span class="num crystal-xp">${Math.round(progress.pct * 100)}%</span>
+        <span class="num crystal-xp">${Math.round(Math.max(0, Math.min(1, Number(progress.pct) || 0)) * 100)}%</span>
       </div>
     </div>`;
 }

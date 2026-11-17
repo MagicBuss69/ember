@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { LEVEL_START, levelFor, levelStart } from "../src/economy.js";
-import { RANK_TIERS, nextRankLevel, rankBadgeHtml, rankEmblemSvg, rankForLevel, rankForXp, rankMeta, roman } from "../src/rank.js";
+import { RANK_TIERS, nextRankLevel, rankEmblemSvg, rankForLevel, rankForXp, rankMeta, roman } from "../src/rank.js";
 
 test("rank tiers follow level bands from Bronze to Grandmaster", () => {
   assert.equal(rankForLevel(1), "bronze");
@@ -33,7 +33,7 @@ test("ranks never run out: Legend I, II, III… every 5 levels after 30", () => 
   }
 });
 
-test("rank emblem is an SVG with tier colours, unique gradient ids and progress pips", () => {
+test("rank emblem is an SVG with tier colours, and unique gradient ids", () => {
   const a = rankEmblemSvg(10);
   const b = rankEmblemSvg(10);
   assert.match(a, /^<svg class="rank-emblem/);
@@ -42,8 +42,18 @@ test("rank emblem is an SVG with tier colours, unique gradient ids and progress 
   const idB = b.match(/id="(rk\d+)f"/)[1];
   assert.notEqual(idA, idB);
   assert.match(rankEmblemSvg(35), />II</);
-  const badge = rankBadgeHtml(12);
-  assert.equal((badge.match(/<i class="on">/g) || []).length, 3);
-  assert.equal((badge.match(/<i /g) || []).length, 5);
+  assert.doesNotMatch(a, /rank-pips/);
   assert.ok(levelStart(40) > levelStart(39));
+});
+
+test("level card shows one emblem (no old crystal, no pips) and keeps level text", async () => {
+  const { crystalMeterHtml } = await import("../src/ui/bits.js");
+  const { levelProgress } = await import("../src/economy.js");
+  const html = crystalMeterHtml({ progress: levelProgress(LEVEL_START[9] + 200), skin: "ice" });
+  assert.equal((html.match(/<svg/g) || []).length, 1);
+  assert.match(html, /rank-emblem/);
+  assert.doesNotMatch(html, /hero-gem|crystal-gem|rank-pips/);
+  assert.match(html, /Lv 10/);
+  assert.match(html, /Platinum/);
+  assert.match(html, /skin-ice/);
 });

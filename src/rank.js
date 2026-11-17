@@ -142,12 +142,3 @@ export function rankEmblemSvg(level, { size = 40, className = "" } = {}) {
     ${marks}${numeral}
   </svg>`;
 }
-
-/** Emblem plus a row of pips for progress through the tier. */
-export function rankBadgeHtml(level, { size = 40, pips = true } = {}) {
-  const meta = rankMeta(level);
-  const dots = pips
-    ? `<span class="rank-pips" aria-hidden="true">${Array.from({ length: meta.span }, (_, i) => `<i class="${i < meta.step ? "on" : ""}"></i>`).join("")}</span>`
-    : "";
-  return `<span class="rank-badge rank-${meta.shape}" style="--rank-glow:${meta.glow};--rank-light:${meta.colors[0]}" title="${meta.name}">${rankEmblemSvg(meta, { size })}${dots}</span>`;
-}
