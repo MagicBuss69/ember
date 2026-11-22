@@ -117,7 +117,10 @@ async function syncNativeReminders(records) {
   const { future, due } = splitNativeReminders(records, now, flagged);
   const payloads = nativeReminderPayloads([...future, ...due], now);
   try {
-    const perm = await LocalNotifications.checkPermissions();
+    let perm = await LocalNotifications.checkPermissions();
+    if (perm.display === "prompt") {
+      perm = await LocalNotifications.requestPermissions();
+    }
     if (perm.display !== "granted") {
       armTimer(records);
       return records;

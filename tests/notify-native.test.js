@@ -35,6 +35,14 @@ test("native schedule keeps future quests and replays an unflagged one that is a
   assert.equal(payloads[1].extra.tag, "due");
 });
 
+test("syncNativeReminders requests permission when still prompt", () => {
+  const src = fs.readFileSync(new URL("../src/notify.js", import.meta.url), "utf8");
+  const fn = src.slice(src.indexOf("async function syncNativeReminders"));
+  assert.match(fn, /checkPermissions/);
+  assert.match(fn, /requestPermissions/);
+  assert.ok(fn.indexOf("requestPermissions") > fn.indexOf("checkPermissions"));
+});
+
 test("service worker ready is not awaited on the native reminder path", () => {
   assert.equal(isNativeApp(), false);
   const src = fs.readFileSync(new URL("../src/notify.js", import.meta.url), "utf8");

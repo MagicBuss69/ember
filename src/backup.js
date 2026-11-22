@@ -1,3 +1,4 @@
+import { Capacitor } from "@capacitor/core";
 import { shareNativeBackup } from "./blockerBridge.js";
 import { SLOTS, THEMES, XP_TASK, XP_WORKOUT } from "./constants.js";
 import { clampPushupMax, clampUnlockMinutes } from "./pushups.js";
@@ -478,6 +479,15 @@ export function backupFileShareable(file, nav = globalThis.navigator) {
 export async function saveBackupFile(jsonText, filename, deps = {}) {
   const shareNative = deps.shareNative || shareNativeBackup;
   const native = deps.isNative != null ? deps.isNative : undefined;
+  const onNative =
+    deps.isNativePlatform ||
+    (() => {
+      try {
+        return Capacitor.isNativePlatform();
+      } catch {
+        return false;
+      }
+    });
   try {
     const shared = native === false ? false : await shareNative(filename, jsonText);
     if (shared) return { ok: true, method: "share" };
@@ -485,6 +495,9 @@ export async function saveBackupFile(jsonText, filename, deps = {}) {
     if (native !== false) return { ok: false, cancelled: error?.name === "AbortError" };
   }
   if (typeof document === "undefined") return { ok: false, cancelled: false };
+  if (native !== false && onNative()) {
+    return { ok: false, cancelled: false };
+  }
   const blob = new Blob([jsonText], { type: "application/json" });
   const file = new File([blob], filename, { type: "application/json" });
   if (backupFileShareable(file)) {

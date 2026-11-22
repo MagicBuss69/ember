@@ -279,7 +279,7 @@ function isStreamBodyReadError(error) {
   return name === "AbortError" || name === "TimeoutError" || name === "NetworkError";
 }
 
-async function readStreamText(response, onChunk) {
+export async function readStreamText(response, onChunk) {
   const body = response?.body;
   if (!body?.getReader) {
     const error = new Error("Couldn't reach Gemini.");
@@ -293,11 +293,22 @@ async function readStreamText(response, onChunk) {
   try {
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
-      parser.feed(decoder.decode(value, { stream: true }), (delta) => {
-        textSoFar += delta;
-        onChunk?.({ textSoFar, delta });
-      });
+      if (value) {
+        parser.feed(decoder.decode(value, { stream: true }), (delta) => {
+          textSoFar += delta;
+          onChunk?.({ textSoFar, delta });
+        });
+      }
+      if (done) {
+        const tail = decoder.decode();
+        if (tail) {
+          parser.feed(tail, (delta) => {
+            textSoFar += delta;
+            onChunk?.({ textSoFar, delta });
+          });
+        }
+        break;
+      }
     }
     parser.finish((delta) => {
       textSoFar += delta;
@@ -454,9 +465,13 @@ export function decodePartialJsonStringContent(piece) {
 
 export function coachStreamDisplayText(buffer) {
   const raw = String(buffer || "");
-  const match = raw.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)/);
-  if (!match) return "";
-  return decodePartialJsonStringContent(match[1]);
+  const matches = [...raw.matchAll(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)/g)];
+  if (!matches.length) return "";
+  const piece =
+    raw.includes('"actions"') && matches.length > 1
+      ? matches[matches.length - 1][1]
+      : matches[0][1];
+  return decodePartialJsonStringContent(piece);
 }
 
 const COACH_INSTRUCTIONS = `You are Ember's in-app coach for a private self-improvement PWA (quests, templates, calendar events, settings).

@@ -6,6 +6,7 @@ import {
   coachStreamDisplayText,
   createSseDeltaParser,
   decodePartialJsonStringContent,
+  readStreamText,
   resetThinkingConfigRejections,
   textDeltaFromSseData,
 } from "../src/gemini.js";
@@ -184,6 +185,43 @@ test("pre-first-chunk stream read failure falls back to flash-lite", async () =>
 test("coachStreamDisplayText keeps escaped backslash before n", () => {
   const buffer = '{"reply":"use \\\\n not a newline';
   assert.equal(coachStreamDisplayText(buffer), "use \\n not a newline");
+});
+
+test("coachStreamDisplayText ignores a nested reply key inside actions", () => {
+  const buffer = '{"actions":[{"reply":"wrong"}],"reply":"Hello there';
+  assert.equal(coachStreamDisplayText(buffer), "Hello there");
+});
+
+test("readStreamText flushes the last chunk when the reader ends with done", async () => {
+  const encoder = new TextEncoder();
+  const payload = sseLine({ candidates: [{ content: { parts: [{ text: '{"reply":"Done"}' }] } }] });
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(payload.slice(0, 20)));
+      controller.enqueue(encoder.encode(payload.slice(20)));
+      controller.close();
+    },
+  });
+  const text = await readStreamText({ body: stream });
+  assert.match(text, /"reply":"Done"/);
+});
+
+test("readStreamText decodes utf8 split across the final stream read", async () => {
+  const encoder = new TextEncoder();
+  const emoji = "🙂";
+  const bytes = encoder.encode(
+    sseLine({ candidates: [{ content: { parts: [{ text: `{"reply":"${emoji}"}` }] } }] }),
+  );
+  const split = bytes.length - 2;
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(bytes.slice(0, split));
+      controller.enqueue(bytes.slice(split));
+      controller.close();
+    },
+  });
+  const text = await readStreamText({ body: stream });
+  assert.ok(text.includes(emoji), text);
 });
 
 test("decodePartialJsonStringContent drops an incomplete trailing unicode escape", () => {

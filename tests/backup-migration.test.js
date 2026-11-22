@@ -29,6 +29,16 @@ test("native export shares the file and does not pretend a download worked", asy
   assert.equal(failed.cancelled, false);
 });
 
+test("native export does not fall through to anchor download", async () => {
+  const failed = await saveBackupFile("{}", "ember-backup.json", {
+    isNative: true,
+    shareNative: async () => false,
+    isNativePlatform: () => true,
+  });
+  assert.equal(failed.ok, false);
+  assert.equal(failed.method, undefined);
+});
+
 test("backupFileShareable follows navigator.canShare for files", () => {
   const file = new File(["{}"], "ember-backup.json", { type: "application/json" });
   assert.equal(backupFileShareable(file, {}), false);
