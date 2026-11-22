@@ -35,11 +35,12 @@ test("native schedule keeps future quests and replays an unflagged one that is a
   assert.equal(payloads[1].extra.tag, "due");
 });
 
-test("syncNativeReminders requests permission when still prompt", () => {
+test("syncNativeReminders requests permission for prompt and prompt-with-rationale", () => {
   const src = fs.readFileSync(new URL("../src/notify.js", import.meta.url), "utf8");
   const fn = src.slice(src.indexOf("async function syncNativeReminders"));
   assert.match(fn, /checkPermissions/);
   assert.match(fn, /requestPermissions/);
+  assert.match(fn, /prompt-with-rationale/);
   assert.ok(fn.indexOf("requestPermissions") > fn.indexOf("checkPermissions"));
 });
 

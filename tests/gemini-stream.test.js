@@ -187,8 +187,8 @@ test("coachStreamDisplayText keeps escaped backslash before n", () => {
   assert.equal(coachStreamDisplayText(buffer), "use \\n not a newline");
 });
 
-test("coachStreamDisplayText ignores a nested reply key inside actions", () => {
-  const buffer = '{"actions":[{"reply":"wrong"}],"reply":"Hello there';
+test("coachStreamDisplayText uses the top-level reply before actions, not nested reply fields", () => {
+  const buffer = '{"reply":"Hello there","actions":[{"reply":"wrong"}]';
   assert.equal(coachStreamDisplayText(buffer), "Hello there");
 });
 

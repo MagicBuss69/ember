@@ -118,7 +118,7 @@ async function syncNativeReminders(records) {
   const payloads = nativeReminderPayloads([...future, ...due], now);
   try {
     let perm = await LocalNotifications.checkPermissions();
-    if (perm.display === "prompt") {
+    if (perm.display === "prompt" || perm.display === "prompt-with-rationale") {
       perm = await LocalNotifications.requestPermissions();
     }
     if (perm.display !== "granted") {

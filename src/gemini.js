@@ -465,13 +465,9 @@ export function decodePartialJsonStringContent(piece) {
 
 export function coachStreamDisplayText(buffer) {
   const raw = String(buffer || "");
-  const matches = [...raw.matchAll(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)/g)];
-  if (!matches.length) return "";
-  const piece =
-    raw.includes('"actions"') && matches.length > 1
-      ? matches[matches.length - 1][1]
-      : matches[0][1];
-  return decodePartialJsonStringContent(piece);
+  const match = raw.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)/);
+  if (!match) return "";
+  return decodePartialJsonStringContent(match[1]);
 }
 
 const COACH_INSTRUCTIONS = `You are Ember's in-app coach for a private self-improvement PWA (quests, templates, calendar events, settings).
