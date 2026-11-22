@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildBlockerSnapshot, DEFAULT_BLOCKED_PACKAGES, restoreChallengeFromSnapshot } from "../src/blockerBridge.js";
-import { openChallenge } from "../src/challenges.js";
+import { openChallenge, processChallenges } from "../src/challenges.js";
 import { createInitialState, setTaskDone } from "../src/domain.js";
 import { challengeLiveHtml } from "../src/ui/screens.js";
 
@@ -19,6 +19,8 @@ test("blocker snapshot carries challenge fields and default packages", () => {
   assert.equal(snap.challengeLabel, "");
   assert.equal(snap.challengeReps, 0);
   assert.equal(typeof snap.quiet, "boolean");
+  processChallenges(state, NOW);
+  assert.ok(buildBlockerSnapshot(state, NOW).nextRollAt);
   assert.ok(snap.difficulty >= 1);
   assert.equal(challengeLiveHtml(state, NOW), "");
 });

@@ -26,11 +26,10 @@ object EmberAlarmScheduler {
         cancel(context, am, REQ_UNLOCK_WARN, ACTION_UNLOCK_WARN)
         val now = System.currentTimeMillis()
         scheduleNextUnlock(context, am, snap, now)
-        if (snap.quiet) return
         if (snap.nextRollAtMs > now) {
             scheduleExact(context, am, REQ_ROLL, ACTION_ROLL, snap.nextRollAtMs)
         }
-        if (snap.challengeActive && snap.challengeDeadlineMs > now) {
+        if (!snap.quiet && snap.challengeActive && snap.challengeDeadlineMs > now) {
             scheduleExact(context, am, REQ_DEADLINE, ACTION_DEADLINE, snap.challengeDeadlineMs)
             EmberChallengeForegroundService.start(context)
         } else {
