@@ -33,10 +33,10 @@ export const THEMES = [
   { id: "royal", name: "Royal", price: 30, blurb: "Monarch purple and gold.", art: "theme-ink", hue: 230 },
 ];
 
-export const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-flash-latest"];
+export const GEMINI_MODELS = ["gemini-4-neon", "gemini-2.5-flash", "gemini-flash-latest"];
 
-/** In-app coach and rival chat (see Google AI Studio models doc). */
-export const CHAT_GEMINI_MODEL = "gemini-3.8-flash";
+/** In-app coach and rival chat. Neon is paid-tier; the fallback stays on the free models. */
+export const CHAT_GEMINI_MODEL = "gemini-4-neon";
 export const CHAT_GEMINI_FALLBACK_MODEL = "gemini-3.5-flash-lite";
 
 export const DEFAULT_GOALS =

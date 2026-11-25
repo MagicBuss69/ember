@@ -64,7 +64,6 @@ import {
   consumeChallengeIntent,
   drainNativeInbox,
   hydrateChallengeFromNative,
-  filterInstalledDefaults,
   listLaunchableApps,
   openAccessibilitySettings,
   openFullScreenSettings,
@@ -368,7 +367,8 @@ function paint() {
     const q = search?.value.trim().toLowerCase();
     if (q) {
       search.closest(".sheet-blocker")?.querySelectorAll("[data-blocked-row]").forEach((row) => {
-        row.hidden = !(row.dataset.blockedSearch || "").includes(q);
+        const hay = (row.dataset.search || row.textContent || "").toLowerCase();
+        row.hidden = !hay.includes(q);
       });
     }
   }
@@ -1275,10 +1275,7 @@ const actions = {
       toast("App list is only available in the Android APK.");
       return;
     }
-    let selected = normalizeBlockedPackages(state.settings.blockedPackages);
-    if (!selected.length && state.settings.blockedPackagesChosen !== true) {
-      selected = normalizeBlockedPackages(await filterInstalledDefaults());
-    }
+    const selected = normalizeBlockedPackages(state.settings.blockedPackages);
     const known = new Set(apps.map((app) => app.id));
     const missing = selected
       .filter((id) => !known.has(id))
@@ -1299,7 +1296,7 @@ const actions = {
     const boxes = [...document.querySelectorAll("[data-blocked-app]")];
     const packages = normalizeBlockedPackages(
       boxes.length
-        ? boxes.filter((el) => el.checked).map((el) => el.dataset.blockedApp)
+        ? boxes.filter((el) => el.checked).map((el) => el.getAttribute("data-blocked-app"))
         : ui.draft?.selected,
     );
     const labels = {};
@@ -2045,7 +2042,8 @@ function bind() {
     ui.draft.blockedSearch = blockedSearch.value;
     const q = blockedSearch.value.trim().toLowerCase();
     blockedSearch.closest(".sheet-blocker")?.querySelectorAll("[data-blocked-row]").forEach((row) => {
-      row.hidden = Boolean(q) && !(row.dataset.blockedSearch || "").includes(q);
+      const hay = (row.dataset.search || row.textContent || "").toLowerCase();
+      row.hidden = Boolean(q) && !hay.includes(q);
     });
   };
   app.addEventListener("input", (event) => {

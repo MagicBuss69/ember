@@ -14,7 +14,7 @@ test("blocker snapshot carries challenge fields and default packages", () => {
   assert.equal(snap.blockMode, "pushups");
   assert.equal(snap.unlockMinutes, 15);
   assert.equal(snap.pushupMax, 10);
-  assert.deepEqual(snap.packages, DEFAULT_BLOCKED_PACKAGES);
+  assert.deepEqual(snap.packages, []);
   assert.equal(snap.challengeActive, false);
   assert.equal(snap.challengeLabel, "");
   assert.equal(snap.challengeReps, 0);
@@ -36,6 +36,10 @@ test("a saved empty block list stays empty, and duplicates are dropped", () => {
   assert.deepEqual(buildBlockerSnapshot(state, NOW).packages, ["com.zed", "com.alpha"]);
   const cleared = patchSettings(state, { blockedPackages: [], blockedPackagesChosen: true });
   assert.deepEqual(buildBlockerSnapshot(cleared, NOW).packages, []);
+  const unset = createInitialState(NOW);
+  unset.settings.blockedPackagesChosen = false;
+  unset.settings.blockedPackages = [];
+  assert.deepEqual(buildBlockerSnapshot(unset, NOW).packages, []);
   assert.equal(createInitialState(NOW).settings.blockedPackagesChosen, false);
 });
 
