@@ -51,7 +51,7 @@ test("quiet time inputs use change path not data-action", () => {
   globalThis.window = { matchMedia: () => ({ matches: false }) };
   const state = createInitialState(new Date("2026-11-13T12:00:00+01:00"));
   const html = viewSettings(state, { tab: "settings", notifyState: "default", periodic: "unsupported" });
-  assert.match(html, /Blocked: YouTube, TikTok \(if installed\)/);
+  assert.match(html, /Blocked: None/);
   assert.match(html, /data-quiet-time[^>]*data-parent="quietSchool"/);
   const cleared = viewSettings(
     { ...state, settings: { ...state.settings, blockedPackages: [], blockedPackagesChosen: true } },

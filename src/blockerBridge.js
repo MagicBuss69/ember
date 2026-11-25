@@ -18,7 +18,7 @@ export function buildBlockerSnapshot(state, now = new Date()) {
     blockMode: mode,
     unlockMinutes: Math.max(1, Math.min(180, Math.round(Number(state.settings?.unlockMinutes) || 15))),
     pushupMax: Math.max(1, Math.min(300, Math.round(Number(state.settings?.pushupMax) || 10))),
-    packages: blockedPackagesForSnapshot(state.settings, DEFAULT_BLOCKED_PACKAGES),
+    packages: blockedPackagesForSnapshot(state.settings),
     challengeActive: snap.challengeActive,
     challengeDeadline: snap.challengeDeadline || "",
     challengeLabel: snap.current?.label || "",

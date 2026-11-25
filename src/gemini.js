@@ -112,8 +112,15 @@ function isGemini3Model(model) {
   return /gemini-3/i.test(String(model || ""));
 }
 
+function isGeminiNeon(model) {
+  return /gemini-4-neon/i.test(String(model || ""));
+}
+
 function attachThinkingConfig(generationConfig, model) {
-  if (isGemini3Model(model)) {
+  if (isGeminiNeon(model)) {
+    // Neon rejects "minimal". "low" is the cheapest level it accepts.
+    generationConfig.thinkingConfig = { thinkingLevel: "low" };
+  } else if (isGemini3Model(model)) {
     const level = /gemini-3\.8-flash/i.test(model) ? "low" : "minimal";
     generationConfig.thinkingConfig = { thinkingLevel: level };
   } else {
@@ -363,7 +370,7 @@ async function chatStreamWithModel(model, apiKey, prompt, signal, onChunk) {
 function chatShouldFallback(error) {
   if (geminiAuthRefusal(error)) return false;
   const status = error?.status;
-  if (status === 400) return true;
+  if (status === 400 || status === 403) return true;
   if (error?.network || status === 404 || status === 429 || status === 500 || status === 503) return true;
   const text = `${error?.apiStatus || ""} ${error?.detail || ""} ${error?.message || ""}`;
   return /unavailable|overloaded|high demand|resource_exhausted/i.test(text);
@@ -532,7 +539,7 @@ export async function generateWeek(apiKey, goals, signal) {
       }
     } catch (error) {
       last = error;
-      if (error.status === 404) continue;
+      if (error.status === 404 || error.status === 403) continue;
       throw error;
     }
   }

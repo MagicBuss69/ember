@@ -125,14 +125,9 @@ export function normalizeBlockedPackages(list) {
   return out;
 }
 
-/**
- * An empty list means "YouTube and TikTok" until the picker is saved.
- * After a save, an empty list means block nothing.
- */
-export function blockedPackagesForSnapshot(settings, defaults) {
-  const saved = normalizeBlockedPackages(settings?.blockedPackages);
-  if (settings?.blockedPackagesChosen || saved.length) return saved;
-  return normalizeBlockedPackages(defaults);
+/** The saved list is the block list. Empty means nothing is blocked. */
+export function blockedPackagesForSnapshot(settings) {
+  return normalizeBlockedPackages(settings?.blockedPackages);
 }
 
 export function defaultChallengeSettings() {
@@ -333,9 +328,6 @@ export function processChallenges(state, now = new Date()) {
       if (isQuietHour(now, state.settings)) {
         state.challenges.nextRollAt = new Date(quietEndsAt(now, state.settings)).toISOString();
         events.push({ type: "roll-delayed-quiet" });
-      } else if (challengesLocked(state, dateKey(now))) {
-        scheduleNextRoll(state, now, `locked:${rollAt}`);
-        events.push({ type: "roll-delayed-lock" });
       } else {
         openChallenge(state, now, `roll:${rollAt}`);
         events.push({ type: "opened", id: state.challenges.current?.id });

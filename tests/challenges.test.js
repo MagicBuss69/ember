@@ -10,7 +10,6 @@ import {
   processChallenges,
   quietEndsAt,
   resolveChallengeMiss,
-  ROLL_MIN_MS,
 } from "../src/challenges.js";
 import { createInitialState, patchSettings, prepare, setTaskDone } from "../src/domain.js";
 import { sanitizeImport } from "../src/backup.js";
@@ -42,6 +41,16 @@ test("quiet hours cover school weekdays and wrap night past midnight", () => {
   assert.ok(endNight > NIGHT_LATE.getTime());
   const endEarly = quietEndsAt(NIGHT_EARLY, state.settings);
   assert.ok(endEarly > NIGHT_EARLY.getTime());
+});
+
+test("an hourly challenge rolls even when today's quests are not finished", () => {
+  const state = createInitialState(OPEN_EVENING);
+  state.challenges.nextRollAt = new Date(OPEN_EVENING.getTime() - 1000).toISOString();
+  const { events } = processChallenges(state, OPEN_EVENING);
+  assert.ok(events.some((event) => event.type === "opened"));
+  assert.ok(state.challenges.current?.label);
+  assert.ok(state.challenges.current?.reps > 0);
+  assert.ok(state.challenges.current?.deadlineAt);
 });
 
 test("challenge roll waits until quiet ends", () => {
@@ -154,12 +163,15 @@ test("prepare folds challenge inbox processing", () => {
   assert.ok(totalXp(prepared.state) < xpBefore);
 });
 
-test("roll interval stays within hourly band", () => {
+test("a due roll opens one challenge and does not open a second while it is still active", () => {
   const state = createInitialState(OPEN_EVENING);
   state.challenges.nextRollAt = new Date(OPEN_EVENING.getTime() - 5000).toISOString();
-  processChallenges(state, OPEN_EVENING);
-  const next = new Date(state.challenges.nextRollAt).getTime() - OPEN_EVENING.getTime();
-  assert.ok(next >= ROLL_MIN_MS - 5000);
+  const first = processChallenges(state, OPEN_EVENING);
+  assert.equal(first.events.filter((event) => event.type === "opened").length, 1);
+  const id = state.challenges.current.id;
+  const second = processChallenges(state, OPEN_EVENING);
+  assert.equal(state.challenges.current.id, id);
+  assert.equal(second.events.filter((event) => event.type === "opened").length, 0);
 });
 
 test("processChallenges seeds nextRollAt in place when missing", () => {

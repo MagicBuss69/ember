@@ -61,7 +61,7 @@ function challengeCard(state, now) {
     const eta = next && next > now ? `Next roll around ${next.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Waiting for the next roll";
     return `<article class="challenge-card challenge-card-idle" data-challenge-card>
       <p class="challenge-kicker">Hourly challenge</p>
-      <p class="muted">${esc(eta)}${snap.locked ? " · Finish every quest (not events) to unlock." : snap.quiet ? " · Quiet hours." : ""}</p>
+      <p class="muted">${esc(eta)}${snap.quiet ? " · Quiet hours." : ""}</p>
     </article>`;
   }
   return challengeBody(current, snap.msRemaining, "article");
@@ -865,7 +865,6 @@ export function sheetHtml(state, ui, now = new Date()) {
 function blockedListLabel(state) {
   const pkgs = normalizeBlockedPackages(state.settings?.blockedPackages);
   const labels = state.settings?.blockedPackageLabels || {};
-  if (!pkgs.length && state.settings?.blockedPackagesChosen !== true) return "YouTube, TikTok (if installed)";
   if (!pkgs.length) return "None";
   return pkgs.map((id) => labels[id] || id).join(", ");
 }
@@ -883,8 +882,8 @@ function blockerPickerSheet(state, draft) {
   const rows = apps
     .map((app) => {
       const on = selected.has(app.id);
-      const hay = esc(`${app.label || ""} ${app.id}`.toLowerCase());
-      return `<label class="copy-day-row ${on ? "is-checked" : ""}" data-blocked-row data-blocked-search="${hay}">
+      const hay = `${app.label || ""} ${app.id}`.toLowerCase();
+      return `<label class="copy-day-row ${on ? "is-checked" : ""}" data-blocked-row data-search="${esc(hay)}">
         <input type="checkbox" data-blocked-app="${esc(app.id)}" ${on ? "checked" : ""} />
         <span class="copy-day-copy"><strong>${esc(app.label || app.id)}</strong><small>${esc(app.id)}${app.missing ? " · not in the app list" : ""}</small></span>
       </label>`;

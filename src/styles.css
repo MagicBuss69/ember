@@ -1315,6 +1315,7 @@ body.dragging-quest, body.dragging-quest * { cursor: grabbing !important; user-s
   gap: 6px;
   margin-bottom: 10px;
 }
+.copy-day-row[hidden] { display: none !important; }
 .copy-day-row {
   display: flex;
   align-items: center;
