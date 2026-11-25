@@ -109,6 +109,32 @@ function addDayKey(key, n) {
   return `${utc.getUTCFullYear()}-${String(utc.getUTCMonth() + 1).padStart(2, "0")}-${String(utc.getUTCDate()).padStart(2, "0")}`;
 }
 
+export const EMBER_PACKAGE = "se.ember.app";
+
+/** Drop blanks, Ember itself, and duplicates. Order is kept. Cap is 64. */
+export function normalizeBlockedPackages(list) {
+  const out = [];
+  const seen = new Set();
+  for (const raw of Array.isArray(list) ? list : []) {
+    const id = String(raw || "").trim().slice(0, 120);
+    if (!id || id === EMBER_PACKAGE || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+    if (out.length >= 64) break;
+  }
+  return out;
+}
+
+/**
+ * An empty list means "YouTube and TikTok" until the picker is saved.
+ * After a save, an empty list means block nothing.
+ */
+export function blockedPackagesForSnapshot(settings, defaults) {
+  const saved = normalizeBlockedPackages(settings?.blockedPackages);
+  if (settings?.blockedPackagesChosen || saved.length) return saved;
+  return normalizeBlockedPackages(defaults);
+}
+
 export function defaultChallengeSettings() {
   return {
     challengesOn: true,
@@ -118,6 +144,8 @@ export function defaultChallengeSettings() {
     quietSchool: { ...DEFAULT_QUIET_SCHOOL },
     quietNight: { ...DEFAULT_QUIET_NIGHT },
     blockedPackages: [],
+    blockedPackagesChosen: false,
+    blockedPackageLabels: {},
   };
 }
 

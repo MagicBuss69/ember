@@ -33,12 +33,30 @@ test("blocker picker form submits via data-form not click delegate", () => {
   });
   assert.ok(picked.indexOf("Zed") < picked.indexOf("Alpha"));
   assert.ok(picked.indexOf("Alpha") < picked.indexOf("Mango"));
+  const gone = sheetHtml(state, {
+    sheet: { type: "blocker-picker" },
+    draft: {
+      apps: [
+        { id: "com.zed", label: "Zed" },
+        { id: "com.old.app", label: "Old App", missing: true },
+      ],
+      selected: ["com.old.app"],
+    },
+  });
+  assert.match(gone, /not in the app list/);
+  assert.match(gone, /data-blocked-app="com.old.app"/);
 });
 
 test("quiet time inputs use change path not data-action", () => {
   globalThis.window = { matchMedia: () => ({ matches: false }) };
   const state = createInitialState(new Date("2026-11-13T12:00:00+01:00"));
   const html = viewSettings(state, { tab: "settings", notifyState: "default", periodic: "unsupported" });
+  assert.match(html, /Blocked: YouTube, TikTok \(if installed\)/);
   assert.match(html, /data-quiet-time[^>]*data-parent="quietSchool"/);
+  const cleared = viewSettings(
+    { ...state, settings: { ...state.settings, blockedPackages: [], blockedPackagesChosen: true } },
+    { tab: "settings", notifyState: "default", periodic: "unsupported" },
+  );
+  assert.match(cleared, /Blocked: None/);
   assert.doesNotMatch(html, /data-action="patch-quiet-time"/);
 });

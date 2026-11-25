@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildBlockerSnapshot, DEFAULT_BLOCKED_PACKAGES, restoreChallengeFromSnapshot } from "../src/blockerBridge.js";
-import { openChallenge, processChallenges } from "../src/challenges.js";
-import { createInitialState, setTaskDone } from "../src/domain.js";
+import { normalizeBlockedPackages, openChallenge, processChallenges } from "../src/challenges.js";
+import { createInitialState, patchSettings, setTaskDone } from "../src/domain.js";
 import { challengeLiveHtml } from "../src/ui/screens.js";
 
 const NOW = new Date("2026-11-13T20:00:00+01:00");
@@ -23,6 +23,22 @@ test("blocker snapshot carries challenge fields and default packages", () => {
   assert.ok(buildBlockerSnapshot(state, NOW).nextRollAt);
   assert.ok(snap.difficulty >= 1);
   assert.equal(challengeLiveHtml(state, NOW), "");
+});
+
+test("a saved empty block list stays empty, and duplicates are dropped", () => {
+  let state = createInitialState(NOW);
+  state = patchSettings(state, {
+    blockedPackages: ["com.zed", "com.zed", " se.ember.app ", "com.alpha", ""],
+    blockedPackagesChosen: true,
+    blockedPackageLabels: { "com.zed": "Zed", "com.alpha": "Alpha" },
+  });
+  assert.deepEqual(state.settings.blockedPackages, ["com.zed", "com.alpha"]);
+  assert.equal(state.settings.blockedPackageLabels["com.zed"], "Zed");
+  assert.deepEqual(normalizeBlockedPackages(["com.zed", "com.zed"]), ["com.zed"]);
+  assert.deepEqual(buildBlockerSnapshot(state, NOW).packages, ["com.zed", "com.alpha"]);
+  const cleared = patchSettings(state, { blockedPackages: [], blockedPackagesChosen: true });
+  assert.deepEqual(buildBlockerSnapshot(cleared, NOW).packages, []);
+  assert.equal(createInitialState(NOW).settings.blockedPackagesChosen, false);
 });
 
 test("an open hourly challenge shows the exercise, reps, countdown, and Done", () => {

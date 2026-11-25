@@ -74,7 +74,7 @@ import {
   pushBlockerSnapshot,
   startPushupTest,
 } from "./blockerBridge.js";
-import { processChallenges } from "./challenges.js";
+import { normalizeBlockedPackages, processChallenges } from "./challenges.js";
 import { ensureRivalHistory, rivalPromptFacts } from "./rivals.js";
 import { dayJustFinished, openTodayCount, totalXp } from "./stats.js";
 import { addCustomReward, buyItem, equipCosmetic, redeemCustomReward, removeCustomReward, SHOP_CATALOG } from "./shop.js";
@@ -1275,9 +1275,15 @@ const actions = {
       toast("App list is only available in the Android APK.");
       return;
     }
-    let selected = state.settings.blockedPackages || [];
-    if (!selected.length) selected = await filterInstalledDefaults();
-    openSheet({ type: "blocker-picker" }, { apps, selected: [...selected], blockedSearch: "" });
+    let selected = normalizeBlockedPackages(state.settings.blockedPackages);
+    if (!selected.length && state.settings.blockedPackagesChosen !== true) {
+      selected = normalizeBlockedPackages(await filterInstalledDefaults());
+    }
+    const known = new Set(apps.map((app) => app.id));
+    const missing = selected
+      .filter((id) => !known.has(id))
+      .map((id) => ({ id, label: state.settings.blockedPackageLabels?.[id] || id, missing: true }));
+    openSheet({ type: "blocker-picker" }, { apps: [...apps, ...missing], selected: [...selected], blockedSearch: "" });
   },
   "toggle-blocked-app"(el) {
     if (!ui.draft?.selected) return;
@@ -1290,8 +1296,24 @@ const actions = {
   },
   async "save-blocked-apps"(event) {
     event?.preventDefault?.();
-    const packages = ui.draft?.selected || [];
-    await commitAction((current) => patchSettings(current, { blockedPackages: packages }), { quiet: true, close: true });
+    const boxes = [...document.querySelectorAll("[data-blocked-app]")];
+    const packages = normalizeBlockedPackages(
+      boxes.length
+        ? boxes.filter((el) => el.checked).map((el) => el.dataset.blockedApp)
+        : ui.draft?.selected,
+    );
+    const labels = {};
+    for (const app of ui.draft?.apps || []) {
+      if (packages.includes(app.id) && app.label) labels[app.id] = String(app.label).slice(0, 80);
+    }
+    await commitAction(
+      (current) => patchSettings(current, {
+        blockedPackages: packages,
+        blockedPackagesChosen: true,
+        blockedPackageLabels: labels,
+      }),
+      { quiet: true, close: true },
+    );
     await pushBlockerSnapshot(state, new Date());
   },
   async "open-accessibility"() {

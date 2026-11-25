@@ -1,5 +1,5 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
-import { CHALLENGE_DEADLINE_MS, challengeSnapshot, isQuietHour } from "./challenges.js";
+import { CHALLENGE_DEADLINE_MS, blockedPackagesForSnapshot, challengeSnapshot, isQuietHour } from "./challenges.js";
 import { dateKey } from "./time.js";
 
 export const DEFAULT_BLOCKED_PACKAGES = [
@@ -18,9 +18,7 @@ export function buildBlockerSnapshot(state, now = new Date()) {
     blockMode: mode,
     unlockMinutes: Math.max(1, Math.min(180, Math.round(Number(state.settings?.unlockMinutes) || 15))),
     pushupMax: Math.max(1, Math.min(300, Math.round(Number(state.settings?.pushupMax) || 10))),
-    packages: (state.settings?.blockedPackages?.length
-      ? state.settings.blockedPackages
-      : DEFAULT_BLOCKED_PACKAGES),
+    packages: blockedPackagesForSnapshot(state.settings, DEFAULT_BLOCKED_PACKAGES),
     challengeActive: snap.challengeActive,
     challengeDeadline: snap.challengeDeadline || "",
     challengeLabel: snap.current?.label || "",

@@ -3,9 +3,20 @@ import { SLOTS, THEMES, XP_TASK, XP_WORKOUT } from "./constants.js";
 import { clampPushupMax, clampUnlockMinutes } from "./pushups.js";
 import { createInitialState, validTime } from "./domain.js";
 import { levelFor } from "./economy.js";
-import { defaultChallengeSettings, ensureChallengeState, normalizeQuietNight, normalizeQuietSchool } from "./challenges.js";
+import { defaultChallengeSettings, ensureChallengeState, normalizeBlockedPackages, normalizeQuietNight, normalizeQuietSchool } from "./challenges.js";
 import { migrateStateV2 } from "./migrate.js";
 import { totalXp } from "./stats.js";
+
+function cleanBlockedLabels(raw) {
+  const labels = {};
+  if (!raw || typeof raw !== "object") return labels;
+  for (const [id, label] of Object.entries(raw)) {
+    const key = clip(id, 120);
+    const text = clip(label, 80);
+    if (key && text) labels[key] = text;
+  }
+  return labels;
+}
 
 const LIMITS = {
   days: 8000,
@@ -119,11 +130,19 @@ export function sanitizeImport(raw, current = null) {
       "quietSchool" in rawSettings ? rawSettings.quietSchool : prevSettings.quietSchool,
     ),
     quietNight: normalizeQuietNight("quietNight" in rawSettings ? rawSettings.quietNight : prevSettings.quietNight),
-    blockedPackages: Array.isArray(rawSettings.blockedPackages)
-      ? rawSettings.blockedPackages.map((pkg) => clip(pkg, 120)).filter(Boolean).slice(0, 64)
-      : Array.isArray(prevSettings.blockedPackages)
-        ? prevSettings.blockedPackages
-        : defaultChallengeSettings().blockedPackages,
+    blockedPackages: normalizeBlockedPackages(
+      Array.isArray(rawSettings.blockedPackages)
+        ? rawSettings.blockedPackages
+        : prevSettings.blockedPackages,
+    ),
+    blockedPackagesChosen: "blockedPackagesChosen" in rawSettings
+      ? rawSettings.blockedPackagesChosen === true
+      : prevSettings.blockedPackagesChosen === true,
+    blockedPackageLabels: cleanBlockedLabels(
+      "blockedPackageLabels" in rawSettings
+        ? rawSettings.blockedPackageLabels
+        : prevSettings.blockedPackageLabels,
+    ),
   };
 
   state.crystals = nonNegInt(raw.crystals);
