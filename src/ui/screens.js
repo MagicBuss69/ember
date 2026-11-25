@@ -12,7 +12,7 @@ import { currencyBlocked, openPenaltyQuests } from "../penalty.js";
 import { esc, formatNum, reasonLabel } from "../format.js";
 import { currencyIcon, gemIcon, itemThumb } from "../art.js";
 import { avatar, icon } from "../icons.js";
-import { challengeSnapshot } from "../challenges.js";
+import { challengeSnapshot, normalizeBlockedPackages } from "../challenges.js";
 import { buildBoard } from "../rivals.js";
 import { rawGap, ringNumbers, streakCount, summarizeWeek, taskCount, totalXp, weekCompare, workoutHistory } from "../stats.js";
 import {
@@ -689,7 +689,7 @@ export function viewSettings(state, ui) {
       <button type="button" class="ghost" data-action="open-fullscreen-settings">Allow full-screen challenges</button>
       <button type="button" class="ghost" data-action="open-accessibility">Open accessibility settings</button>
       <button type="button" class="ghost" data-action="pick-blocked-apps">Choose blocked apps</button>
-      <p class="footnote">Sideloaded APK: enable Accessibility for Ember. On Android 13+, App info → ⋮ → Allow restricted settings. Blocked: ${esc((state.settings.blockedPackages || []).join(", ") || "YouTube, TikTok (if installed)")}</p>
+      <p class="footnote">Sideloaded APK: enable Accessibility for Ember. On Android 13+, App info → ⋮ → Allow restricted settings. Blocked: ${esc(blockedListLabel(state))}</p>
       <h2 class="section-title">Gemini</h2>
       <p class="lede">Optional. Ember works with no key. The key stays on this phone.</p>
       ${geminiCard(state, ui)}
@@ -862,6 +862,14 @@ export function sheetHtml(state, ui, now = new Date()) {
   return "";
 }
 
+function blockedListLabel(state) {
+  const pkgs = normalizeBlockedPackages(state.settings?.blockedPackages);
+  const labels = state.settings?.blockedPackageLabels || {};
+  if (!pkgs.length && state.settings?.blockedPackagesChosen !== true) return "YouTube, TikTok (if installed)";
+  if (!pkgs.length) return "None";
+  return pkgs.map((id) => labels[id] || id).join(", ");
+}
+
 function blockerPickerSheet(state, draft) {
   const selected = new Set((draft.selected || state.settings.blockedPackages || []).map(String));
   const byName = (a, b) =>
@@ -878,7 +886,7 @@ function blockerPickerSheet(state, draft) {
       const hay = esc(`${app.label || ""} ${app.id}`.toLowerCase());
       return `<label class="copy-day-row ${on ? "is-checked" : ""}" data-blocked-row data-blocked-search="${hay}">
         <input type="checkbox" data-blocked-app="${esc(app.id)}" ${on ? "checked" : ""} />
-        <span class="copy-day-copy"><strong>${esc(app.label || app.id)}</strong><small>${esc(app.id)}</small></span>
+        <span class="copy-day-copy"><strong>${esc(app.label || app.id)}</strong><small>${esc(app.id)}${app.missing ? " · not in the app list" : ""}</small></span>
       </label>`;
     })
     .join("");

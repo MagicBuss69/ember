@@ -20,13 +20,29 @@ data class BlockerSnapshotData(
     val challengeLabel: String,
     val challengeReps: Int,
     val challengeIsSeconds: Boolean,
+    val snapshotDay: String = "",
 ) {
     fun shouldBlock(packageName: String, unlockedUntilMs: Long = 0L, now: Long = System.currentTimeMillis()): Boolean {
+        if (packageName.isBlank() || packageName == "se.ember.app") return false
         if (!packages.contains(packageName)) return false
         // A running unlock (push-ups or a redeemed reward) opens the app in both modes.
         if (now < unlockedUntilMs) return false
-        if (blockMode == "quests") return locked
+        if (blockMode == "quests") {
+            // The snapshot was written on a previous civil day. Quests for the new day
+            // are not done yet, so stay locked until Ember refreshes it.
+            if (snapshotDay.isNotBlank() && snapshotDay != civilDay(now)) return true
+            return locked
+        }
         return true
+    }
+
+    private fun civilDay(now: Long): String {
+        val cal = java.util.Calendar.getInstance()
+        cal.timeInMillis = now
+        val year = cal.get(java.util.Calendar.YEAR)
+        val month = cal.get(java.util.Calendar.MONTH) + 1
+        val day = cal.get(java.util.Calendar.DAY_OF_MONTH)
+        return "%04d-%02d-%02d".format(year, month, day)
     }
 
     companion object {
@@ -36,10 +52,11 @@ data class BlockerSnapshotData(
             return try {
                 val json = JSONObject(raw)
                 val packages = mutableListOf<String>()
+                val seen = HashSet<String>()
                 val arr = json.optJSONArray("packages") ?: JSONArray()
                 for (i in 0 until arr.length()) {
                     val id = arr.optString(i, "")
-                    if (id.isNotBlank()) packages.add(id)
+                    if (id.isNotBlank() && id != "se.ember.app" && seen.add(id)) packages.add(id)
                 }
                 val deadline = json.optString("challengeDeadline", "")
                 val deadlineMs = if (deadline.isBlank()) 0L else parseIso(deadline)
@@ -60,6 +77,7 @@ data class BlockerSnapshotData(
                     challengeLabel = json.optString("challengeLabel", ""),
                     challengeReps = json.optInt("challengeReps", 0),
                     challengeIsSeconds = json.optBoolean("challengeIsSeconds", false),
+                    snapshotDay = json.optString("today", ""),
                 )
             } catch (_: Exception) {
                 BlockerSnapshotData(true, emptyList(), false, 0L, false, 1, 0L, "pushups", 15, 10, "", 0, false)

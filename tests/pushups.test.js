@@ -154,6 +154,11 @@ test("push-up gate blocks until an unlock, and quest mode is optional", () => {
     shouldGatePackage({ blockMode: "quests", locked: true, packages, packageName: packages[0], now: 100 }),
     true,
   );
+  assert.equal(
+    shouldGatePackage({ blockMode: "quests", locked: true, packages, packageName: packages[0], unlockUntil: 500, now: 100 }),
+    false,
+    "a running unlock opens the app in quest mode too",
+  );
   assert.equal(raisePushupMax(10, 12), 12);
   assert.equal(raisePushupMax(10, 8), 10);
 });

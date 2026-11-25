@@ -30,7 +30,7 @@ class EmberBlockerPlugin : Plugin() {
         context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_SNAPSHOT, json)
-            .apply()
+            .commit()
         EmberAlarmScheduler.reschedule(context)
         call.resolve()
     }
@@ -72,7 +72,7 @@ class EmberBlockerPlugin : Plugin() {
         val seen = HashSet<String>()
         for (info in resolved) {
             val pkg = info.activityInfo.packageName
-            if (!seen.add(pkg)) continue
+            if (pkg == context.packageName || !seen.add(pkg)) continue
             val row = JSObject()
             row.put("id", pkg)
             row.put("label", info.loadLabel(pm)?.toString() ?: pkg)
@@ -94,8 +94,9 @@ class EmberBlockerPlugin : Plugin() {
     @PluginMethod
     fun openAccessibilitySettings(call: PluginCall) {
         val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        activity.startActivity(intent)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val host = activity
+        if (host != null) host.startActivity(intent) else context.startActivity(intent)
         call.resolve()
     }
 

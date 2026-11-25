@@ -18,6 +18,7 @@ import {
   confirmChallenge,
   defaultChallengeSettings,
   foldChallengesIntoPrepare,
+  normalizeBlockedPackages,
   normalizeQuietNight,
   normalizeQuietSchool,
 } from "./challenges.js";
@@ -706,11 +707,20 @@ export function patchSettings(state, patch) {
   if (patch.quietNight && typeof patch.quietNight === "object") {
     next.settings.quietNight = normalizeQuietNight({ ...next.settings.quietNight, ...patch.quietNight });
   }
+  if (patch.blockedPackagesChosen === true || patch.blockedPackagesChosen === false) {
+    next.settings.blockedPackagesChosen = patch.blockedPackagesChosen;
+  }
+  if (patch.blockedPackageLabels && typeof patch.blockedPackageLabels === "object") {
+    const labels = {};
+    for (const [id, label] of Object.entries(patch.blockedPackageLabels)) {
+      const key = String(id || "").trim().slice(0, 120);
+      const text = String(label || "").trim().slice(0, 80);
+      if (key && text) labels[key] = text;
+    }
+    next.settings.blockedPackageLabels = labels;
+  }
   if (Array.isArray(patch.blockedPackages)) {
-    next.settings.blockedPackages = patch.blockedPackages
-      .map((pkg) => String(pkg || "").trim().slice(0, 120))
-      .filter(Boolean)
-      .slice(0, 64);
+    next.settings.blockedPackages = normalizeBlockedPackages(patch.blockedPackages);
   }
   if (patch.doneSlotsOpen && typeof patch.doneSlotsOpen === "object") {
     const clean = {};

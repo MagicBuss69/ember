@@ -2,7 +2,7 @@ import { SLOTS } from "./constants.js";
 import { LEVEL_START, legacyLevelFor, levelFor } from "./economy.js";
 import { uid } from "./format.js";
 import { FREEZE_REFUND_CRYSTALS, PENALTY_TAG, firstUseDate, penaltyFloorDate } from "./penalty.js";
-import { defaultChallengeSettings, ensureChallengeState } from "./challenges.js";
+import { defaultChallengeSettings, ensureChallengeState, normalizeBlockedPackages } from "./challenges.js";
 import { ensureRivalXp, RIVALS } from "./rivals.js";
 import { totalXp } from "./stats.js";
 import { clampPushupMax, clampUnlockMinutes, DEFAULT_PUSHUP_MAX, DEFAULT_UNLOCK_MINUTES } from "./pushups.js";
@@ -159,7 +159,11 @@ export function migrateStateV2(state, now = new Date()) {
   if (!next.appUnlocks || typeof next.appUnlocks !== "object") next.appUnlocks = {};
   if (!next.settings.quietSchool) next.settings.quietSchool = chDefaults.quietSchool;
   if (!next.settings.quietNight) next.settings.quietNight = chDefaults.quietNight;
-  if (!Array.isArray(next.settings.blockedPackages)) next.settings.blockedPackages = [];
+  next.settings.blockedPackages = normalizeBlockedPackages(next.settings.blockedPackages);
+  if (next.settings.blockedPackagesChosen !== true) next.settings.blockedPackagesChosen = false;
+  if (!next.settings.blockedPackageLabels || typeof next.settings.blockedPackageLabels !== "object") {
+    next.settings.blockedPackageLabels = {};
+  }
   ensureChallengeState(next);
   if (!next.grants?.challengesV1) {
     next.grants = { ...(next.grants || {}), challengesV1: true };
