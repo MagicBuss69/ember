@@ -206,9 +206,9 @@ export function raisePushupMax(current, reps) {
  * Push-up mode blocks until an unlock timestamp. Quest mode blocks until the day
  * is done. A running unlock (push-ups or a redeemed reward) opens the app in both modes.
  */
-export function shouldGatePackage({ blockMode, locked, packages, packageName, unlockUntil = 0, now = 0 }) {
+export function shouldGatePackage({ blockMode, locked, packages, packageName, unlockUntil = 0, now = 0, penaltyLock = false }) {
   if (!Array.isArray(packages) || !packages.includes(packageName)) return false;
-  if (Number(unlockUntil) > Number(now)) return false;
+  if (Number(unlockUntil) > Number(now) && !penaltyLock) return false;
   if (blockMode === "quests") return Boolean(locked);
   return true;
 }

@@ -38,7 +38,7 @@ class EmberChallengeForegroundService : Service() {
     private fun refresh(fromStart: Boolean): Int {
         val snap = BlockerSnapshot.read(this)
         val left = snap.challengeDeadlineMs - System.currentTimeMillis()
-        val live = snap.challengeActive && !snap.quiet && left > 0
+        val live = snap.challengeActive && left > 0
         val notification = buildNotification(snap, left)
         if (fromStart) {
             try {
@@ -85,22 +85,21 @@ class EmberChallengeForegroundService : Service() {
             .setContentText(line)
             .setStyle(NotificationCompat.BigTextStyle().bigText("$label\n$line\nTap Done when you finish."))
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentIntent(openIntent(confirm = false))
-            .addAction(0, "Done", openIntent(confirm = true))
+            .setContentIntent(openIntent())
+            .addAction(0, "Done", openIntent())
             .setOnlyAlertOnce(true)
             .setOngoing(true)
             .setShowWhen(false)
             .build()
     }
 
-    private fun openIntent(confirm: Boolean): PendingIntent {
+    private fun openIntent(): PendingIntent {
         val intent = Intent(this, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             .putExtra("ember_open_challenge", true)
-            .putExtra("ember_confirm_challenge", confirm)
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or
             (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
-        return PendingIntent.getActivity(this, if (confirm) 2 else 1, intent, flags)
+        return PendingIntent.getActivity(this, 1, intent, flags)
     }
 
     private fun formatLeft(ms: Long): String {

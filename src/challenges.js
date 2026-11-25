@@ -155,6 +155,7 @@ export function ensureChallengeState(state) {
   }
   if (!Array.isArray(state.challenges.processedInbox)) state.challenges.processedInbox = [];
   if (state.challenges.difficultyStep == null) state.challenges.difficultyStep = 0;
+  if (state.challenges.penaltyLock !== true) state.challenges.penaltyLock = false;
   if (!Array.isArray(state.challengeInbox)) state.challengeInbox = [];
   return state;
 }
@@ -227,22 +228,50 @@ export function confirmChallenge(state, now) {
   state.challenges.processedInbox.push(current.id);
   state.challenges.current = null;
   state.challenges.difficultyStep = 0;
+  state.challenges.penaltyLock = false;
+  state.challenges.lastResult = null;
   scheduleNextRoll(state, now, current.id);
   return true;
 }
 
-export function resolveChallengeMiss(state, now, refId) {
+export function dismissChallengeResult(state) {
+  ensureChallengeState(state);
+  state.challenges.lastResult = null;
+  return true;
+}
+
+/**
+ * A miss only counts for the challenge that is still on screen.
+ * A stale alarm id must not wipe a newer challenge.
+ */
+export function resolveChallengeMiss(state, now, refId, reason = "timeout") {
   ensureChallengeState(state);
   const current = state.challenges.current;
   const id = refId || current?.id;
-  if (!id) return false;
+  if (!id || id === "deadline") return false;
+  if (current && current.id !== id) return false;
   if (state.challenges.processedInbox.includes(id)) return false;
   applyXpPenalty(state, CHALLENGE_MISS_XP, `challenge-miss:${id}`, now);
   state.challenges.processedInbox.push(id);
   state.challenges.difficultyStep = Math.min(4, (Number(state.challenges.difficultyStep) || 0) + 1);
+  state.challenges.penaltyLock = true;
+  state.challenges.lastResult = {
+    id,
+    reason: reason === "skip" || reason === "dismiss" ? reason : "timeout",
+    label: current?.label || "Challenge",
+    reps: Math.max(0, Math.round(Number(current?.reps) || 0)),
+    at: now.toISOString(),
+  };
   state.challenges.current = null;
   scheduleNextRoll(state, now, id);
   return true;
+}
+
+export function skipChallenge(state, now = new Date()) {
+  ensureChallengeState(state);
+  const id = state.challenges.current?.id;
+  if (!id) return false;
+  return resolveChallengeMiss(state, now, id, "skip");
 }
 
 /** Quest-only full day for app-unlock eligibility. */
@@ -317,10 +346,8 @@ export function processChallenges(state, now = new Date()) {
   const current = state.challenges.current;
   if (current) {
     const deadline = new Date(current.deadlineAt).getTime();
-    if (isQuietHour(now, state.settings)) {
-      if (cancelChallengeQuiet(state)) events.push({ type: "quiet-cancel" });
-    } else if (now.getTime() >= deadline) {
-      if (resolveChallengeMiss(state, now, current.id)) events.push({ type: "miss", id: current.id });
+    if (Number.isFinite(deadline) && now.getTime() >= deadline) {
+      if (resolveChallengeMiss(state, now, current.id, "timeout")) events.push({ type: "miss", id: current.id });
     }
   } else {
     const rollAt = new Date(state.challenges.nextRollAt).getTime();
@@ -349,7 +376,8 @@ export function challengeSnapshot(state, now = new Date()) {
     challengeActive: Boolean(current),
     challengeDeadline: current?.deadlineAt || null,
     difficulty: current?.difficulty || 1 + (state.challenges.difficultyStep || 0),
-    packages: state.settings?.blockedPackages || [],
+    packages: normalizeBlockedPackages(state.settings?.blockedPackages),
+    challengePenalty: state.challenges?.penaltyLock === true,
     current,
     nextRollAt: state.challenges.nextRollAt,
     msRemaining: current ? Math.max(0, new Date(current.deadlineAt).getTime() - now.getTime()) : 0,

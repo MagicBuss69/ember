@@ -21,10 +21,13 @@ data class BlockerSnapshotData(
     val challengeReps: Int,
     val challengeIsSeconds: Boolean,
     val snapshotDay: String = "",
+    val challengePenalty: Boolean = false,
 ) {
     fun shouldBlock(packageName: String, unlockedUntilMs: Long = 0L, now: Long = System.currentTimeMillis()): Boolean {
         if (packageName.isBlank() || packageName == "se.ember.app") return false
         if (!packages.contains(packageName)) return false
+        // A failed hourly challenge keeps apps locked until the next one is finished.
+        if (challengePenalty) return true
         // A running unlock (push-ups or a redeemed reward) opens the app in both modes.
         if (now < unlockedUntilMs) return false
         if (blockMode == "quests") {
@@ -78,6 +81,7 @@ data class BlockerSnapshotData(
                     challengeReps = json.optInt("challengeReps", 0),
                     challengeIsSeconds = json.optBoolean("challengeIsSeconds", false),
                     snapshotDay = json.optString("today", ""),
+                    challengePenalty = json.optBoolean("challengePenalty", false),
                 )
             } catch (_: Exception) {
                 BlockerSnapshotData(true, emptyList(), false, 0L, false, 1, 0L, "pushups", 15, 10, "", 0, false)
@@ -113,6 +117,7 @@ data class BlockerSnapshotData(
         }
 
         fun grantUnlock(context: Context, packageName: String, untilMs: Long) {
+            if (read(context).challengePenalty) return
             synchronized(LOCK) {
                 val prefs = context.getSharedPreferences(EmberBlockerPlugin.PREFS, Context.MODE_PRIVATE)
                 val raw = prefs.getString(EmberBlockerPlugin.KEY_UNLOCKS, "{}") ?: "{}"
@@ -140,6 +145,7 @@ data class BlockerSnapshotData(
          * Returns the latest end time written.
          */
         fun grantRewardUnlock(context: Context, packages: List<String>, durationMs: Long, now: Long): Long {
+            if (read(context).challengePenalty) return now
             var latest = now + durationMs
             synchronized(LOCK) {
                 val prefs = context.getSharedPreferences(EmberBlockerPlugin.PREFS, Context.MODE_PRIVATE)
@@ -168,6 +174,14 @@ data class BlockerSnapshotData(
             }
             EmberAlarmScheduler.reschedule(context)
             return latest
+        }
+
+        /** Drops every unlock. Used when a failed challenge locks apps again. */
+        fun revokeAllUnlocks(context: Context) {
+            synchronized(LOCK) {
+                val prefs = context.getSharedPreferences(EmberBlockerPlugin.PREFS, Context.MODE_PRIVATE)
+                prefs.edit().putString(EmberBlockerPlugin.KEY_UNLOCKS, "{}").commit()
+            }
         }
 
         /** Drops windows that have ended so the app is blocked again. */

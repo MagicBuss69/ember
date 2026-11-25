@@ -321,6 +321,16 @@ export function sanitizeImport(raw, current = null) {
     state.challenges.processedInbox = Array.isArray(ch.processedInbox)
       ? ch.processedInbox.map((id) => clip(id, 80)).filter(Boolean).slice(0, 200)
       : [];
+    state.challenges.penaltyLock = ch.penaltyLock === true;
+    if (ch.lastResult && typeof ch.lastResult === "object") {
+      state.challenges.lastResult = {
+        id: clip(ch.lastResult.id, 80),
+        reason: clip(ch.lastResult.reason, 20) || "timeout",
+        label: clip(ch.lastResult.label, 60) || "Challenge",
+        reps: Math.max(0, Math.round(Number(ch.lastResult.reps) || 0)),
+        at: normalizeIso(ch.lastResult.at) || "",
+      };
+    }
   }
   if (Array.isArray(raw.challengeInbox)) {
     state.challengeInbox = raw.challengeInbox.slice(0, 40);

@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   applyChallengeInbox,
   confirmChallenge,
+  dismissChallengeResult,
   isFullDayQuests,
   isQuietHour,
   openChallenge,
@@ -10,6 +11,7 @@ import {
   processChallenges,
   quietEndsAt,
   resolveChallengeMiss,
+  skipChallenge,
 } from "../src/challenges.js";
 import { createInitialState, patchSettings, prepare, setTaskDone } from "../src/domain.js";
 import { sanitizeImport } from "../src/backup.js";
@@ -104,14 +106,16 @@ test("inbox miss is idempotent by challenge id", () => {
   assert.equal(state.challengeInbox.length, 0);
 });
 
-test("quiet hours cancel an open challenge without punishment", () => {
+test("quiet hours leave an open challenge on screen", () => {
   const state = createInitialState(OPEN_EVENING);
   openChallenge(state, OPEN_EVENING, "quiet");
+  const id = state.challenges.current.id;
   const xp = totalXp(state);
   const { events } = processChallenges(state, SCHOOL_FRIDAY);
-  assert.ok(events.some((e) => e.type === "quiet-cancel"));
-  assert.equal(state.challenges.current, null);
+  assert.equal(events.some((e) => e.type === "quiet-cancel"), false);
+  assert.equal(state.challenges.current.id, id);
   assert.equal(totalXp(state), xp);
+  assert.equal(state.challenges.penaltyLock, false);
 });
 
 test("full-day unlock ignores events", () => {
@@ -161,6 +165,46 @@ test("prepare folds challenge inbox processing", () => {
   const xpBefore = totalXp(state);
   const prepared = prepare(state, OPEN_EVENING);
   assert.ok(totalXp(prepared.state) < xpBefore);
+});
+
+test("a challenge stays up across later checks until it is resolved", () => {
+  const state = createInitialState(OPEN_EVENING);
+  state.challenges.nextRollAt = new Date(OPEN_EVENING.getTime() - 1000).toISOString();
+  processChallenges(state, OPEN_EVENING);
+  const id = state.challenges.current.id;
+  const later = new Date(OPEN_EVENING.getTime() + 5000);
+  processChallenges(state, later);
+  processChallenges(state, new Date(later.getTime() + 5000));
+  assert.equal(state.challenges.current.id, id);
+  assert.equal(state.challenges.penaltyLock, false);
+});
+
+test("failing, skipping, or timing out a challenge locks blocked apps", () => {
+  const timed = createInitialState(OPEN_EVENING);
+  openChallenge(timed, OPEN_EVENING, "timeout");
+  timed.challenges.current.deadlineAt = new Date(OPEN_EVENING.getTime() - 1000).toISOString();
+  const missed = processChallenges(timed, OPEN_EVENING);
+  assert.ok(missed.events.some((event) => event.type === "miss"));
+  assert.equal(timed.challenges.current, null);
+  assert.equal(timed.challenges.penaltyLock, true);
+  assert.equal(timed.challenges.lastResult.reason, "timeout");
+
+  const skipped = createInitialState(OPEN_EVENING);
+  openChallenge(skipped, OPEN_EVENING, "skip");
+  const kept = skipped.challenges.current.id;
+  assert.equal(resolveChallengeMiss(skipped, OPEN_EVENING, "someone-else"), false);
+  assert.equal(skipped.challenges.current.id, kept);
+  assert.equal(skipChallenge(skipped, OPEN_EVENING), true);
+  assert.equal(skipped.challenges.current, null);
+  assert.equal(skipped.challenges.penaltyLock, true);
+  assert.equal(skipped.challenges.lastResult.reason, "skip");
+  dismissChallengeResult(skipped);
+  assert.equal(skipped.challenges.lastResult, null);
+  assert.equal(skipped.challenges.penaltyLock, true);
+
+  openChallenge(skipped, OPEN_EVENING, "again");
+  assert.equal(confirmChallenge(skipped, OPEN_EVENING), true);
+  assert.equal(skipped.challenges.penaltyLock, false);
 });
 
 test("a due roll opens one challenge and does not open a second while it is still active", () => {

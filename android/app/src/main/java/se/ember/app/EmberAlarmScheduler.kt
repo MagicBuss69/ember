@@ -29,7 +29,7 @@ object EmberAlarmScheduler {
         if (snap.nextRollAtMs > now) {
             scheduleExact(context, am, REQ_ROLL, ACTION_ROLL, snap.nextRollAtMs)
         }
-        if (!snap.quiet && snap.challengeActive && snap.challengeDeadlineMs > now) {
+        if (snap.challengeActive && snap.challengeDeadlineMs > now) {
             scheduleExact(context, am, REQ_DEADLINE, ACTION_DEADLINE, snap.challengeDeadlineMs)
             EmberChallengeForegroundService.start(context)
         } else {

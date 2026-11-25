@@ -53,25 +53,42 @@ function sortSlotItems(items) {
 }
 
 function challengeCard(state, now) {
-  if (!state.settings?.challengesOn) return "";
+  if (!state.settings?.challengesOn && !state.challenges?.current) return "";
   const snap = challengeSnapshot(state, now);
   const current = snap.current;
-  if (!current || snap.quiet) {
+  if (!current) {
     const next = snap.nextRollAt ? new Date(snap.nextRollAt) : null;
     const eta = next && next > now ? `Next roll around ${next.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Waiting for the next roll";
+    const lock = snap.challengePenalty ? " Blocked apps stay locked until you finish a challenge." : "";
     return `<article class="challenge-card challenge-card-idle" data-challenge-card>
       <p class="challenge-kicker">Hourly challenge</p>
-      <p class="muted">${esc(eta)}${snap.quiet ? " · Quiet hours." : ""}</p>
+      <p class="muted">${esc(eta)}${snap.quiet ? " · Quiet hours." : ""}${esc(lock)}</p>
+      <p class="footnote">Skip it, fail it, or let the timer run out, and blocked apps stay locked until you complete one.</p>
     </article>`;
   }
   return challengeBody(current, snap.msRemaining, "article");
 }
 
-/** Fixed challenge panel. Hidden during quiet hours and when nothing is open. */
+/** The open challenge stays up for its whole timer, including quiet hours. */
 export function challengeLiveHtml(state, now = new Date()) {
   const snap = challengeSnapshot(state, now);
-  if (!snap.current || snap.quiet) return "";
-  return `<aside class="challenge-live" role="status">${challengeBody(snap.current, snap.msRemaining, "div")}</aside>`;
+  if (!snap.current) return "";
+  return `<aside class="challenge-live" role="dialog" aria-modal="true">${challengeBody(snap.current, snap.msRemaining, "div")}</aside>`;
+}
+
+export function challengeResultHtml(state) {
+  const result = state.challenges?.lastResult;
+  if (!result || typeof result !== "object") return "";
+  const title = result.reason === "skip" ? "Challenge skipped" : "Challenge failed";
+  return `<div class="penalty-window" role="dialog" aria-modal="true" data-challenge-result>
+    <div class="penalty-card system-glass">
+      <p class="penalty-tag">CHALLENGE</p>
+      <h2>${esc(title)}</h2>
+      <p>${esc(result.label || "The challenge")} wasn't finished.</p>
+      <p>Blocked apps stay locked until you complete a challenge. Push-ups will not open them before that.</p>
+      <button type="button" class="primary" data-action="dismiss-challenge-result">OK</button>
+    </div>
+  </div>`;
 }
 
 function challengeBody(current, msRemaining, tag) {
@@ -83,7 +100,11 @@ function challengeBody(current, msRemaining, tag) {
     <h2 class="challenge-name">${esc(label)}</h2>
     <p class="challenge-big"><span class="num">${reps}</span> ${esc(unit)}</p>
     <p class="challenge-timer">Time left <strong data-challenge-countdown>${formatCountdown(msRemaining)}</strong></p>
-    <button type="button" class="primary" data-action="confirm-challenge">Done</button>
+    <p class="footnote">Skip, fail, or let the timer run out, and blocked apps stay locked until you finish a challenge.</p>
+    <div class="stack-actions">
+      <button type="button" class="primary" data-action="confirm-challenge">Done</button>
+      <button type="button" class="ghost" data-action="skip-challenge">Skip</button>
+    </div>
   </${tag}>`;
 }
 

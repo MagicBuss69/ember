@@ -28,6 +28,7 @@ export function buildBlockerSnapshot(state, now = new Date()) {
     difficulty: snap.difficulty,
     nextRollAt: snap.nextRollAt || "",
     challengeId: snap.current?.id || "",
+    challengePenalty: snap.challengePenalty === true,
     today: dateKey(now),
   };
 }

@@ -31,6 +31,12 @@ class EmberBlockerPlugin : Plugin() {
             .edit()
             .putString(KEY_SNAPSHOT, json)
             .commit()
+        val penalty = try {
+            org.json.JSONObject(json).optBoolean("challengePenalty", false)
+        } catch (_: Exception) {
+            false
+        }
+        if (penalty) BlockerSnapshot.revokeAllUnlocks(context)
         EmberAlarmScheduler.reschedule(context)
         call.resolve()
     }

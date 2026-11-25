@@ -73,7 +73,7 @@ import {
   pushBlockerSnapshot,
   startPushupTest,
 } from "./blockerBridge.js";
-import { normalizeBlockedPackages, processChallenges } from "./challenges.js";
+import { dismissChallengeResult, normalizeBlockedPackages, processChallenges, skipChallenge } from "./challenges.js";
 import { ensureRivalHistory, rivalPromptFacts } from "./rivals.js";
 import { dayJustFinished, openTodayCount, totalXp } from "./stats.js";
 import { addCustomReward, buyItem, equipCosmetic, redeemCustomReward, removeCustomReward, SHOP_CATALOG } from "./shop.js";
@@ -1331,6 +1331,23 @@ const actions = {
     ui.keepScroll = true;
     paint();
   },
+  async "skip-challenge"() {
+    const now = new Date();
+    await commitAction((current) => {
+      skipChallenge(current, now);
+      return current;
+    }, { quiet: false });
+    ui.keepScroll = true;
+    paint();
+  },
+  async "dismiss-challenge-result"() {
+    await commitAction((current) => {
+      dismissChallengeResult(current);
+      return current;
+    }, { quiet: true });
+    ui.keepScroll = true;
+    paint();
+  },
   "toggle-reveal"() {
     const input = document.getElementById("gemini-key");
     if (input) ui.geminiDraft = input.value;
@@ -2221,19 +2238,7 @@ async function resumeFromNative() {
     await pushBlockerSnapshot(state, new Date());
   }
   const intent = await consumeChallengeIntent();
-  if (intent.confirmChallenge && state.challenges?.current) {
-    const confirmed = confirmActiveChallenge(state, new Date());
-    if (confirmed.ok) {
-      state = confirmed.state;
-      try {
-        await saveState(state);
-      } catch {
-        /* ignore */
-      }
-      await pushBlockerSnapshot(state, new Date()).catch(() => {});
-    }
-  }
-  if (intent.openChallenge || intent.confirmChallenge || challengeReady) {
+  if (intent.openChallenge || challengeReady) {
     ui.tab = "today";
     setHash("today");
     ui.keepScroll = false;

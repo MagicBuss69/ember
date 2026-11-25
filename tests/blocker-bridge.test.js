@@ -69,7 +69,9 @@ test("an open hourly challenge shows the exercise, reps, countdown, and Done", (
   assert.match(html, /data-action="confirm-challenge"/);
   assert.match(html, />Done</);
   state.settings.quietNight = { on: true, start: "18:00", end: "23:00" };
-  assert.equal(challengeLiveHtml(state, NOW), "");
+  const duringQuiet = challengeLiveHtml(state, NOW);
+  assert.match(duringQuiet, /Push-ups/);
+  assert.match(duringQuiet, /blocked apps stay locked/i);
 });
 
 test("a native snapshot puts the exercise back when the web view has none", () => {

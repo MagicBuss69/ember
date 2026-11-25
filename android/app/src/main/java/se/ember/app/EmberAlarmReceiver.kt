@@ -28,8 +28,12 @@ class EmberAlarmReceiver : BroadcastReceiver() {
             EmberAlarmScheduler.ACTION_DEADLINE -> {
                 val snap = BlockerSnapshot.read(context)
                 val id = readChallengeId(context)
-                EmberInbox.append(context, "miss", if (id.isNotBlank()) id else "deadline")
-                if (snap.challengeActive) showMissNotification(context, snap)
+                val expired = snap.challengeActive && snap.challengeDeadlineMs > 0L &&
+                    snap.challengeDeadlineMs <= System.currentTimeMillis()
+                if (expired && id.isNotBlank()) {
+                    EmberInbox.append(context, "miss", id)
+                    showMissNotification(context, snap)
+                }
             }
             EmberAlarmScheduler.ACTION_UNLOCK_EXPIRE -> EmberUnlockLoop.onExpired(context)
             EmberAlarmScheduler.ACTION_UNLOCK_WARN -> {
