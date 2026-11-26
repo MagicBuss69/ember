@@ -69,11 +69,57 @@ function challengeCard(state, now) {
   return challengeBody(current, snap.msRemaining, "article");
 }
 
+const CHALLENGE_POPUP_ACTIONS = new Set([
+  "confirm-challenge",
+  "skip-challenge",
+  "hide-challenge",
+  "show-challenge",
+]);
+
+/** Actions that may run while the hourly challenge popup is open. */
+export function challengePopupAllowsAction(action) {
+  return CHALLENGE_POPUP_ACTIONS.has(action);
+}
+
+/**
+ * A new challenge opens the popup again. Hiding only sticks for that challenge
+ * and never removes the top bar.
+ */
+export function challengeChromeState(state, ui = {}) {
+  const id = state?.challenges?.current?.id || "";
+  const same = id !== "" && id === (ui.challengeSeenId || "");
+  const hidden = same && ui.challengeHidden === true;
+  return {
+    seenId: id,
+    hidden,
+    popup: Boolean(id) && !hidden,
+    pin: Boolean(id),
+  };
+}
+
 /** The open challenge stays up for its whole timer, including quiet hours. */
-export function challengeLiveHtml(state, now = new Date()) {
+export function challengeLiveHtml(state, now = new Date(), options = {}) {
   const snap = challengeSnapshot(state, now);
-  if (!snap.current) return "";
-  return `<aside class="challenge-live" role="dialog" aria-modal="true">${challengeBody(snap.current, snap.msRemaining, "div")}</aside>`;
+  if (!snap.current || options.hidden) return "";
+  return `<aside class="challenge-live" role="dialog" aria-modal="true" aria-labelledby="challenge-live-title" data-challenge-live>${challengeBody(snap.current, snap.msRemaining, "div", { live: true })}</aside>`;
+}
+
+/** Pinned countdown for the active challenge, on every screen. */
+export function challengePinHtml(state, now = new Date(), options = {}) {
+  const snap = challengeSnapshot(state, now);
+  const current = snap.current;
+  if (!current) return "";
+  const unit = current.isSeconds ? "seconds" : "reps";
+  const label = current.label || "Move";
+  const reps = Number(current.reps) || 0;
+  const left = formatCountdown(snap.msRemaining);
+  const open = options.open === true;
+  return `<button type="button" class="challenge-pin${open ? " is-open" : ""}" data-action="show-challenge" data-challenge-pin aria-expanded="${open ? "true" : "false"}" aria-label="Hourly challenge, ${esc(label)}, ${reps} ${esc(unit)}, ${esc(left)} left. Show the challenge.">
+    <span class="challenge-pin-kicker">Hourly</span>
+    <span class="challenge-pin-name">${esc(label)}</span>
+    <span class="challenge-pin-meta"><span class="num">${reps}</span> ${esc(unit)}</span>
+    <strong class="challenge-pin-time num" data-challenge-countdown>${esc(left)}</strong>
+  </button>`;
 }
 
 export function challengeResultHtml(state) {
@@ -91,18 +137,24 @@ export function challengeResultHtml(state) {
   </div>`;
 }
 
-function challengeBody(current, msRemaining, tag) {
+function challengeBody(current, msRemaining, tag, options = {}) {
   const unit = current.isSeconds ? "seconds" : "reps";
   const label = current.label || "Move";
   const reps = Number(current.reps) || 0;
+  const live = options.live === true;
+  const titleId = live ? ` id="challenge-live-title"` : "";
+  const hide = live
+    ? `<button type="button" class="ghost" data-action="hide-challenge">Hide</button>`
+    : "";
   return `<${tag} class="challenge-card challenge-card-active" data-challenge-card>
     <p class="challenge-kicker">Hourly challenge</p>
-    <h2 class="challenge-name">${esc(label)}</h2>
+    <h2 class="challenge-name"${titleId}>${esc(label)}</h2>
     <p class="challenge-big"><span class="num">${reps}</span> ${esc(unit)}</p>
     <p class="challenge-timer">Time left <strong data-challenge-countdown>${formatCountdown(msRemaining)}</strong></p>
     <p class="footnote">Skip, fail, or let the timer run out, and blocked apps stay locked until you finish a challenge.</p>
     <div class="stack-actions">
       <button type="button" class="primary" data-action="confirm-challenge">Done</button>
+      ${hide}
       <button type="button" class="ghost" data-action="skip-challenge">Skip</button>
     </div>
   </${tag}>`;

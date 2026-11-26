@@ -82,6 +82,7 @@ import { ensureAudio, playSound } from "./sounds.js";
 import { burstAt, confettiFan, dailyCompleteBanner, shardBurstToCrystal } from "./ui/fx.js";
 import { addDays, dateKey, formatCountdown, formatPretty, weekStart } from "./time.js";
 import { render, shellError } from "./ui/render.js";
+import { challengeChromeState, challengePopupAllowsAction } from "./ui/screens.js";
 import {
   installTodayCompactScroll,
   refreshTodayCompactBarMarkup,
@@ -138,6 +139,9 @@ const ui = {
   shopCat: "themes",
   coachMessages: [],
   pendingCoach: null,
+  challengeHidden: false,
+  challengeSeenId: "",
+  releasingChallengeHold: false,
 };
 let levelTimer = 0;
 let genToken = 0;
@@ -211,6 +215,9 @@ function stageClosingNode(node, durationMs = 190) {
 }
 
 function paint() {
+  const chrome = challengeChromeState(state, ui);
+  ui.challengeSeenId = chrome.seenId;
+  ui.challengeHidden = chrome.hidden;
   const reduced = prefersReducedMotion();
   const active = document.activeElement;
   const activeId = active?.id || "";
@@ -263,9 +270,14 @@ function paint() {
     appEl.innerHTML = render(state, ui, new Date());
   } catch (error) {
     console.error(error);
+    document.body.classList.remove("has-challenge-pin", "has-challenge-popup");
+    document.body.style.removeProperty("--challenge-pin-h");
+    challengeTouchLocked = false;
+    document.removeEventListener("touchmove", blockChallengeBackgroundScroll);
     appEl.innerHTML = shellError(error.message || "Something broke while drawing Ember.");
     return;
   }
+  syncChallengePinLayout();
 
   if (wasSheetOpen && ui.sheet) {
     appEl.querySelector(".scrim")?.classList.add("is-steady");
@@ -377,6 +389,8 @@ function paint() {
   updateBadge();
   refreshTodayCompactBarMarkup(state, ui, new Date());
   scheduleTodayCompactScroll();
+  syncChallengeTouchLock();
+  syncChallengeHistory();
 }
 
 function soundOpts() {
@@ -441,12 +455,91 @@ function updateBadge() {
   pending.catch(() => {});
 }
 
+function challengePopupOpen() {
+  return Boolean(state.challenges?.current) && !ui.challengeHidden;
+}
+
+function markSheetHistory() {
+  if (history.state?.sheet) return;
+  try {
+    if (history.state?.challengeHold) {
+      history.replaceState({ ...history.state, sheet: true }, "");
+      return;
+    }
+    history.pushState({ sheet: true }, "");
+  } catch {
+    /* some webviews lock history while the document is unloading */
+  }
+}
+
+function popSheetHistory() {
+  if (!history.state?.sheet) return;
+  try {
+    if (history.state.challengeHold) {
+      history.replaceState({ ...history.state, sheet: false }, "");
+      return;
+    }
+    ui.ignorePop = true;
+    history.back();
+  } catch {
+    /* ignore */
+  }
+}
+
+function syncChallengeHistory() {
+  try {
+    if (challengePopupOpen()) {
+      ui.releasingChallengeHold = false;
+      if (!history.state?.challengeHold) {
+        history.pushState({ ...(history.state || {}), challengeHold: true }, "");
+      }
+      return;
+    }
+    if (history.state?.challengeHold && !ui.releasingChallengeHold) {
+      ui.releasingChallengeHold = true;
+      ui.ignorePop = true;
+      history.back();
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+function blockChallengeBackgroundScroll(event) {
+  if (event.target.closest?.(".challenge-card")) return;
+  event.preventDefault();
+}
+
+let challengeTouchLocked = false;
+function syncChallengeTouchLock() {
+  const open = challengePopupOpen();
+  if (open === challengeTouchLocked) return;
+  challengeTouchLocked = open;
+  if (open) document.addEventListener("touchmove", blockChallengeBackgroundScroll, { passive: false });
+  else document.removeEventListener("touchmove", blockChallengeBackgroundScroll);
+}
+
+function syncChallengePinLayout() {
+  const pin = document.querySelector("[data-challenge-pin]");
+  document.body.classList.toggle("has-challenge-pin", Boolean(pin));
+  document.body.classList.toggle("has-challenge-popup", challengePopupOpen());
+  if (!pin) {
+    document.body.style.removeProperty("--challenge-pin-h");
+    return;
+  }
+  const pinStyle = getComputedStyle(pin);
+  const occupied = pin.offsetHeight
+    + (parseFloat(pinStyle.marginTop) || 0)
+    + (parseFloat(pinStyle.marginBottom) || 0);
+  document.body.style.setProperty("--challenge-pin-h", `${Math.ceil(occupied)}px`);
+}
+
 function openSheet(sheet, draft) {
   ui.sheet = sheet;
   ui.draft = draft;
   ui.focusSheet = true;
   ui.keepScroll = true;
-  if (!history.state?.sheet) history.pushState({ sheet: true }, "");
+  markSheetHistory();
   paint();
 }
 
@@ -456,10 +549,7 @@ function closeSheet() {
   ui.draft = null;
   ui.keepScroll = true;
   paint();
-  if (history.state?.sheet) {
-    ui.ignorePop = true;
-    history.back();
-  }
+  popSheetHistory();
 }
 
 async function commitWrapped(mutator, fx = {}) {
@@ -499,10 +589,7 @@ async function commitWrapped(mutator, fx = {}) {
   } catch (error) {
     toast(error.message || "Couldn't save on this phone.");
   }
-  if (fx.close && history.state?.sheet) {
-    ui.ignorePop = true;
-    history.back();
-  }
+  if (fx.close) popSheetHistory();
   const fresh = state.crystalLog.slice(0, Math.max(0, state.crystalLog.length - logBefore));
   const messages = [];
   if (!fx.quiet) {
@@ -784,7 +871,7 @@ const actions = {
     ui.draft = { copyMode: "replace", targets: [], error: "" };
     ui.focusSheet = false;
     ui.keepScroll = true;
-    if (!history.state?.sheet) history.pushState({ sheet: true }, "");
+    markSheetHistory();
     paint();
   },
   "set-copy-mode"(el) {
@@ -1331,6 +1418,20 @@ const actions = {
     ui.keepScroll = true;
     paint();
   },
+  "hide-challenge"() {
+    const id = state.challenges?.current?.id;
+    if (!id) return;
+    ui.challengeSeenId = id;
+    ui.challengeHidden = true;
+    ui.keepScroll = true;
+    paint();
+  },
+  "show-challenge"() {
+    if (!state.challenges?.current || !ui.challengeHidden) return;
+    ui.challengeHidden = false;
+    ui.keepScroll = true;
+    paint();
+  },
   async "skip-challenge"() {
     const now = new Date();
     await commitAction((current) => {
@@ -1448,7 +1549,7 @@ const actions = {
       ui.sheet = { type: "drive" };
       ui.focusSheet = false;
       ui.keepScroll = true;
-      if (!history.state?.sheet) history.pushState({ sheet: true }, "");
+      markSheetHistory();
       paint();
     } catch (error) {
       toast(error.message || "Couldn't open Drive.");
@@ -2035,11 +2136,27 @@ function bind() {
   };
   app.addEventListener("pointerdown", primeAudio, { once: true, passive: true });
   const shouldSuppressClick = bindQuestDrag(app);
+  document.addEventListener("click", (event) => {
+    if (!challengePopupOpen()) return;
+    const actionEl = event.target.closest?.("[data-action]");
+    if (actionEl && !actionEl.disabled && challengePopupAllowsAction(actionEl.dataset.action)) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }, true);
   app.addEventListener("click", (event) => {
     if (shouldSuppressClick(event.target)) {
       event.preventDefault();
       event.stopPropagation();
       return;
+    }
+    if (challengePopupOpen()) {
+      const live = event.target.closest?.("[data-challenge-live]");
+      const actionEl = event.target.closest?.("[data-action]");
+      if (live && !actionEl) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
     }
     const el = event.target.closest("[data-action]");
     if (!el || el.disabled) return;
@@ -2179,6 +2296,10 @@ function bind() {
       return;
     }
     if (event.key !== "Escape") return;
+    if (challengePopupOpen()) {
+      event.preventDefault();
+      return;
+    }
     if (ui.confirm) actions["confirm-no"]();
     else if (ui.levelUp) actions["dismiss-levelup"]();
     else if (ui.sheet) closeSheet();
@@ -2186,6 +2307,19 @@ function bind() {
   window.addEventListener("popstate", () => {
     if (ui.ignorePop) {
       ui.ignorePop = false;
+      ui.releasingChallengeHold = false;
+      return;
+    }
+    if (challengePopupOpen()) {
+      try {
+        history.pushState({
+          ...(history.state || {}),
+          challengeHold: true,
+          sheet: Boolean(ui.sheet),
+        }, "");
+      } catch {
+        /* ignore */
+      }
       return;
     }
     if (ui.sheet) {
@@ -2238,6 +2372,7 @@ async function resumeFromNative() {
     await pushBlockerSnapshot(state, new Date());
   }
   const intent = await consumeChallengeIntent();
+  if (intent.openChallenge) ui.challengeHidden = false;
   if (intent.openChallenge || challengeReady) {
     ui.tab = "today";
     setHash("today");
@@ -2265,6 +2400,13 @@ function startChallengeClock() {
       document.querySelectorAll("[data-challenge-countdown]").forEach((tick) => {
         tick.textContent = label;
       });
+      const pin = document.querySelector("[data-challenge-pin]");
+      if (pin) {
+        const name = pin.querySelector(".challenge-pin-name")?.textContent || "Challenge";
+        const meta = pin.querySelector(".challenge-pin-meta")?.textContent?.trim() || "";
+        const detail = meta ? `${meta}, ` : "";
+        pin.setAttribute("aria-label", `Hourly challenge, ${name}, ${detail}${label} left. Show the challenge.`);
+      }
     }
     const challengesChanged = events.length > 0 || beforeId !== afterId || rollBefore !== rollAfter;
     if (!challengesChanged) return;
