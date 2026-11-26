@@ -27,6 +27,7 @@
   --nav-h: 62px;
   --hud-h: 52px;
   --board-compact-h: 54px;
+  --challenge-pin-h: 0px;
   color-scheme: dark;
   font-family: var(--font);
   background: var(--bg);
@@ -1618,7 +1619,7 @@ body.dragging-quest, body.dragging-quest * { cursor: grabbing !important; user-s
   position: fixed;
   z-index: 28;
   left: 50%;
-  top: calc(env(safe-area-inset-top, 0px) + var(--hud-h));
+  top: calc(env(safe-area-inset-top, 0px) + var(--hud-h) + var(--challenge-pin-h, 0px));
   width: min(100%, 480px);
   padding: 0 max(12px, env(safe-area-inset-left, 0px)) 0 max(12px, env(safe-area-inset-right, 0px));
   transform: translate3d(-50%, calc(-100% - 8px), 0);
@@ -2104,6 +2105,63 @@ body.today-compact-on main {
 .challenge-name { margin: 0 0 4px; font-size: 26px; line-height: 1.15; color: var(--text); }
 .challenge-big { margin: 0 0 8px; font-size: 22px; color: var(--text); }
 .challenge-timer { margin: 0 0 10px; color: var(--text); }
+.challenge-pin {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: stretch;
+  min-width: 0;
+  height: 44px;
+  margin: 6px 12px 8px;
+  padding: 0 12px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: var(--bg-elev);
+  color: var(--text);
+  box-shadow: var(--system-glow);
+  text-align: left;
+  flex: none;
+}
+body.has-challenge-popup .challenge-pin {
+  z-index: 90;
+}
+.challenge-pin.is-open {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-elev));
+}
+.challenge-pin-kicker {
+  flex: none;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent-2);
+}
+.challenge-pin-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.challenge-pin-meta {
+  flex: none;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.challenge-pin-time {
+  flex: none;
+  min-width: 4.5ch;
+  font-size: 15px;
+  font-weight: 800;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
 .challenge-live {
   position: fixed;
   z-index: 80;
@@ -2111,15 +2169,24 @@ body.today-compact-on main {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding:
+    calc(env(safe-area-inset-top, 0px) + var(--challenge-pin-h, 0px) + 12px)
+    max(16px, env(safe-area-inset-right, 0px))
+    calc(16px + env(safe-area-inset-bottom, 0px))
+    max(16px, env(safe-area-inset-left, 0px));
   background: rgba(7, 16, 24, 0.78);
   color: var(--text);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  pointer-events: auto;
 }
 .challenge-live .challenge-card {
   width: min(100%, 420px);
   margin: 0;
   background: var(--bg-elev);
   color: var(--text);
+  flex: none;
 }
 .subsection-title {
   margin: 12px 0 8px;
@@ -2137,6 +2204,10 @@ body.today-compact-on main {
 @media (max-width: 390px) {
   .nav button { font-size: 9px; gap: 2px; padding: 0 1px; }
   .nav button svg { width: 20px; height: 20px; }
+  .challenge-pin-kicker { display: none; }
+}
+@media (max-width: 340px) {
+  .challenge-pin-meta { display: none; }
 }
 
 @media (orientation: landscape) and (max-height: 500px) {
@@ -2162,10 +2233,40 @@ body.today-compact-on main {
     padding: 6px 14px calc(10px + env(safe-area-inset-bottom));
   }
   .sheet.sheet-blocker { height: min(360px, calc(100dvh - var(--nav-h) - 8px)); }
-  .confirm, .levelup, .penalty-window {
+  .confirm, .levelup, .penalty-window, .challenge-live {
     padding: 12px;
     align-items: safe center;
     overflow-y: auto;
+  }
+  .challenge-live {
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding-top: calc(env(safe-area-inset-top, 0px) + var(--challenge-pin-h, 0px) + 8px);
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+  .challenge-pin {
+    height: 36px;
+    margin: 4px 12px;
+  }
+  .challenge-live .challenge-card {
+    padding: 10px 12px;
+  }
+  .challenge-live .challenge-name { font-size: 20px; margin-bottom: 2px; }
+  .challenge-live .challenge-big { font-size: 16px; margin-bottom: 4px; }
+  .challenge-live .challenge-timer { margin-bottom: 4px; }
+  .challenge-live .footnote { display: none; }
+  .challenge-live .stack-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .challenge-live .stack-actions .primary,
+  .challenge-live .stack-actions .ghost {
+    flex: 1;
+    width: auto;
+    min-height: 40px;
+    margin-top: 0;
   }
   .confirm-card, .levelup-card, .penalty-card {
     max-height: min(340px, calc(100dvh - 24px));

@@ -1,7 +1,7 @@
 import { esc, formatNum } from "../format.js";
 import { currencyIcon } from "../art.js";
 import { icon } from "../icons.js";
-import { challengeLiveHtml, challengeResultHtml, confirmHtml, levelUpHtml, navHtml, penaltyHtml, sheetHtml, viewRivals, viewSettings, viewToday, viewTrain, viewWeek, viewYou } from "./screens.js";
+import { challengeLiveHtml, challengePinHtml, challengeResultHtml, confirmHtml, levelUpHtml, navHtml, penaltyHtml, sheetHtml, viewRivals, viewSettings, viewToday, viewTrain, viewWeek, viewYou } from "./screens.js";
 
 const VIEWS = {
   today: viewToday,
@@ -15,8 +15,10 @@ const VIEWS = {
 export function render(state, ui, now) {
   const tab = VIEWS[ui.tab] ? ui.tab : "today";
   const view = VIEWS[tab];
+  const challengeOpen = Boolean(state.challenges?.current) && !ui.challengeHidden;
   return `
     <div class="app">
+      ${challengePinHtml(state, now, { open: challengeOpen })}
       <header class="hud">
         <div class="brand"><i class="brand-dot"></i>Ember</div>
         <button type="button" class="icon-btn hud-coach" data-action="open-coach" aria-label="Coach">${icon("chat")}</button>
@@ -27,7 +29,7 @@ export function render(state, ui, now) {
       </header>
       <main class="${ui.enter ? "enter" : ""}" id="main">${view(state, ui, now)}</main>
       ${navHtml(tab)}
-      ${challengeLiveHtml(state, now)}
+      ${challengeLiveHtml(state, now, { hidden: ui.challengeHidden })}
       ${challengeResultHtml(state)}
       ${sheetHtml(state, ui, now)}
       ${confirmHtml(ui)}
